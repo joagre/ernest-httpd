@@ -1,0 +1,546 @@
+//
+// Docs: the documents held to what they name
+//
+// Every backticked path in a tracked document that begins with a directory
+// of the repository names something that is there, or the program says
+// which does not, on standard error, and ends with status 1; the plan and
+// the findings are left out, and so is a path under docs/man/, which make
+// man writes at a release. Every prose paragraph past 150 words, which no
+// reader takes in whole, is listed on standard error for its writer to split
+// at its turn, and the program ends with status 1 (CLAUDE.md, *Writing*);
+// the log, the proposals and the manual pages are left out. Fenced code is
+// read as neither.
+//
+// The design's sections are held both ways, as CLAUDE.md's *Tests* asks. A
+// section is a heading of docs/design.md, `## n. Title`; a citation is a
+// `§n` after the word design in a comment of a tracked module under src/,
+// test/ or examples/, `design §9`, or after a citation and its comma,
+// `design §11, §12`, and `§n.m` cites section n. A comment is read as a line
+// that begins with `//`, its indentation aside. Every citation names a
+// section, and every section is cited by a test's comment, the `//` lines
+// directly above a top-level `let` of a `Test.Case`, a doc block not among
+// them; a line on standard error names each that does not, and the program
+// ends with status 1. Where no design is tracked, nothing is held.
+//
+//     make test    runs it, as ern run tools/build/docs.erc
+//
+
+// A paragraph past the measure: where it begins, its words, and its first
+// characters.
+type Paragraph = Paragraph(file : String, line : Int, words : Int, first : String)
+
+// Where the reading stands as a document's lines go by: the line's number,
+// whether it is inside a fence, the paragraph begun and not yet ended, and
+// the paragraphs found.
+type Reading =
+    Reading(line : Int,
+            fence : Bool,
+            start : Int,
+            first : String,
+            words : Int,
+            skip : Bool,
+            item : Bool,
+            indent : Int,
+            found : List(Paragraph))
+
+// A word of a comment and the line it stands on.
+type Word = Word(line : Int, text : String)
+
+// A section a comment cites, and the line the citation stands on.
+type Citation = Citation(line : Int, section : Int)
+
+let design : String = "docs/design.md"
+
+let measure : Int = 150
+
+let notice : String =
+    "paragraphs past 150 words, which no reader takes in whole; split each at its turn:"
+
+export fn main() : Unit = {
+    let files = tracked("*.md");
+    let tops = directories();
+    let long = List.flatMap(List.filter(files, isMeasured), paragraphsIn);
+    if List.isEmpty(long) then
+        Unit
+    else {
+        Io.printlnError(notice);
+        List.forEach(long, fn(paragraph) = Io.printlnError(shown(paragraph)))
+    };
+    let missing =
+        List.unique(List.flatMap(List.filter(files, isChecked), fn(file) = missingIn(file, tops)));
+    let failures = missing <> uncited(files);
+    List.forEach(failures, Io.printlnError);
+    if List.isEmpty(failures) && List.isEmpty(long) then Unit else Os.exit(1)
+}
+
+//
+// The repository
+//
+
+// The files git tracks whose names match the pattern.
+fn tracked(pattern : String) : List(String) =
+    match Os.run(Os.Command(program = "git", arguments = ["ls-files", pattern], input = <<>>),
+                 5000) {
+        Right(finished) when finished.status == 0 ->
+            textLines(finished.stdout)
+      | _ -> {
+            Io.printlnError("docs: git ls-files failed");
+            Os.exit(1)
+        }
+    }
+
+// The directories at the top of the repository, each with its "/", under
+// which a backticked path is checked.
+fn directories() : List(String) =
+    match Fs.list(Path("."), 5000) {
+        Right(entries) ->
+            List.filterMap(entries, fn(entry) = match #(entry.kind, Path.name(entry.path)) {
+                #(Fs.Directory, Some(name)) when String.startsWith(name, ".") == false ->
+                    Some(name <> "/")
+              | _ ->
+                    None
+            })
+      | Left(error) -> {
+            Io.printlnError("docs: cannot list the repository: " <> Io.show(error));
+            Os.exit(1)
+        }
+    }
+
+fn contents(file : String) : String =
+    match Fs.read(Path(file), 5000) {
+        Right(bytes) ->
+            text(bytes)
+      | Left(error) -> {
+            Io.printlnError("docs: cannot read " <> file <> ": " <> Io.show(error));
+            Os.exit(1)
+        }
+    }
+
+fn text(bytes : Bytes) : String =
+    match String.fromUtf8(bytes) {
+        Some(text) ->
+            text
+      | None -> {
+            Io.printlnError("docs: not UTF-8");
+            Os.exit(1)
+        }
+    }
+
+fn textLines(bytes : Bytes) : List(String) =
+    String.lines(text(bytes))
+
+//
+// The paths
+//
+
+// Each backticked path of the file that names nothing, as a line for
+// standard error.
+fn missingIn(file : String, tops : List(String)) : List(String) =
+    List.filterMap(pathsIn(contents(file), tops), fn(path) = match Fs.stat(Path(path), 5000) {
+        Right(_) -> None
+      | Left(_) -> Some(file <> ": `" <> path <> "` names nothing")
+    })
+
+// The backticked pieces of the text outside fenced code that begin with one
+// of the tops; a wildcard or a metavariable, `<name>`, names no one file, a
+// piece that ends with "/" names a directory the writer did not mean to pin,
+// and a manual page is there only once a release has written it.
+fn pathsIn(text : String, tops : List(String)) : List(String) = {
+    let pieces = String.split(unfenced(text), "`");
+    List.filterMap(List.indexed(pieces), fn(indexed) = match indexed {
+        #(index, piece) when index % 2 == 1 && isPath(piece, tops) -> Some(piece)
+      | _ -> None
+    })
+}
+
+fn isPath(piece : String, tops : List(String)) : Bool =
+    List.any(tops, fn(top) = String.startsWith(piece, top))
+        && String.startsWith(piece, "docs/man/") == false
+        && String.contains(piece, "*") == false
+        && String.contains(piece, "<") == false
+        && String.endsWith(piece, "/") == false
+
+// The text without its fenced blocks and their fences.
+fn unfenced(text : String) : String = {
+    let kept = List.foldLeft(String.lines(text), #(false, []), fn(acc, line) = match acc {
+        #(fence, lines) ->
+            if isFence(line) then
+                #(fence == false, lines)
+            else if fence then
+                acc
+            else
+                #(fence, line :: lines)
+    });
+    match kept {
+        #(_, lines) -> String.join(List.reverse(lines), "\n")
+    }
+}
+
+fn isFence(line : String) : Bool = {
+    let trimmed = String.trimStart(line);
+    String.startsWith(trimmed, "```") || String.startsWith(trimmed, "~~~")
+}
+
+//
+// The paragraphs
+//
+
+// Whether a file is the repository's own writing: a manual page is written
+// by ern doc, and what it names is the module's.
+fn isOwn(file : String) : Bool =
+    String.startsWith(file, "docs/man/") == false
+
+// Whether a file's paths are checked: the plan names paths not yet written,
+// and the findings the paths of the tree their readers read.
+fn isChecked(file : String) : Bool =
+    isOwn(file) && file != "docs/plan.md" && file != "docs/findings.md"
+
+// Whether a file's paragraphs are measured: the log is history and a
+// proposal is thinking.
+fn isMeasured(file : String) : Bool =
+    isOwn(file) && file != "docs/log.md" && String.startsWith(file, "docs/proposals/") == false
+
+fn paragraphsIn(file : String) : List(Paragraph) =
+    paragraphsOf(file, contents(file))
+
+// The paragraphs of the text past the measure. A paragraph ends at a blank
+// line, at a fence, at a list item, and where a list item's lines stop being
+// indented past the item; a heading, a table row and a tag begin no
+// paragraph that is measured.
+fn paragraphsOf(file : String, text : String) : List(Paragraph) = {
+    let begun =
+        Reading(line = 0,
+                fence = false,
+                start = 0,
+                first = "",
+                words = 0,
+                skip = false,
+                item = false,
+                indent = 0,
+                found = []);
+    let last =
+        List.foldLeft(String.lines(text),
+                      begun,
+                      fn(reading, line) =
+                          read(file, Reading(..reading, line = reading.line + 1), line));
+    List.reverse(ended(file, last).found)
+}
+
+fn read(file : String, reading : Reading, line : String) : Reading =
+    if isFence(line) then
+        Reading(..ended(file, reading), fence = reading.fence == false)
+    else if reading.fence then
+        reading
+    else if String.isEmpty(String.trim(line)) then
+        ended(file, reading)
+    else if isItem(line) then
+        counted(Reading(..ended(file, reading), item = true), line)
+    else
+        counted(reading, line)
+
+// The line's words added to the paragraph, which it begins where none is
+// begun, or where it stands at or before a list item's indentation.
+fn counted(reading : Reading, line : String) : Reading = {
+    let indent = indentation(line);
+    let begun = if reading.words == 0 then
+        Reading(..reading,
+                start = reading.line,
+                first = line,
+                indent = indent,
+                skip = isUnmeasured(line))
+    else if reading.item && indent <= reading.indent then
+        Reading(..ended("", reading),
+                start = reading.line,
+                first = line,
+                indent = indent,
+                skip = false)
+    else
+        reading;
+    Reading(..begun, words = begun.words + List.size(String.words(line)))
+}
+
+// The paragraph ended: kept where it is measured and past the measure.
+fn ended(file : String, reading : Reading) : Reading = {
+    let found = if reading.skip == false && reading.words > measure then
+        Paragraph(file = file,
+                  line = reading.start,
+                  words = reading.words,
+                  first = String.slice(reading.first, 0, 60))
+            :: reading.found
+    else
+        reading.found;
+    Reading(..reading, words = 0, item = false, found = found)
+}
+
+fn isUnmeasured(line : String) : Bool =
+    String.startsWith(line, "#") || String.startsWith(line, "|") || String.startsWith(line, "<")
+
+// A list item: "- ", "* ", or a number and a dot.
+fn isItem(line : String) : Bool = {
+    let trimmed = String.trimStart(line);
+    String.startsWith(trimmed, "- ") || String.startsWith(trimmed, "* ") || isNumbered(trimmed)
+}
+
+fn isNumbered(trimmed : String) : Bool =
+    match String.words(trimmed) {
+        word :: _ :: _ -> Optional.isSome(numbered(word))
+      | _ -> false
+    }
+
+// The number of a word "n.", a numbered item's or a section's.
+fn numbered(word : String) : Optional(Int) =
+    if String.endsWith(word, ".") then
+        String.toInt(String.slice(word, 0, String.size(word) - 1))
+    else
+        None
+
+fn indentation(line : String) : Int =
+    String.size(line) - String.size(String.trimStart(line))
+
+fn shown(paragraph : Paragraph) : String =
+    paragraph.file
+        <> ":"
+        <> Int.toString(paragraph.line)
+        <> ": "
+        <> Int.toString(paragraph.words)
+        <> " words  "
+        <> paragraph.first
+
+//
+// The design's citations
+//
+
+// Each citation that names no section of the design, and each section no
+// test cites, as lines for standard error; none where there is no design.
+fn uncited(files : List(String)) : List(String) =
+    if List.contains(files, design) then {
+        let sections = sectionsOf(contents(design));
+        let modules =
+            List.map(List.filter(tracked("*.ern"), isProgram),
+                     fn(module) = #(module, contents(module)));
+        let tested = List.flatMap(modules, fn(#(_, text)) = testedIn(text));
+        List.flatMap(modules, fn(#(module, text)) = unknownIn(module, text, sections))
+            <> List.filterMap(sections, fn(section) = untested(section, tested))
+    } else
+        []
+
+// Whether a module is the program's, whose comments cite the design: one
+// under src/, test/ or examples/, and not the checker's own under tools/.
+fn isProgram(file : String) : Bool =
+    List.any(["src/", "test/", "examples/"], fn(root) = String.startsWith(file, root))
+
+// The sections of the design: each heading "## n. Title" outside fenced
+// code, by its number.
+fn sectionsOf(text : String) : List(Int) =
+    List.filterMap(String.lines(unfenced(text)), fn(line) = match String.words(line) {
+        "##" :: word :: _ :: _ -> numbered(word)
+      | _ -> None
+    })
+
+// Each citation of the module that names no section, as a line for standard
+// error.
+fn unknownIn(module : String, text : String, sections : List(Int)) : List(String) = {
+    let unknown =
+        List.filter(citationsIn(commentWords(text)),
+                    fn(citation) = List.contains(sections, citation.section) == false);
+    List.map(unknown, fn(citation) = shownUnknown(module, citation))
+}
+
+fn shownUnknown(module : String, citation : Citation) : String =
+    module
+        <> ":"
+        <> Int.toString(citation.line)
+        <> ": design §"
+        <> Int.toString(citation.section)
+        <> " is no section of "
+        <> design
+
+fn untested(section : Int, tested : List(Int)) : Optional(String) =
+    if List.contains(tested, section) then
+        None
+    else
+        Some(design <> ": §" <> Int.toString(section) <> " has no test naming it")
+
+// The sections the module's tests cite: the citations of each test's
+// comment, the lines of "//" directly above it, a doc block's "///" not
+// among them, since a doc block puts the test on the module's page.
+fn testedIn(text : String) : List(Int) = {
+    let lines = String.lines(text);
+    let withNext = List.indexed(List.zip(lines, List.drop(lines, 1) <> [""]));
+    let #(_, tested) = List.foldLeft(withNext, #([], []), testedStep);
+    tested
+}
+
+// A step of the reading, each line with its index and the line after it:
+// the words of the comment directly above carried while its lines go by,
+// and its sections kept where a test's let ends it.
+fn testedStep(#(above, tested) : #(List(Word), List(Int)),
+              #(index, #(line, next)) : #(Int, #(String, String))) : #(List(Word), List(Int)) =
+    if isTestComment(line) then
+        #(above <> wordsAt(index, line), tested)
+    else if isTest(line, next) then
+        #([], tested <> List.map(citationsIn(above), fn(citation) = citation.section))
+    else
+        #([], tested)
+
+// A line of a test's comment: "//", or "////", which begins an ordinary
+// comment (report §2.2), and not a doc block's "///".
+fn isTestComment(line : String) : Bool = {
+    let trimmed = String.trimStart(line);
+    String.startsWith(trimmed, "//")
+        && (String.startsWith(trimmed, "///") == false || String.startsWith(trimmed, "////"))
+}
+
+// A top-level let of a Test.Case, the Test.Case on its line or, where the
+// formatter split the let after its "=", on the next.
+fn isTest(line : String, next : String) : Bool =
+    String.startsWith(line, "let ")
+        && (String.contains(line, "Test.Case(")
+                || (String.endsWith(line, "=")
+                        && String.startsWith(String.trimStart(next), "Test.Case(")))
+
+// The words of the module's comments, each with its line.
+fn commentWords(text : String) : List(Word) =
+    List.flatMap(List.indexed(String.lines(text)), fn(#(index, line)) = wordsAt(index, line))
+
+// The words of the line at the index, from 0, where it is a comment, the
+// slashes that begin it left out; none where it is not.
+fn wordsAt(index : Int, line : String) : List(Word) = {
+    let trimmed = String.trimStart(line);
+    if String.startsWith(trimmed, "//") then {
+        let #(_, comment) = List.span(String.toList(trimmed), fn(char) = char == '/');
+        List.map(String.words(String.fromList(comment)),
+                 fn(word) = Word(line = index + 1, text = word))
+    } else
+        []
+}
+
+// The citations among the words: each "§n" after the word design, or
+// "(design", on its line or the next, and each after a citation and its
+// comma.
+fn citationsIn(words : List(Word)) : List(Citation) =
+    match words {
+        word :: rest when word.text == "design" || word.text == "(design" -> listed(word, rest)
+      | _ :: rest -> citationsIn(rest)
+      | [] -> []
+    }
+
+// The citations from the word after the previous one, where it stands on
+// the previous one's line or the next and cites a section, and on through
+// a list while each ends with a comma; then the rest are read again.
+fn listed(previous : Word, words : List(Word)) : List(Citation) =
+    match words {
+        word :: rest when word.line <= previous.line + 1 ->
+            match cited(word.text) {
+                Some(section) ->
+                    Citation(line = word.line, section = section)
+                        :: (if String.endsWith(word.text, ",") then
+                                listed(word, rest)
+                            else
+                                citationsIn(rest))
+              | None ->
+                    citationsIn(words)
+            }
+      | _ ->
+            citationsIn(words)
+    }
+
+// The section a word "§n" or "§n.m" cites, whatever follows its digits.
+fn cited(text : String) : Optional(Int) =
+    if String.startsWith(text, "§") then {
+        let number = String.toList(String.slice(text, 1, String.size(text)));
+        let #(digits, _) = List.span(number, Char.isAsciiDigit);
+        String.toInt(String.fromList(digits))
+    } else
+        None
+
+//
+// Tests
+//
+
+let pastMeasure : String = String.trim(String.repeat("word ", 151))
+
+/// A paragraph past the measure is listed at its line; one at the measure is not.
+let listsThePastMeasure = Test.Case(name = "lists a paragraph past the measure", run = fn() = {
+    let text =
+        "# Title\n\nshort\n\n" <> pastMeasure <> "\n\n" <> String.trim(String.repeat("w ", 150));
+    Test.equal(List.map(paragraphsOf("f.md", text),
+                        fn(paragraph) = #(paragraph.line, paragraph.words)),
+               [#(5, 151)])
+})
+
+/// A heading, a table row, a tag and fenced code are not measured.
+let leavesUnmeasured =
+    Test.Case(name = "leaves a heading, a table, a tag and a fence unmeasured", run = fn() = {
+        let text =
+            "# "
+                <> pastMeasure
+                <> "\n\n| "
+                <> pastMeasure
+                <> "\n\n<"
+                <> pastMeasure
+                <> "\n\n```\n"
+                <> pastMeasure
+                <> "\n```\n";
+        Test.equal(paragraphsOf("f.md", text), [])
+    })
+
+/// A list item is a paragraph of its own, which ends at the next item and
+/// where its lines stop being indented past it.
+let readsItems = Test.Case(name = "reads a list item as a paragraph", run = fn() = {
+    let text = "- " <> pastMeasure <> "\n- short\n  " <> pastMeasure <> "\nplain after\n";
+    Test.equal(List.map(paragraphsOf("f.md", text), fn(paragraph) = paragraph.line), [1, 2])
+})
+
+/// A backticked path under a top is found outside fenced code; one with a
+/// wildcard, a metavariable or a trailing "/" is not, nor a manual page, nor
+/// one under no top.
+let findsPaths = Test.Case(name = "finds the backticked paths", run = fn() = {
+    let text =
+        "see `src/a.ern` and `lib/*/build`, `bin/<name>`, `src/`, `other/x`\n"
+            <> "```\n`src/fenced.ern`\n```\n`docs/b.md`, `docs/man/m.md`";
+    Test.equal(pathsIn(text, ["src/", "docs/"]), ["src/a.ern", "docs/b.md"])
+})
+
+/// A citation is a "§n" after the word design in a comment, on its line or
+/// the next, or after a citation and its comma, "§n.m" citing section n;
+/// one after another word, and a comment after code on its line, cite
+/// nothing. A citation of no section is a line naming the module and the
+/// line.
+let findsCitations = Test.Case(name = "finds the design's citations", run = fn() = {
+    let text =
+        "// a rule (design §2) and the\n"
+            <> "    // design §3.1, §4: what the formatter writes\n"
+            <> "let value = 1 // design §9\n"
+            <> "/// as the design\n"
+            <> "/// §5, report §6, says\n";
+    Test.equal(#(List.map(citationsIn(commentWords(text)),
+                          fn(citation) = #(citation.line, citation.section)),
+                 unknownIn("src/a.ern", text, [2, 3, 4])),
+               #([#(1, 2), #(2, 3), #(2, 4), #(5, 5)],
+                 ["src/a.ern:5: design §5 is no section of docs/design.md"]))
+})
+
+/// A section is a heading "## n. Title" outside fenced code; an unnumbered
+/// heading, a deeper one and a fenced one are none.
+let readsSections = Test.Case(name = "reads the design's sections", run = fn() = {
+    let text =
+        "# Design\n\n## 1. What it does\n\n## Glossary\n\n### 2. A part\n\n"
+            <> "```\n## 3. Fenced\n```\n\n## 12. Windows\n";
+    Test.equal(sectionsOf(text), [1, 12])
+})
+
+/// A test cites what its comment cites, the lines of "//" directly above its
+/// let, whether the formatter split the let or not; a doc block cites
+/// nothing a test names, nor does the comment of a let that is no test.
+let findsTested = Test.Case(name = "finds the sections the tests cite", run = fn() = {
+    let text =
+        "// design §1, §2: one test.\n"
+            <> "let first = Test.Case(name = \"a\", run = run)\n\n"
+            <> "// The formatter's split,\n// design §3: a second.\n"
+            <> "let second =\n    Test.Case(name = \"b\", run = run)\n\n"
+            <> "/// design §4: a doc block.\n"
+            <> "let third = Test.Case(name = \"c\", run = run)\n\n"
+            <> "// design §5: no test.\nlet value = 5\n";
+    Test.equal(testedIn(text), [1, 2, 3])
+})

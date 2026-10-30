@@ -1,0 +1,15 @@
+//
+// ErnestHttpd: the program's entry point, to be written
+//
+// The module the launcher runs, `build/ernest_httpd.erc`, whose `main` is the entry
+// point (report §8.1). It is the template's placeholder: rename the file to
+// the program's name and write the program here, as README.md's last
+// section says.
+//
+
+export fn main() : Unit =
+    Io.println("ernest_httpd: nothing yet")
+
+// design §1, §2, §3: the program is not written yet; this test goes as real
+// tests cite each section.
+let nothingYet = Test.Case(name = "nothing yet", run = fn() = Test.equal(1 + 1, 2))

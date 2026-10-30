@@ -1,0 +1,21 @@
+#!/bin/sh
+# The launcher: ern run on the program named as this file is, with everything
+# under lib/ on the load path, each library's build and the applications'
+# ebins through --libs-dir, from a checkout and from an unpacked release
+# alike. A leading --config-dir dir, the one option an operator gives, goes to
+# ern run (report §11.2, §8.3); everything after it goes to the program. The
+# working directory stays the caller's.
+root=$(cd "$(dirname "$0")/.." && pwd) || exit 1
+name=$(basename "$0")
+config=
+if [ "$1" = "--config-dir" ]; then
+    config=$2
+    shift 2
+fi
+set -- "$root/build/$name.erc" "$@"
+[ -d "$root/lib" ] && set -- --libs-dir "$root/lib" "$@"
+for dir in "$root"/lib/*/build; do
+    [ -d "$dir" ] && set -- --load-path "$dir" "$@"
+done
+[ -n "$config" ] && set -- --config-dir "$config" "$@"
+exec "${ERN:-ern}" run "$@"
