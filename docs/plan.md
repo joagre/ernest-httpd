@@ -15,7 +15,7 @@ Begun from `ernest-template` on 2026-10-30; nothing is built yet. The server's d
 
 ## Milestone 1: the server serving the site
 
-The proposal's order of work, each item a step of it, once Ernest's half is installed. Each item writes its sections of `docs/design.md` first, the proposal's text stated as rules and each section cited by a test, and then its code, so that the design is whole when the milestone closes.
+The proposal's order of work, each item a step of it, once Ernest's half is installed: Ernest's MVP 4.1 items 1 to 3 in an archive of `make release`, the milestone written once its item 1's sentences stand and built once items 2 and 3 do, and this milestone whole is that plan's item 4, what it finds of Ernest's going back there as CLAUDE.md says, before Ernest's items 5 and 6 close over it. Each item writes its sections of `docs/design.md` first, the proposal's text stated as rules and each section cited by a test, and then its code, so that the design is whole when the milestone closes.
 
 1. **`Config` and `Static`** as pure functions over their file reads: a configuration read through `libs/json` into one record with every rule it checks, and a request to a response, the path resolved under the root, the index file, the content types, `Last-Modified` and 304.
 2. **`Listener`, `Connection` and `AccessLog`**, serving the site over plain HTTP: heads read through `Http.readHead` with the bytes carried over, the connection kept or closed, the two deadlines, and the Common Log Format lines appended in batches.
