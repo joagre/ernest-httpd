@@ -4,7 +4,7 @@ A starting point, written 2026-10-26 in Ernest's repository from the first discu
 
 ## What it is for
 
-`ernest-httpd` serves one site, ernest-lang.org: static pages generated from Markdown, which Ernest's website milestone writes, and one WebSocket per visitor that connects xterm.js in the browser to a shell on the server. It implements what that needs of HTTP/1.1 and nothing more. It is a program written in Ernest, under Ernest's own license, built against an installed Ernest and never against its source; Ernest's `examples/web_server.ern` is its smallest ancestor.
+`ernest-httpd` serves one site, ernest-lang.org: static pages generated from Markdown, which Ernest's website milestone writes, and one WebSocket per visitor that connects xterm.js in the browser to a shell on the server. It implements what that needs of HTTP/1.1 and nothing more. It is a program written in Ernest, under Ernest's own license, built against an installed Ernest and never against its source; Ernest's web server example is its smallest ancestor, read from the installation as a user reads it, `share/doc/ernest/examples/web_server.ern`, for the shape of a listener, a connection and a response, whose hand-written parser `libs/http` replaces.
 
 ## HTTP/1.1
 
@@ -51,7 +51,7 @@ Behind the socket stands a shell in a container per visitor (*The live shell's s
 
 ## The live shell's server side
 
-Moved here from the site's decisions on 2026-10-26, where the page's side of the shell stays (Ernest's `docs/proposals/site/decisions.md`, *The live shell*); the pseudo-terminal is the WebSocket's other end, above.
+Moved here from the site's decisions on 2026-10-26, where the page's side of the shell stays (Ernest's site decisions, https://github.com/joagre/ernest/blob/main/docs/proposals/site/decisions.md,, *The live shell*); the pseudo-terminal is the WebSocket's other end, above.
 
 - One operating-system container per visitor, shared by every page: allocated when the shell first opens, reused after.
 - The image holds `ern`, the standard library, `src/libs/`, the examples and a scratch directory, and nothing secret, since a `foreign fn` reads the image and the environment.
@@ -65,7 +65,7 @@ Moved here from the site's decisions on 2026-10-26, where the page's side of the
 
 There is no pool and no manager (decided 2026-10-26).
 
-Measured on 2026-10-13, when the container per visitor was decided (moved here from Ernest's `docs/proposals/shell/attached.md` on 2026-10-27), on an eight-core machine: a bare `erl` with nothing loaded is 71 MB, a bare Ernest node listening 87 MB, and a program's run 72 MB at its peak and 0.6 seconds from start to exit. So a visitor's shell is a BEAM of about 90 MB that starts in under a second. On the web machine of two cores and 2 GB, the system and the site's own node take about 300 MB, which leaves ten or twelve shells at a cap of 128 MB each. Memory is the first and cheapest thing to add if the site ever wants more.
+Measured on 2026-10-13, when the container per visitor was decided (moved here from Ernest's attached-shell proposal, https://github.com/joagre/ernest/blob/main/docs/proposals/shell/attached.md, on 2026-10-27), on an eight-core machine: a bare `erl` with nothing loaded is 71 MB, a bare Ernest node listening 87 MB, and a program's run 72 MB at its peak and 0.6 seconds from start to exit. So a visitor's shell is a BEAM of about 90 MB that starts in under a second. On the web machine of two cores and 2 GB, the system and the site's own node take about 300 MB, which leaves ten or twelve shells at a cap of 128 MB each. Memory is the first and cheapest thing to add if the site ever wants more.
 
 What other systems do, read the same day:
 
@@ -231,7 +231,7 @@ Every request is a line of Common Log Format, `host - - [10/Oct/2026:13:55:36 +0
 
 It is run as a node, `ern run --config-dir /etc/ernest-httpd ernest-httpd.erc /etc/ernest-httpd/config.json`, the server's configuration's path its one argument, which the unit's `ExecStart` says, and the unit's `TimeoutStopSec` stands above the write deadline, so that an orderly stop ends before systemd kills it (decided 2026-10-27; a node since 2026-10-30).
 
-A node, so that the operator can attach a shell to it (Ernest's `docs/proposals/shell/attached.md`), look inside it and load a fix, which the deployment guide's section 6 shows on it: its directory, made by `ern config`, listens on the loopback alone and lists no peer but the operator's shell key, which dials in; `ern config --peer-dir` lists the two directories in each other, and the node's hangup reads its peers again. The costs, decided with them: a key and `ernest.conf` beside `config.json`, a listener on the loopback, about 15 MB for the carrier by the measure of 2026-10-13, and no deadlock detection, since a node detects none (§8.6), which matters less for processes that wait on sockets.
+A node, so that the operator can attach a shell to it (Ernest's attached-shell proposal, https://github.com/joagre/ernest/blob/main/docs/proposals/shell/attached.md,), look inside it and load a fix, which the deployment guide's section 6 shows on it: its directory, made by `ern config`, listens on the loopback alone and lists no peer but the operator's shell key, which dials in; `ern config --peer-dir` lists the two directories in each other, and the node's hangup reads its peers again. The costs, decided with them: a key and `ernest.conf` beside `config.json`, a listener on the loopback, about 15 MB for the carrier by the measure of 2026-10-13, and no deadlock detection, since a node detects none (§8.6), which matters less for processes that wait on sockets.
 
 A change of `config.json` is a restart. A static site restarts in about a second; the hangup is the node's reload of `ernest.conf`, its peers (§8.7), and reads nothing of the server's own, which has one configuration read at its start. `Type=notify` would need a Unix datagram socket, which Ernest lacks, and `Type=exec` serves.
 

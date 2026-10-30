@@ -22,5 +22,5 @@ The proposal's order of work, each item a step of it, once Ernest's half is inst
 3. **`Listener`, `Connection` and `AccessLog`**, serving the site over plain HTTP: heads read through `Http.readHead` with the bytes carried over, the connection kept or closed, the two deadlines, and the Common Log Format lines appended in batches.
 4. **TLS, the redirect listener and the hosts**: the canonical host and its redirects, port 80's ACME challenge, one certificate.
 5. **`Shell` and `Sessions`**, last, since they stand on the rest: the WebSocket, the session per cookie owning its command under `Os.startTerminal`, the lifetime, the takeover and the limits.
-6. **The deployment**: the node's directory with the operator's shell listed, the systemd unit, certbot's certificate with the deploy hook, the podman image, and the smoke test against the deployed site.
+6. **The deployment**: the node's directory with the operator's shell listed, the systemd unit, certbot's certificate with the deploy hook, the podman image, and the smoke test against the deployed site, an attached shell's `:processes` at the server's node among it.
 7. **The release**, 0.1.0, by `docs/release.md`, when the server first serves the site.
