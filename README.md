@@ -6,7 +6,7 @@ ernest-httpd serves one site, ernest-lang.org: static pages, and one WebSocket p
 
 ## Building
 
-It needs [Ernest](https://github.com/joagre/ernest) on your `PATH`, the floor the Makefile names, `ern 0.6`; `make` says so where another is found. `ERN=path/to/ern make` names another `ern`. This repository builds against Ernest installed from its release archive, as a user installs it, and never against Ernest's source tree: `make release` in an Ernest checkout writes `ern-VERSION.tar.gz`, which unpacks and installs with `make install PREFIX=<prefix>` into a directory of your own, and `ERN=<prefix>/bin/ern make` builds against it. What the installation's documents leave opaque or unsaid is a line of `language_feedback.md`, carried to Ernest, and never looked up in its source.
+It needs [Ernest](https://github.com/joagre/ernest) on your `PATH`, the floor the Makefile names, `ern 0.8`; `make` says so where another is found. `ERN=path/to/ern make` names another `ern`. This repository builds against Ernest installed from its release archive, as a user installs it, and never against Ernest's source tree: `make release` in an Ernest checkout writes `ern-VERSION.tar.gz`, which unpacks and installs with `make install PREFIX=<prefix>` into a directory of your own, and `ERN=<prefix>/bin/ern make` builds against it. What the installation's documents leave opaque or unsaid is a line of `language_feedback.md`, carried to Ernest, and never looked up in its source.
 
 ```
 make            builds: lib/ filled, each dependency and then the program compiled

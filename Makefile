@@ -19,7 +19,7 @@
 #   make clean    removes what the build and make lib wrote
 
 NAME        = ernest_httpd
-ERN_VERSION = 0.6
+ERN_VERSION = 0.8
 DEPS        =
 ERL_DEPS    =
 # What each program of examples/ writes, named by make test: the suffix of

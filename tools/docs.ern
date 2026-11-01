@@ -243,17 +243,9 @@ fn read(file : String, reading : Reading, line : String) : Reading =
 fn counted(reading : Reading, line : String) : Reading = {
     let indent = indentation(line);
     let begun = if reading.words == 0 then
-        Reading(..reading,
-                start = reading.line,
-                first = line,
-                indent = indent,
-                skip = isUnmeasured(line))
+        Reading(..reading, start = reading.line, first = line, =indent, skip = isUnmeasured(line))
     else if reading.item && indent <= reading.indent then
-        Reading(..ended("", reading),
-                start = reading.line,
-                first = line,
-                indent = indent,
-                skip = false)
+        Reading(..ended("", reading), start = reading.line, first = line, =indent, skip = false)
     else
         reading;
     Reading(..begun, words = begun.words + List.size(String.words(line)))
@@ -262,14 +254,14 @@ fn counted(reading : Reading, line : String) : Reading = {
 // The paragraph ended: kept where it is measured and past the measure.
 fn ended(file : String, reading : Reading) : Reading = {
     let found = if reading.skip == false && reading.words > measure then
-        Paragraph(file = file,
+        Paragraph(=file,
                   line = reading.start,
                   words = reading.words,
                   first = String.slice(reading.first, 0, 60))
             :: reading.found
     else
         reading.found;
-    Reading(..reading, words = 0, item = false, found = found)
+    Reading(..reading, words = 0, item = false, =found)
 }
 
 fn isUnmeasured(line : String) : Bool =
@@ -433,7 +425,7 @@ fn listed(previous : Word, words : List(Word)) : List(Citation) =
         word :: rest when word.line <= previous.line + 1 ->
             match cited(word.text) {
                 Some(section) ->
-                    Citation(line = word.line, section = section)
+                    Citation(line = word.line, =section)
                         :: (if String.endsWith(word.text, ",") then
                                 listed(word, rest)
                             else
@@ -536,11 +528,11 @@ let readsSections = Test.Case(name = "reads the design's sections", run = fn() =
 let findsTested = Test.Case(name = "finds the sections the tests cite", run = fn() = {
     let text =
         "// design §1, §2: one test.\n"
-            <> "let first = Test.Case(name = \"a\", run = run)\n\n"
+            <> "let first = Test.Case(name = \"a\", =run)\n\n"
             <> "// The formatter's split,\n// design §3: a second.\n"
-            <> "let second =\n    Test.Case(name = \"b\", run = run)\n\n"
+            <> "let second =\n    Test.Case(name = \"b\", =run)\n\n"
             <> "/// design §4: a doc block.\n"
-            <> "let third = Test.Case(name = \"c\", run = run)\n\n"
+            <> "let third = Test.Case(name = \"c\", =run)\n\n"
             <> "// design §5: no test.\nlet value = 5\n";
     Test.equal(testedIn(text), [1, 2, 3])
 })
