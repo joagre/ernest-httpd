@@ -117,7 +117,8 @@ fn waiting(listeners : List(Address(Listener.ListenerMsg)),
         }
       | ListenerEnded(down) -> {
             stopped(listeners, List.size(listeners) - 1, log);
-            fault("a listener ended: " <> Io.show(down.reason))
+            Io.printlnError("a listener ended: " <> Io.show(down.reason));
+            Os.exit(1)
         }
     }
 
