@@ -33,7 +33,7 @@
                 "--cap-drop=ALL", "--security-opt=no-new-privileges",
                 "--memory", "128m", "--pids-limit", "128",
                 "--tmpfs", "/home/shell:size=64m", "ernest-shell"],
-    "most-at-once": 10,
+    "most-at-once": 6,
     "starts": { "count": 10, "within": 3600000 },
     "lifetime": 300000, "warning": 60000,
     "message-limit": 65536, "hangup": 5000
