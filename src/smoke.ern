@@ -552,7 +552,8 @@ fn stopSeconds(unit : String) : Optional(Int) =
 // passes Config.parse, every rule but the file system's, with a shell;
 // the unit holds each line the design names, Type=exec, User=httpd, the
 // working directory, the PATH with the prefix's bin first, the installed
-// launcher's ExecStart with node/ and its config.json, the prefix's ern in
+// launcher's ExecStart with node/ and its config.json, the migrate in
+// ExecStartPre, the prefix's ern in
 // ExecReload, Restart=on-failure, KillMode=mixed,
 // AmbientCapabilities=CAP_NET_BIND_SERVICE, ProtectSystem=strict,
 // PrivateTmp=yes and the ReadWritePaths, and a TimeoutStopSec above
@@ -585,6 +586,7 @@ let holdsTheDeployment = Test.Case(name = "holds the files of deploy/", run = fn
                        "User=httpd",
                        "WorkingDirectory=/home/httpd",
                        "Environment=PATH=" <> prefix <> "/bin:/usr/local/bin:/usr/bin:/bin",
+                       "ExecStartPre=/usr/bin/podman system migrate",
                        "ExecStart="
                            <> prefix
                            <> "/bin/ernest_httpd --config-dir "

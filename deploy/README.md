@@ -131,7 +131,7 @@ The unit binds 80 and 443 as no root by `AmbientCapabilities=CAP_NET_BIND_SERVIC
 
 Yaws' privbind page, https://upload.int.onexglobal.io/privbind.yaws, lists the ways a server that is not root binds a port below 1024, `setcap` on the binary, authbind, privbind and a sysctl among them, of which the unit's `AmbientCapabilities=CAP_NET_BIND_SERVICE` is systemd's own and `setcap` the fallback.
 
-`systemctl reload ernest-httpd` reads the node's peers again, `ern reload`, and nothing of `config.json`, whose change is `systemctl restart ernest-httpd`; `systemctl stop ernest-httpd` ends the server in order, each shell closed with 1001.
+The unit's `ExecStartPre` runs `podman system migrate` as `httpd`, which ends podman's pause process of the instance before, whose private `/tmp` the restart deleted; without it a visitor's shell after a restart fails with `container create failed (no logs from conmon)`, and the journal has conmon's `Failed to generate random path for console-socket`. `systemctl reload ernest-httpd` reads the node's peers again, `ern reload`, and nothing of `config.json`, whose change is `systemctl restart ernest-httpd`; `systemctl stop ernest-httpd` ends the server in order, each shell closed with 1001.
 
 ## 9. The certificate
 

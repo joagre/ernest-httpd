@@ -16,6 +16,12 @@ WorkingDirectory=/home/httpd
 # The prefix's bin first: the launcher finds ern there, and ern the prefix's
 # erl; the shell's command finds podman in /usr/bin.
 Environment=PATH=/home/httpd/opt/local/bin:/usr/local/bin:/usr/bin:/bin
+# Rootless podman keeps a pause process in the user's own scope, outside
+# this unit, holding the mount namespace of the instance that started it;
+# a container with a terminal needs that instance's private /tmp, which a
+# restart has deleted. The migrate ends it, and the first shell starts a
+# new one in this instance's namespace.
+ExecStartPre=/usr/bin/podman system migrate
 ExecStart=/home/httpd/opt/local/bin/ernest_httpd --config-dir /home/httpd/ernest-httpd/node /home/httpd/ernest-httpd/node/config.json
 # A reload reads the node's peers again, and nothing of config.json, whose
 # change is a restart.
