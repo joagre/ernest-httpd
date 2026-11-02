@@ -296,6 +296,7 @@ fn listening(idle : Int,
     let server =
         Connection.Server(=config,
                           site = Static.site(config.root, config.contentTypes),
+                          challenge = None,
                           log = adapted(self(), Logged));
     Either.mapLeft({
                        let socket <- Tcp.listen("127.0.0.1", 0);
@@ -464,6 +465,7 @@ let endsWithItsAcceptor = Test.Case(name = "ends when its acceptor ends", run = 
         let server =
             Connection.Server(=config,
                               site = Static.site(config.root, config.contentTypes),
+                              challenge = None,
                               log = adapted(self(), Logged));
         let _ = spawnMonitored(fn() = serve(socket, server), Ended);
         // the acceptor, spawned in serve, waits in its accept, which the
@@ -524,6 +526,7 @@ let endsServingLast =
             let server =
                 Connection.Server(=config,
                                   site = Static.site(config.root, config.contentTypes),
+                                  challenge = None,
                                   log = adapted(me, Logged));
             let listener = spawnMonitored(fn() = endingWithStandIns(me, socket, server), Ended);
             receive {

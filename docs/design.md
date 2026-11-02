@@ -10,9 +10,9 @@ ernest-httpd serves one site, ernest-lang.org: its static pages, and one WebSock
 
 The program's processes, each with what it owns; a process is spawned by the one that holds its address. A socket is called by one process at a time, and is closed by the process that holds it once no call on it is under way, or ends with the process that owns it, since a call on a socket another process has closed faults (report Appendix E.18).
 
-**The entry process** runs `ErnestHttpd.main`. It takes one argument, the configuration's path, and refuses another count with the line `usage: ernest_httpd config.json` on standard error and the status 2. It reads the configuration within 5000 milliseconds, `Config.read`, §4, and refuses it with the path, `: ` and `Config.reason` on standard error and the status 1; a configuration with a listener of a kind other than `plain` is refused so, the first such by its index, as `listeners[i].kind is plain`.
+**The entry process** runs `ErnestHttpd.main`. It takes one argument, the configuration's path, and refuses another count with the line `usage: ernest_httpd config.json` on standard error and the status 2. It reads the configuration within 5000 milliseconds, `Config.read`, §4, and refuses it with the path, `: ` and `Config.reason` on standard error and the status 1.
 
-It then makes the site, §5, starts the access log, §8, and for each listener of the configuration, in its order, listens, `Tcp.listen`, prints a line of `listening on `, the address, `:` and the port it got, `Tcp.port`, on standard output, and spawns the listener process, §7, monitored. A listen or a port that fails is said on standard error with the address, `:`, the port, `: ` and the error as `Io.show` writes it, and ends the program with the status 1. It then subscribes to the program's end, `Os.termination`, and waits.
+It then makes the site, §5, starts the access log, §8, and for each listener of the configuration, in its order, listens, `Tcp.listen` for a `plain` or a `redirect` listener and `Tcp.listenTls` with its certificate and its key for a `tls` one, prints a line of `listening on `, the address, `:` and the port it got, `Tcp.port`, on standard output, and spawns the listener process, §7, monitored, with the server its connections share, §6: the configuration, the site, the access log's address and, for a `redirect` listener, its challenge site, §9. A listen or a port that fails is said on standard error with the address, `:`, the port, `: ` and the error as `Io.show` writes it, and ends the program with the status 1. It then subscribes to the program's end, `Os.termination`, and waits.
 
 **The end.** Told of the program's end, the entry process tells each listener process to stop, `Listener.Stop`, waits for each to end, has the access log write what it holds, `AccessLog.Flush`, and answers the end's reply. A listener process that ends before the end was told is a failure of the program: the entry process stops the others and has the log write what it holds, as at the end, and then says `a listener ended: ` and the reason as `Io.show` writes it on standard error and ends the program with the status 1.
 
@@ -29,9 +29,10 @@ Each module has one job, which its doc block states.
 | Module | File | Owns |
 |---|---|---|
 | `ErnestHttpd` | `src/ernest_httpd.ern` | the entry point: the program's start and its end, §2 |
-| `Config` | `src/config.ern` | the configuration: the file read into the record of §4, and every rule of §4 checked |
+| `Config` | `src/config.ern` | the configuration: the file read into the record of §4, and every rule of §4 checked; and a host's port dropped, `Config.withoutPort`, by which §4 and §9 compare hosts |
 | `Static` | `src/static.ern` | a request for a file to its response, §5 |
 | `Connection` | `src/connection.ern` | a socket's life: each request read, checked, served and answered, and its line told to the log, §6 |
+| `Hosts` | `src/hosts.ern` | a request's host and what it decides before the site: the canonical host served, a redirect host and the redirect listener answered 301, a host that is neither 421, and the ACME challenge served, §9 |
 | `Listener` | `src/listener.ern` | the connections of one listening socket: accepted within the caps, each in a process of its own, and closed in order at the end, §7 |
 | `AccessLog` | `src/access_log.ern` | the access log: each response a line of Common Log Format, appended by the file's path in batches, §8 |
 
@@ -56,6 +57,7 @@ type Error = Unreadable(Io.Error) | NotJson(Json.Error) | Invalid(field : String
 Config.read : (Path, Int) -> Either(Error, Config) // the file read within the milliseconds, each rule checked
 Config.parse : (String) -> Either(Error, Config) // the text read, every rule but the file system's checked
 Config.reason : (Error) -> String // the error in prose, the field first for an Invalid
+Config.withoutPort : (String) -> String // the host with its port dropped, as §9 drops it
 ```
 
 **The file.** The file is one object whose members are the fields of the table, each required but `shell`, and no other; a text whose value is no object breaks `is an object`, its field named `the configuration`. A field that is absent breaks the rule `is required`, and a member of no field breaks the rule `is no field of` and the object's name: `the configuration` at the top, `a plain listener` for a listener with its kind named, and otherwise the object's field, `timeouts`. A field whose value is not what the table says breaks the rule naming it, `is a string`, `is an integer`, `is an array` or `is an object`; an array's elements are so held one by one, indexed from 0, `redirect-hosts[1]`.
@@ -72,7 +74,7 @@ A string of the file, a member's name among them, breaks `holds no control chara
 | `listeners[i].acme-challenge` | a string, a path, with `"redirect"` alone | `names a directory` |
 | `root` | a string, a path | `names a directory` |
 | `canonical-host` | a string | `is not empty` |
-| `redirect-hosts` | an array of strings | each `is not empty` |
+| `redirect-hosts` | an array of strings | each `is not empty` and `is not the canonical host`, compared as §9 compares hosts |
 | `timeouts.head`, `timeouts.idle`, `timeouts.write`, `timeouts.file` | integers, milliseconds: a request's head, an idle connection, a write, and a read or an append of the file system | each `is above 0` |
 | `limits.request-line`, `limits.headers` | integers, bytes | each `is above 0` |
 | `limits.connections`, `limits.connections-per-address` | integers, counts | each `is above 0` |
@@ -102,11 +104,15 @@ Static.contentTypes : Map(String, String) // the built-in table
 Static.serve : (Site, Http.Request, Int) -> #(Http.Response, Bytes) // the response and its body
 Static.error : (Site, Int, Int) -> #(Http.Response, Bytes) // the response of the status, its body the error's
 Static.withoutBody : (#(Http.Response, Bytes)) -> #(Http.Response, Bytes) // a HEAD's response of a GET's
+Static.pathAndQuery : (String) -> Optional(String) // a target's path and query as written; None for a target of another form
+Static.authority : (String) -> Optional(String) // the authority of a target in absolute form; None for a target of another form
 ```
 
 **The method.** `GET` and `HEAD` are served; any other method answers 405 with `Allow: GET, HEAD`. A `HEAD` request's response is the `GET`'s with its body dropped and, but for a 304, `Content-Length` the body's size, as `withoutBody` makes it.
 
-**The path.** The target is read by code point, as `Path` reads a path, in origin form, the path up to the first `?`, or in absolute form, a scheme, RFC 3986's, a letter and then letters, digits, `+`, `-` and `.`, then `://`, an authority up to the next `/` or `?`, and the path up to the first `?`, `/` where the path is empty; the query is ignored. A target of another form answers 400. The path is percent-decoded: `%` and two hexadecimal digits are the byte they write, and `%2F`, in either case, answers 400, as does a `%` not followed by two hexadecimal digits, and bytes that are not UTF-8. A decoded path holding a control character, U+0000 to U+001F or U+007F, answers 400.
+**The path.** The target is read by code point, as `Path` reads a path, in origin form, the path up to the first `?`, or in absolute form, a scheme, RFC 3986's, a letter and then letters, digits, `+`, `-` and `.`, then `://`, an authority up to the next `/` or `?`, and the path up to the first `?`, `/` where the path is empty; the query is ignored. A target of another form answers 400.
+
+`pathAndQuery` answers the target from its path on, the query among it, an origin-form target whole, `/` standing for an absolute-form target's empty path, before its query, and `None` for a target of another form; `authority` answers an absolute-form target's authority, and `None` for a target of another form. The path is percent-decoded: `%` and two hexadecimal digits are the byte they write, and `%2F`, in either case, answers 400, as does a `%` not followed by two hexadecimal digits, and bytes that are not UTF-8. A decoded path holding a control character, U+0000 to U+001F or U+007F, answers 400.
 
 The path is then split at `/` into segments: an empty segment and `.` are dropped; `..` answers 400, and otherwise a segment beginning with `.` answers 404. A path that ends in `/`, or has no segments, asks for a directory.
 
@@ -134,17 +140,18 @@ The path is then split at `/` into segments: an empty segment and `.` are droppe
 
 ## 6. The connection
 
-`Connection.serve(socket, server, listener)` is a connection's life, run in the process that owns the socket: it reads one request at a time, in the order they come, answers each before it reads the next, tells the listener at `listener` what §7 needs, and returns when the connection closes. `server` is what every connection shares. The connection first asks for its remote address, `Tcp.remote`'s host, and closes the connection without a response, and without a line, where the host cannot tell it.
+`Connection.serve(socket, server, listener)` is a connection's life, run in the process that owns the socket: it reads one request at a time, in the order they come, answers each before it reads the next, tells the listener at `listener` what §7 needs, and returns when the connection closes. `server` is what every connection of a listener shares. The connection first asks for its remote address, `Tcp.remote`'s host, and closes the connection without a response, and without a line, where the host cannot tell it. On a `tls` listener the first read runs the handshake, within the idle deadline, the first read's, as E.18 has it, and a handshake that fails ends the connection as a read that fails does.
 
 ```
-type Server = Server(config : Config.Config, site : Static.Site, log : Address(AccessLog.LogMsg))
+type Server = Server(config : Config.Config, site : Static.Site, challenge : Optional(Static.Site),
+  log : Address(AccessLog.LogMsg)) // the challenge site on a redirect listener, §9, None on another
 type Told = RequestRead(Process) | ResponseWritten(Process) // what a connection tells its listener, §7
 Connection.serve : (Address(Tcp.SocketMsg), Server, Address(Told)) -> Unit
 ```
 
 **Reading.** Where no bytes were carried past the last head, the connection waits for the next request's first bytes within the idle deadline, `timeouts.idle`, and closes the connection without a response, and without a line, where none come, the client closes or the read fails. It then reads the head, `Http.readRequest` with the bytes carried and the limits `limits.request-line` and `limits.headers`, within the head deadline, `timeouts.head`. A head that does not end in time answers 408; a `Malformed` head 400, `LineTooLong` 414 and `HeadersTooLarge` 431; a client that closes before the head ends, or a read that fails otherwise, ends the connection without a response and without a line. Each response of this paragraph closes the connection.
 
-**The request.** In this order: a version other than 1.0 and 1.1 answers 505; a 1.1 request without `Host`, and a request with two `Host` headers, answers 400; a request with `Transfer-Encoding` answers 413; one with `Content-Length` whose values are not one decimal number, each value digits alone and every value the same number, answers 400, above 0 answers 413, and 0 has no body. Each of these closes the connection, its body dropped for a `HEAD` as `Static.withoutBody` drops it, §5. Any other request is served by `Static.serve`, each read of the file system within `timeouts.file`.
+**The request.** In this order: a version other than 1.0 and 1.1 answers 505; a 1.1 request without `Host`, and a request with two `Host` headers, answers 400; a request with `Transfer-Encoding` answers 413; one with `Content-Length` whose values are not one decimal number, each value digits alone and every value the same number, answers 400, above 0 answers 413, and 0 has no body. Each of these closes the connection, its body dropped for a `HEAD` as `Static.withoutBody` drops it, §5. Any other request is answered as its host decides, `Hosts.answer`, §9, and served by `Static.serve` where that is `Served`, each read of the file system within `timeouts.file`.
 
 **The response.** Every response carries `Date`, the time it is written as RFC 9110's date, then the configuration's `headers`, then its own, and `Connection: close` where the connection closes after it, or `Connection: keep-alive` where a 1.0 request's connection is kept. It is written with `Http.render` within the write deadline, `timeouts.write`; a write that fails or does not end in time closes the connection, and is told neither to the log nor to the listener. The connection closes after a response of the two paragraphs above, after a 1.1 request whose `Connection` headers list `close`, and after a 1.0 request whose `Connection` headers do not list `keep-alive`, the headers' values parted at commas, trimmed and compared in any case; otherwise it reads the next request with the bytes after the head carried.
 
@@ -184,6 +191,22 @@ AccessLog.line : (LogMsg) -> Optional(String) // an Entry's line, without its li
 
 **Batches.** The process takes every entry in its mailbox and appends their lines in one `Fs.append`, by the path, within `ms`, so that a rotated file is opened anew by its name at the next append; an append that fails is said on standard error with the path, `: ` and the error as `Io.show` writes it, and its lines are lost. A `Flush` is answered once every entry sent before it is written, or lost.
 
+## 9. The hosts
+
+`Hosts.answer(config, challenge, request, ms)` is what a request's host decides before the site serves it: `Served` where the site serves the request, or the response that answers it instead. `challenge` is the redirect listener's challenge site, `None` on a `plain` or a `tls` listener; `ms` bounds each read of the file system.
+
+```
+type Answer = Served | Answered(#(Http.Response, Bytes))
+Hosts.host : (Http.Request) -> Optional(String) // the request's host, its port dropped; None where the request names none
+Hosts.answer : (Config.Config, Optional(Static.Site), Http.Request, Int) -> Answer
+```
+
+**The host.** A request's host is the authority of a target in absolute form, `Static.authority`, and otherwise its first `Host` header's value; a request whose target is not in absolute form and that has no `Host` header names none. The port is dropped, `Config.withoutPort`: a `:` at the host's end, after its last `]` where it holds one, with the digits after it, none among them; any other tail stands. A host is compared with the configuration's `canonical-host` and `redirect-hosts`, their ports dropped the same, in any case.
+
+**The answer.** In this order: a request whose host is neither the canonical host nor a redirect host answers 421, a request that names none being the canonical host's. On the redirect listener, a request whose target's path and query, `Static.pathAndQuery`, begins with `/.well-known/acme-challenge/` is served by `Static.serve` from the challenge site, the target from after `/.well-known/acme-challenge`, a 301 it answers being 404 instead, since a challenge is a file; every other request answers 301. On another listener, a redirect host's request answers 301, and the canonical host's is `Served`. The challenge site is `Static.site` of the directory `acme-challenge` names and its `.well-known/acme-challenge` below it, with the configuration's content types, so that the directory is what certbot's `--webroot-path` is given.
+
+**The 301.** Its `Location` is `https://`, the canonical host as the configuration writes it, and the target's path and query as written; it has no body. A target of another form answers 400 instead, as §5 answers it. The 421 is `Static.error`'s. A `HEAD`'s response is the `GET`'s with its body dropped, as `Static.withoutBody` makes it; the connection is kept or closed after any response of this section as §6 has it for a served request.
+
 ## Glossary
 
 The names that recur across modules, one for each concept, in every module. A name the report states takes the report's; the names of the glossary of Ernest's `guide/style.md` hold here too.
@@ -196,9 +219,11 @@ The names that recur across modules, one for each concept, in every module. A na
 - **target**: a request's target as the client wrote it, `Http.Request`'s; its **path** is the target's path, decoded and split into **segments**, §5.
 - **response**: an `Http.Response` with its body beside it, `#(Http.Response, Bytes)`, as `Static.serve` answers it and `Http.render` takes it, §5. Not `reply`, which is the prelude's.
 - **table**: the content types by extension, the built-in table extended by the configuration's, §5. Not `mimeTypes`.
-- **server**: what every connection shares, `Connection.Server`: the configuration, the site and the access log's address, §6.
+- **server**: what every connection of a listener shares, `Connection.Server`: the configuration, the site, the redirect listener's challenge site and the access log's address, §6.
 - **connection**: a socket a listener accepted and the process that serves it, §6, §7. Not `client`, `handler`.
 - **listener**: a listening socket of the configuration and the process that accepts on it, §7. Not `acceptor`.
 - **deadline**: a time of the configuration's a wait is bounded by, the idle, head, write and file deadlines, `timeouts`, §4, §6. Not `timeout`, which is the library's `Io.Timeout`.
 - **remote address**: the host of a connection's far end, `Tcp.remote`'s, by which connections are capped and logged, §7, §8. Not `peer`, which is the report's.
 - **entry**: what a connection tells the access log of one response, `AccessLog.Entry`, written as a line, §8.
+- **host**: a request's host, its `Host` header's value or an absolute-form target's authority, its port dropped, §9; the **canonical host** is the configuration's `canonical-host`, served, and a **redirect host** one of its `redirect-hosts`, answered 301. Not `domain`, `vhost`.
+- **challenge**: the ACME challenge's files, served from the redirect listener's challenge site, `Static.Site` of its directory's `.well-known/acme-challenge`, §9. Not `webroot`.

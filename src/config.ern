@@ -11,6 +11,10 @@
 /// top, `listeners[0].port`. `reason` writes it for the operator, to stand
 /// after the file's path.
 ///
+/// A host is compared with its port dropped, `withoutPort`, and in any
+/// case: a redirect host so compared with the canonical host is refused,
+/// and a request's host is so compared with both (design §9).
+///
 /// ## Examples
 ///
 /// A field that breaks a rule, and the rule it breaks:
@@ -109,7 +113,11 @@ export fn parse(text : String) : Either(Error, Config) = {
     let root <- path(top, "", "root");
     let canonicalHost <- string(top, "", "canonical-host");
     let _ <- notEmpty("canonical-host", String.toList(canonicalHost));
-    let redirectHosts <- elements(top, "", "redirect-hosts", nonEmptyString);
+    let redirectHosts <-
+        elements(top,
+                 "",
+                 "redirect-hosts",
+                 fn(field, value) = redirectHost(field, value, canonicalHost));
     let timeouts <- timeouts(top);
     let limits <- limits(top);
     let contentTypes <- contentTypes(top);
@@ -137,6 +145,26 @@ export fn reason(error : Error) : String =
       | NotJson(cause) -> "is not JSON: " <> Io.show(cause)
       | Invalid(=field, =rule) -> field <> " " <> rule
     }
+
+/// The host with its port dropped: a `:` and digits alone after it at the
+/// host's end, none among them; any other tail stands. A `:` inside an
+/// IPv6 address's brackets is followed by its `]`, so `[::1]` stands whole.
+///
+/// ### Examples
+///
+/// ```ernest
+/// #(Config.withoutPort("ernest-lang.org:443"),
+///   Config.withoutPort("[::1]"),
+///   Config.withoutPort("ernest-lang.org:abc"))
+/// // => #("ernest-lang.org", "[::1]", "ernest-lang.org:abc")
+/// ```
+export fn withoutPort(host : String) : String = {
+    let #(_, beforeDigits) = List.span(List.reverse(String.toList(host)), Char.isAsciiDigit);
+    match beforeDigits {
+        ':' :: beforePort -> String.fromList(List.reverse(beforePort))
+      | _ -> host
+    }
+}
 
 // The fields of the configuration's top, in the table's order.
 let fields : List(String) =
@@ -426,6 +454,19 @@ fn nonEmptyString(field : String, value : Json.Value) : Either(Error, String) = 
     Right(text)
 }
 
+// A redirect host: a string, not empty, and not the canonical host, the two
+// compared with their ports dropped and in any case, as design §9 compares
+// hosts.
+fn redirectHost(field : String,
+                value : Json.Value,
+                canonicalHost : String) : Either(Error, String) = {
+    let host <- nonEmptyString(field, value);
+    if String.toLower(withoutPort(host)) == String.toLower(withoutPort(canonicalHost)) then
+        Left(Invalid(=field, rule = "is not the canonical host"))
+    else
+        Right(host)
+}
+
 fn string(object : Map(String, Json.Value),
           prefix : String,
           name : String) : Either(Error, String) = {
@@ -648,9 +689,10 @@ let refusesTypes =
                               Some(#("listeners", "is an array"))]))
 
 // design §4: the rules on values: a kind, a port, a count, an empty string
-// and an empty array, a control character, a content type's dot, a header's
-// token and a header the server writes itself, in any case, the shell's
-// path and its warning.
+// and an empty array, an empty redirect host and one that is the canonical
+// host, its port dropped and in any case, a control character, a content
+// type's dot, a header's token and a header the server writes itself, in
+// any case, the shell's path and its warning.
 let refusesValues =
     Test.Case(name = "refuses a value that breaks a rule",
               run = fn() =
@@ -663,6 +705,9 @@ let refusesValues =
                                             "\"canonical-host\": \"\"")),
                               broken(edited("\"listeners\": [",
                                             "\"listeners\": [], \"unused\": [")),
+                              broken(edited("\"ernest-lang.se\"]", "\"\"]")),
+                              broken(edited("\"ernest-lang.se\"]", "\"Ernest-Lang.ORG:443\"]")),
+                              broken(edited("\"www.ernest-lang.org\"", "\"ernest-lang.org:\"")),
                               broken(edited("\"command\": [\"podman\", \"run\", \"-it\", \"--rm\", \"ernest-shell\"]",
                                             "\"command\": []")),
                               broken(edited("\"canonical-host\": \"ernest-lang.org\"",
@@ -685,6 +730,9 @@ let refusesValues =
                               Some(#("timeouts.file", "is above 0")),
                               Some(#("canonical-host", "is not empty")),
                               Some(#("unused", "is no field of the configuration")),
+                              Some(#("redirect-hosts[1]", "is not empty")),
+                              Some(#("redirect-hosts[1]", "is not the canonical host")),
+                              Some(#("redirect-hosts[0]", "is not the canonical host")),
                               Some(#("shell.command", "is not empty")),
                               Some(#("canonical-host", "holds no control character")),
                               Some(#("canonical-host", "holds no control character")),
@@ -701,8 +749,10 @@ let refusesValues =
                               Some(#("shell.warning", "is below the lifetime"))]))
 
 // design §4: the fields are checked in the table's order, a row's rules in
-// theirs: a bad port before a bad root, a listener before the next, and
-// the warning below the lifetime after the message limit's.
+// theirs: a bad port before a bad root, a listener before the next, an
+// empty canonical host before a redirect host, a redirect host's
+// emptiness before its being the canonical host, and the warning below
+// the lifetime after the message limit's.
 let checksInOrder =
     Test.Case(name = "answers the first rule broken",
               run = fn() =
@@ -712,13 +762,52 @@ let checksInOrder =
                               broken(String.replace(edited("\"port\": 443", "\"port\": -1"),
                                                     "\"port\": 80",
                                                     "\"port\": -1")),
+                              broken(String.replace(edited("\"canonical-host\": \"ernest-lang.org\"",
+                                                           "\"canonical-host\": \"\""),
+                                                    "\"ernest-lang.se\"]",
+                                                    "\"\"]")),
+                              broken(edited("\"redirect-hosts\": [\"www.ernest-lang.org\", \"ernest-lang.se\"]",
+                                            "\"redirect-hosts\": [\"\", \"ernest-lang.org\"]")),
                               broken(String.replace(edited("\"warning\": 60000",
                                                            "\"warning\": 300000"),
                                                     "\"message-limit\": 65536",
                                                     "\"message-limit\": 0"))],
                              [Some(#("listeners[0].port", "is 0 to 65535")),
                               Some(#("listeners[0].port", "is 0 to 65535")),
+                              Some(#("canonical-host", "is not empty")),
+                              Some(#("redirect-hosts[0]", "is not empty")),
                               Some(#("shell.message-limit", "is above 0"))]))
+
+// design §9: a host's port is a `:` and digits alone at its end, none among
+// them, after the last `]` where it holds one: dropped where it is, and
+// any other tail left standing, so that the host matches none of the
+// configuration's.
+let dropsPorts =
+    Test.Case(name = "drops a host's port",
+              run = fn() =
+                  Test.equal(List.map(["ernest-lang.org",
+                                       "ernest-lang.org:443",
+                                       "localhost:8443",
+                                       "ernest-lang.org:",
+                                       "[::1]:8080",
+                                       "[::1]",
+                                       "[::1]:",
+                                       "ernest-lang.org:abc",
+                                       "ernest-lang.org:80:80",
+                                       "ernest-lang.org:8a",
+                                       "::1"],
+                                      withoutPort),
+                             ["ernest-lang.org",
+                              "ernest-lang.org",
+                              "localhost",
+                              "ernest-lang.org",
+                              "[::1]",
+                              "[::1]",
+                              "[::1]",
+                              "ernest-lang.org:abc",
+                              "ernest-lang.org:80",
+                              "ernest-lang.org:8a",
+                              ":"]))
 
 // design §4: a name's dot and a path's `/` are its first code points,
 // though a combining mark follows them, as `Path` reads them.

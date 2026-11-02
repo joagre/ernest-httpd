@@ -6,7 +6,7 @@ Read *Where we are* first, then the table of milestones; the milestones to come 
 
 ## Where we are
 
-Begun from `ernest-template` on 2026-10-30. Ernest 0.9.0 was installed from its release archive on 2026-11-02, under a prefix of the user's, and milestone 1's items 1 and 2 were built against it the same day, the design's §2 and §4 to §8: the site served over plain HTTP; three releases that answered the feedback lines were installed that day, the same version text. The server's design is `docs/proposals/basic/proposal.md`, decided in Ernest's repository through 2026-10-30 and split here; what it asks of Ernest, TLS in `Tcp`, a pseudo-terminal in `Os` and four libraries, is Ernest's MVP 4.1, the WebSocket's frames a module of this program's since 2026-11-01 (the proposal's *WebSocket*, *The module*), whose first four items come before this milestone's build, and this repository builds against Ernest installed from a release archive.
+Begun from `ernest-template` on 2026-10-30. Ernest 0.9.0 was installed from its release archive on 2026-11-02, under a prefix of the user's, and milestone 1's items 1 to 3 were built against it the same day, the design's §2 and §4 to §9: the site served over plain HTTP and TLS, with the redirect listener and the hosts; three releases that answered the feedback lines were installed that day, the same version text. The server's design is `docs/proposals/basic/proposal.md`, decided in Ernest's repository through 2026-10-30 and split here; what it asks of Ernest, TLS in `Tcp`, a pseudo-terminal in `Os` and four libraries, is Ernest's MVP 4.1, the WebSocket's frames a module of this program's since 2026-11-01 (the proposal's *WebSocket*, *The module*), whose first four items come before this milestone's build, and this repository builds against Ernest installed from a release archive.
 
 ## Milestones
 
@@ -19,7 +19,7 @@ The proposal's order of work, each item a step of it, once Ernest's half is inst
 
 1. **`Config` and `Static`**: done 2026-11-02, the log's *Item 1: the configuration and the static site*.
 2. **`Listener`, `Connection` and `AccessLog`**, with the entry point: done 2026-11-02, the log's *Item 2: the listener, the connection and the access log*.
-3. **TLS, the redirect listener and the hosts**: the canonical host and its redirects, port 80's ACME challenge, one certificate; it lifts item 2's refusal of a listener whose kind is not `plain`, design §2.
+3. **TLS, the redirect listener and the hosts**: done 2026-11-02, the log's *Item 3: TLS, the redirect listener and the hosts*.
 4. **`WebSocket`, `Shell` and `Sessions`**, last, since they stand on the rest: the frames and the accept value as the proposal's *The module* has them, the WebSocket, the session per cookie owning its command under `Os.startTerminal`, the lifetime, the takeover and the limits.
 5. **The deployment**: the node's directory with the operator's shell listed, the systemd unit, certbot's certificate with the deploy hook, the podman image, and the smoke test against the deployed site, an attached shell's `:processes` at the server's node among it.
 6. **The release**, 0.1.0, by `docs/release.md`, when the server first serves the site.

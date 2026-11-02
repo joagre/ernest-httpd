@@ -1,0 +1,578 @@
+/// The hosts: what a request's host decides before the site serves it, the
+/// canonical host served, a redirect host and the redirect listener
+/// answered 301, a host that is neither 421, and the ACME challenge served
+/// on the redirect listener (design §9).
+///
+/// A connection asks `answer` for each request it does not refuse itself,
+/// and serves the request from the site where the answer is `Served`;
+/// otherwise it writes the answer's response, as it writes the site's. The
+/// connection is given the challenge site where it is the redirect
+/// listener's, and `None` on another.
+///
+/// A request's host is read from its target where the target is in
+/// absolute form, and from its `Host` header otherwise, `host`; it is
+/// compared with the configuration's hosts, their ports dropped as its own
+/// is, `Config.withoutPort`, and in any case, and a request that names none
+/// is the canonical host's. A redirect's `Location` is always on the
+/// canonical host, written as the configuration writes it, its port among
+/// it, over HTTPS.
+///
+/// ## Examples
+///
+/// A redirect host's request answered 301 to the canonical host:
+///
+/// ```ernest
+/// let text =
+///     "{\"listeners\": [{\"kind\": \"plain\", \"address\": \"::\", \"port\": 80}],"
+///         <> " \"root\": \"site\", \"canonical-host\": \"ernest-lang.org\","
+///         <> " \"redirect-hosts\": [\"www.ernest-lang.org\"],"
+///         <> " \"timeouts\": {\"head\": 1, \"idle\": 1, \"write\": 1, \"file\": 1},"
+///         <> " \"limits\": {\"request-line\": 1, \"headers\": 1, \"connections\": 1,"
+///         <> " \"connections-per-address\": 1}, \"content-types\": {}, \"headers\": {},"
+///         <> " \"access-log\": \"access.log\"}";
+/// let request =
+///     Http.Request(method = "GET",
+///                  target = "/docs?page=2",
+///                  version = Http.Version(major = 1, minor = 1),
+///                  headers = [Http.Header(name = "Host", value = "WWW.ernest-lang.org:80")]);
+/// Either.map(Config.parse(text), fn(config) = Hosts.answer(config, None, request, 1000))
+/// // => Right(Answered(#(Response(version = Version(major = 1, minor = 1), status = 301, headers = [Header(name = "Location", value = "https://ernest-lang.org/docs?page=2")]), <<>>)))
+/// ```
+
+//
+// Types
+//
+
+/// What a request's host decides: the site serves the request, or the
+/// response answers it instead, its body beside it.
+export type Answer = Served | Answered(#(Http.Response, Bytes))
+
+// What a request's host is to the configuration: the canonical host, a
+// redirect host, or neither.
+type Named = CanonicalHost | RedirectHost | Neither
+
+//
+// The host
+//
+
+/// The request's host, its port dropped, as the client wrote it: the
+/// authority of a target in absolute form, and otherwise the value of the
+/// first `Host` header; `None` where the target is not in absolute form and
+/// there is no `Host` header.
+///
+/// The port is a `:` and digits alone after it at the host's end, as
+/// `Config.withoutPort` drops it; any other tail stands, and the host then
+/// matches none of the configuration's.
+///
+/// ### Examples
+///
+/// ```ernest
+/// let request =
+///     Http.Request(method = "GET",
+///                  target = "/",
+///                  version = Http.Version(major = 1, minor = 1),
+///                  headers = [Http.Header(name = "Host", value = "[::1]:8080")]);
+/// Hosts.host(request)
+/// // => Some("[::1]")
+/// ```
+export fn host(request : Http.Request) : Optional(String) =
+    match Static.authority(request.target) {
+        Some(authority) -> Some(Config.withoutPort(authority))
+      | None -> Optional.map(Http.header(request.headers, "Host"), Config.withoutPort)
+    }
+
+// What the request's host is: a redirect host, the canonical host, which a
+// request that names none is, or neither, each compared with its port
+// dropped and in any case.
+fn named(config : Config.Config, request : Http.Request) : Named = {
+    let isHost = fn(name, configured) = String.toLower(Config.withoutPort(configured)) == name;
+    match Optional.map(host(request), String.toLower) {
+        None ->
+            CanonicalHost
+      | Some(name) ->
+            if List.any(config.redirectHosts, fn(redirect) = isHost(name, redirect)) then
+                RedirectHost
+            else if isHost(name, config.canonicalHost) then
+                CanonicalHost
+            else
+                Neither
+    }
+}
+
+//
+// The answer
+//
+
+/// What the request's host decides before the site serves it, on a listener
+/// whose challenge site is `challenge`, the redirect listener's, or `None`
+/// on another; each read of the file system bounded by `ms` milliseconds.
+///
+/// In this order: a host that is neither the canonical host nor a redirect
+/// host answers 421. On the redirect listener a request whose path and
+/// query begin with `/.well-known/acme-challenge/` is served from the
+/// challenge site with the rest of its target, a 301 the site answers being
+/// 404, and every other request answers 301; on another listener a redirect
+/// host's request answers 301, and the canonical host's is `Served`.
+///
+/// A 301's `Location` is `https://`, the canonical host and the target's
+/// path and query as written, and it has no body; where the target is in
+/// neither origin nor absolute form, it answers 400 instead. A `HEAD`'s
+/// response has its body dropped, as `Static.withoutBody` drops it.
+export fn answer(config : Config.Config,
+                 challenge : Optional(Static.Site),
+                 request : Http.Request,
+                 ms : Int) : Answer =
+    match #(named(config, request), challenge) {
+        #(Neither, _) ->
+            Answered(headed(request, Static.error(site(config), 421, ms)))
+      | #(_, Some(challengeSite)) ->
+            Answered(match Optional.andThen(Static.pathAndQuery(request.target), challenged) {
+                Some(target) -> challengeResponse(challengeSite, request, target, ms)
+              | None -> redirected(config, request, ms)
+            })
+      | #(RedirectHost, None) ->
+            Answered(redirected(config, request, ms))
+      | #(CanonicalHost, None) ->
+            Served
+    }
+
+// The path the challenge's files are asked for under, which a challenge's
+// target begins with, and then a `/`.
+let challengePath : List(Char) = String.toList("/.well-known/acme-challenge")
+
+// A challenge's target on the challenge site: the path and query after
+// /.well-known/acme-challenge, where a `/` follows it; None for another.
+// By code point, as a target is read.
+fn challenged(pathAndQuery : String) : Optional(String) = {
+    let chars = String.toList(pathAndQuery);
+    let count = List.size(challengePath);
+    match List.drop(chars, count) {
+        '/' :: _ as rest when List.take(chars, count) == challengePath ->
+            Some(String.fromList(rest))
+      | _ ->
+            None
+    }
+}
+
+// The challenge's file served from the challenge site with the target
+// given, a 301 for a directory being 404, since a challenge is a file.
+fn challengeResponse(challengeSite : Static.Site,
+                     request : Http.Request,
+                     target : String,
+                     ms : Int) : #(Http.Response, Bytes) = {
+    let #(response, body) = Static.serve(challengeSite, Http.Request(..request, =target), ms);
+    if response.status == 301 then
+        headed(request, Static.error(challengeSite, 404, ms))
+    else
+        #(response, body)
+}
+
+// The 301 to the canonical host over HTTPS, the target's path and query as
+// written, with no body; 400 for a target of another form.
+fn redirected(config : Config.Config, request : Http.Request, ms : Int) : #(Http.Response, Bytes) =
+    match Static.pathAndQuery(request.target) {
+        Some(written) -> {
+            let location =
+                Http.Header(name = "Location",
+                            value = "https://" <> config.canonicalHost <> written);
+            headed(request,
+                   #(Http.Response(version = Http.Version(major = 1, minor = 1),
+                                   status = 301,
+                                   headers = [location]),
+                     <<>>))
+        }
+      | None ->
+            headed(request, Static.error(site(config), 400, ms))
+    }
+
+// The configuration's site, whose errors are the 421's and the 400's.
+fn site(config : Config.Config) : Static.Site =
+    Static.site(config.root, config.contentTypes)
+
+// The response, its body dropped for a HEAD.
+fn headed(request : Http.Request, response : #(Http.Response, Bytes)) : #(Http.Response, Bytes) =
+    if request.method == "HEAD" then Static.withoutBody(response) else response
+
+//
+// Tests
+//
+
+// The scratch directory the tests write the challenge's directory under,
+// `acme`, as certbot's `--webroot-path` is given it.
+let scratch : String = "build/scratch/hosts"
+
+// The modification time of the challenge's file, Sun, 06 Nov 1994 08:49:37
+// GMT.
+let modified : Int = 784111777000
+
+// A configuration of the tests' with the canonical host and the redirect
+// hosts given, as JSON.
+fn configured(canonicalHost : String, redirectHosts : String) : String =
+    "{\"listeners\": [{\"kind\": \"redirect\", \"address\": \"127.0.0.1\", \"port\": 0,\n"
+        <> "                \"acme-challenge\": \""
+        <> scratch
+        <> "/acme\"}],\n"
+        <> " \"root\": \""
+        <> scratch
+        <> "/site\",\n"
+        <> " \"canonical-host\": \""
+        <> canonicalHost
+        <> "\",\n"
+        <> " \"redirect-hosts\": "
+        <> redirectHosts
+        <> ",\n"
+        <> " \"timeouts\": {\"head\": 5000, \"idle\": 5000, \"write\": 5000, \"file\": 5000},\n"
+        <> " \"limits\": {\"request-line\": 1024, \"headers\": 4096,\n"
+        <> "            \"connections\": 4, \"connections-per-address\": 4},\n"
+        <> " \"content-types\": {}, \"headers\": {},\n"
+        <> " \"access-log\": \""
+        <> scratch
+        <> "/access.log\"}\n"
+
+// The tests' configuration: its canonical host written in mixed case, and
+// two redirect hosts; and one whose canonical host and redirect host are
+// written with ports.
+let configuration : String =
+    configured("Ernest-Lang.org", "[\"www.ernest-lang.org\", \"ernest-lang.com\"]")
+
+let withPorts : String = configured("localhost:8443", "[\"www.localhost:80\"]")
+
+// The challenge site as the entry process makes it, of the directory the
+// configuration names and its .well-known/acme-challenge below it.
+let challengeSite : Static.Site =
+    Static.site(Path(scratch <> "/acme") <> Path(".well-known/acme-challenge"), Map.empty)
+
+// The challenge's directory with a token's file, and a directory beside it
+// with no index.html; and the configuration of the text.
+fn prepared(text : String) : Either(String, Config.Config) = {
+    let token = Path(scratch <> "/acme/.well-known/acme-challenge/token-1");
+    let files = {
+        let _ <- Fs.makeDir(Path(scratch <> "/acme/.well-known/acme-challenge/sub"), 5000);
+        let _ <- Fs.write(token, String.toUtf8("token-1.key"), 5000);
+        Fs.setModified(token, modified, 5000)
+    };
+    let _ <-
+        Either.mapLeft(files, fn(error) = "cannot prepare " <> scratch <> ": " <> Io.show(error));
+    Either.mapLeft(Config.parse(text), Config.reason)
+}
+
+// An answer as a test compares it: served by the site, or the response's
+// status, its headers and its body as text.
+type Compared =
+    BySite
+  | Responded(status : Int, headers : List(Http.Header), body : Optional(String))
+
+fn compared(answer : Answer) : Compared =
+    match answer {
+        Served ->
+            BySite
+      | Answered(#(response, body)) ->
+            Responded(status = response.status,
+                      headers = response.headers,
+                      body = String.fromUtf8(body))
+    }
+
+// A request on a listener, its challenge site or None, and the answer
+// expected.
+type Check = Check(challenge : Optional(Static.Site), request : Http.Request, expected : Compared)
+
+// Each check's request answered under the tests' configuration once the
+// challenge's directory is prepared, and the answers against those
+// expected; and so under the configuration of the text.
+fn decided(checks : List(Check)) : Test.Result =
+    decidedUnder(configuration, checks)
+
+fn decidedUnder(text : String, checks : List(Check)) : Test.Result =
+    match prepared(text) {
+        Right(config) ->
+            Test.equal(List.map(checks,
+                                fn(check) =
+                                    compared(answer(config, check.challenge, check.request, 5000))),
+                       List.map(checks, fn(check) = check.expected))
+      | Left(error) ->
+            Test.Failed(error)
+    }
+
+fn request(method : String, target : String, headers : List(Http.Header)) : Http.Request =
+    Http.Request(=method, =target, version = Http.Version(major = 1, minor = 1), =headers)
+
+fn withHost(host : String) : List(Http.Header) =
+    [Http.Header(name = "Host", value = host)]
+
+// A GET of the target naming the host, on the redirect listener and on
+// another, and the answer expected.
+fn onRedirect(target : String, host : String, expected : Compared) : Check =
+    Check(challenge = Some(challengeSite),
+          request = request("GET", target, withHost(host)),
+          =expected)
+
+fn elsewhere(target : String, host : String, expected : Compared) : Check =
+    Check(challenge = None, request = request("GET", target, withHost(host)), =expected)
+
+fn header(name : String, value : String) : Http.Header =
+    Http.Header(=name, =value)
+
+// The 301 to the location, with no body.
+fn moved(location : String) : Compared =
+    Responded(status = 301, headers = [header("Location", location)], body = Some(""))
+
+// An error's plain text, as Static.error writes it.
+fn plainError(status : Int) : Compared =
+    Responded(=status,
+              headers = [header("Content-Type", "text/plain; charset=utf-8")],
+              body = Some(Int.toString(status) <> " " <> Http.reason(status) <> "\n"))
+
+// The challenge's file served.
+let tokenServed : Compared =
+    Responded(status = 200,
+              headers = [header("Content-Type", "application/octet-stream"),
+                         header("Last-Modified", "Sun, 06 Nov 1994 08:49:37 GMT")],
+              body = Some("token-1.key"))
+
+// design §9: a request's host is an absolute-form target's authority, its
+// Host header aside, and otherwise its Host header's value, its port
+// dropped, a `:` and digits alone at its end, any other tail standing, and
+// its case kept; a request in origin form with no Host names none.
+let readsTheHost =
+    Test.Case(name = "reads a request's host",
+              run = fn() =
+                  Test.equal(List.map([request("GET", "/", withHost("ernest-lang.org")),
+                                       request("GET", "/", withHost("Ernest-Lang.org:8080")),
+                                       request("GET", "/", withHost("localhost:443")),
+                                       request("GET", "/", withHost("ernest-lang.org:")),
+                                       request("GET", "/", withHost("ernest-lang.org:abc")),
+                                       request("GET", "/", withHost("ernest-lang.org:80:80")),
+                                       request("GET", "/", withHost("[::1]:8080")),
+                                       request("GET", "/", withHost("[::1]")),
+                                       request("GET", "/", withHost("[fe80::1%25eth0]:443")),
+                                       request("GET",
+                                               "http://www.ernest-lang.org:80/a",
+                                               withHost("example.com")),
+                                       request("GET", "http://ernest-lang.com", []),
+                                       request("GET", "*", withHost("ernest-lang.org")),
+                                       request("GET", "/", []),
+                                       request("GET", "*", [])],
+                                      host),
+                             [Some("ernest-lang.org"),
+                              Some("Ernest-Lang.org"),
+                              Some("localhost"),
+                              Some("ernest-lang.org"),
+                              Some("ernest-lang.org:abc"),
+                              Some("ernest-lang.org:80"),
+                              Some("[::1]"),
+                              Some("[::1]"),
+                              Some("[fe80::1%25eth0]"),
+                              Some("www.ernest-lang.org"),
+                              Some("ernest-lang.com"),
+                              Some("ernest-lang.org"),
+                              None,
+                              None]))
+
+// design §9: a host is compared with the canonical host and the redirect
+// hosts in any case, its port dropped.
+let comparesInAnyCase =
+    Test.Case(name = "compares a host in any case",
+              run = fn() =
+                  decided([elsewhere("/a.txt", "ernest-lang.org", BySite),
+                           elsewhere("/a.txt", "ERNEST-LANG.ORG:443", BySite),
+                           elsewhere("http://eRnEsT-lAnG.oRg/a.txt", "example.com", BySite),
+                           elsewhere("/a.txt",
+                                     "WWW.Ernest-Lang.Org",
+                                     moved("https://Ernest-Lang.org/a.txt")),
+                           elsewhere("/a.txt",
+                                     "Ernest-Lang.COM:80",
+                                     moved("https://Ernest-Lang.org/a.txt"))]))
+
+// A request that names no host: in origin form, with no Host, as HTTP/1.0
+// lets it be.
+let unnamed : Http.Request =
+    Http.Request(..request("GET", "/a.txt", []), version = Http.Version(major = 1, minor = 0))
+
+// design §9: the configuration's hosts are compared with their ports
+// dropped too, in any case: a canonical host written with a port serves
+// its host with any port or none, a redirect host so written answers 301,
+// and the 301's Location keeps the canonical host as written, its port
+// among it.
+let comparesConfiguredPorts =
+    Test.Case(name = "compares the configuration's hosts without their ports",
+              run = fn() =
+                  decidedUnder(withPorts,
+                               [elsewhere("/a.txt", "localhost", BySite),
+                                elsewhere("/a.txt", "LOCALHOST:8443", BySite),
+                                elsewhere("/a.txt", "localhost:80", BySite),
+                                elsewhere("/docs?x=1",
+                                          "www.localhost",
+                                          moved("https://localhost:8443/docs?x=1")),
+                                elsewhere("/a.txt",
+                                          "WWW.localhost:8080",
+                                          moved("https://localhost:8443/a.txt")),
+                                onRedirect("/a.txt",
+                                           "localhost",
+                                           moved("https://localhost:8443/a.txt")),
+                                elsewhere("/a.txt", "localhost:8443x", plainError(421))]))
+
+// design §9: a request whose host is neither the canonical host nor a
+// redirect host answers 421 as Static.error writes it, on any listener and
+// before a challenge, one whose port is not digits alone among them; one
+// that names none is the canonical host's.
+let answersMisdirected =
+    Test.Case(name = "answers a host it does not serve with 421",
+              run = fn() =
+                  decided([elsewhere("/a.txt", "example.com", plainError(421)),
+                           elsewhere("/a.txt", "ernest-lang.org.", plainError(421)),
+                           elsewhere("/a.txt", "ernest-lang.org:abc", plainError(421)),
+                           elsewhere("/a.txt", "ernest-lang.org:80:80", plainError(421)),
+                           elsewhere("/a.txt", "", plainError(421)),
+                           elsewhere("http:///a.txt", "ernest-lang.org", plainError(421)),
+                           elsewhere("http://example.com/a.txt",
+                                     "ernest-lang.org",
+                                     plainError(421)),
+                           onRedirect("/a.txt", "example.com", plainError(421)),
+                           onRedirect("/.well-known/acme-challenge/token-1",
+                                      "example.com",
+                                      plainError(421)),
+                           Check(challenge = None, request = unnamed, expected = BySite),
+                           Check(challenge = Some(challengeSite),
+                                 request = unnamed,
+                                 expected = moved("https://Ernest-Lang.org/a.txt"))]))
+
+// design §9: on a listener other than the redirect listener, a redirect
+// host's request answers 301, whatever its method, and the canonical
+// host's is served by the site.
+let redirectsHosts =
+    Test.Case(name = "redirects a redirect host's request",
+              run = fn() =
+                  decided([elsewhere("/docs/",
+                                     "www.ernest-lang.org",
+                                     moved("https://Ernest-Lang.org/docs/")),
+                           elsewhere("/.well-known/acme-challenge/token-1",
+                                     "ernest-lang.com",
+                                     moved("https://Ernest-Lang.org/.well-known/acme-challenge/token-1")),
+                           Check(challenge = None,
+                                 request = request("POST", "/form", withHost("ernest-lang.com")),
+                                 expected = moved("https://Ernest-Lang.org/form")),
+                           elsewhere("/docs/", "ernest-lang.org", BySite),
+                           elsewhere("/.well-known/acme-challenge/token-1",
+                                     "ernest-lang.org",
+                                     BySite),
+                           Check(challenge = None,
+                                 request = request("POST", "/form", withHost("ernest-lang.org")),
+                                 expected = BySite)]))
+
+// design §9: on the redirect listener every request that asks for no
+// challenge answers 301, the canonical host's and a redirect host's alike,
+// whatever its method.
+let redirectsTheRedirectListener =
+    Test.Case(name = "redirects every other request on the redirect listener",
+              run = fn() =
+                  decided([onRedirect("/", "ernest-lang.org", moved("https://Ernest-Lang.org/")),
+                           onRedirect("/docs?page=2",
+                                      "www.ernest-lang.org",
+                                      moved("https://Ernest-Lang.org/docs?page=2")),
+                           onRedirect("/.well-known/acme-challenge",
+                                      "ernest-lang.org",
+                                      moved("https://Ernest-Lang.org/.well-known/acme-challenge")),
+                           onRedirect("/.well-known/acme-challenge-1/token-1",
+                                      "ernest-lang.org",
+                                      moved("https://Ernest-Lang.org/.well-known/acme-challenge-1/token-1")),
+                           onRedirect("//.well-known/acme-challenge/token-1",
+                                      "ernest-lang.org",
+                                      moved("https://Ernest-Lang.org//.well-known/acme-challenge/token-1")),
+                           onRedirect("/.well-known/acme%2Dchallenge/token-1",
+                                      "ernest-lang.org",
+                                      moved("https://Ernest-Lang.org/.well-known/acme%2Dchallenge/token-1")),
+                           Check(challenge = Some(challengeSite),
+                                 request = request("POST", "/form", withHost("ernest-lang.org")),
+                                 expected = moved("https://Ernest-Lang.org/form"))]))
+
+// design §9: on the redirect listener a request whose path and query begin
+// with /.well-known/acme-challenge/ is served from the challenge site, the
+// target from after /.well-known/acme-challenge, for any host served; a
+// challenge directory asked for without its `/` answers 404 and not 301,
+// and one asked for with it 404 where it has no index.html.
+let servesTheChallenge =
+    Test.Case(name = "serves the ACME challenge on the redirect listener",
+              run = fn() =
+                  decided([onRedirect("/.well-known/acme-challenge/token-1",
+                                      "ernest-lang.org",
+                                      tokenServed),
+                           onRedirect("/.well-known/acme-challenge/token-1?x=1",
+                                      "www.ernest-lang.org",
+                                      tokenServed),
+                           onRedirect("http://ernest-lang.com/.well-known/acme-challenge/token-1",
+                                      "example.com",
+                                      tokenServed),
+                           onRedirect("/.well-known/acme-challenge/token-2",
+                                      "ernest-lang.org",
+                                      plainError(404)),
+                           onRedirect("/.well-known/acme-challenge/sub",
+                                      "ernest-lang.org",
+                                      plainError(404)),
+                           onRedirect("/.well-known/acme-challenge/sub/",
+                                      "ernest-lang.org",
+                                      plainError(404)),
+                           onRedirect("/.well-known/acme-challenge/",
+                                      "ernest-lang.org",
+                                      plainError(404)),
+                           onRedirect("/.well-known/acme-challenge/../token-1",
+                                      "ernest-lang.org",
+                                      plainError(400))]))
+
+// design §9: a 301's Location is https://, the canonical host as the
+// configuration writes it, and the target's path and query as written, `/`
+// for an absolute-form target's empty path; a target of another form
+// answers 400 where a 301 is due.
+let writesTheRedirect =
+    Test.Case(name = "writes a redirect's location",
+              run = fn() =
+                  decided([onRedirect("/a%20b.txt?q=%2F&r",
+                                      "ernest-lang.org",
+                                      moved("https://Ernest-Lang.org/a%20b.txt?q=%2F&r")),
+                           onRedirect("http://www.ernest-lang.org",
+                                      "example.com",
+                                      moved("https://Ernest-Lang.org/")),
+                           onRedirect("http://www.ernest-lang.org?q=1",
+                                      "example.com",
+                                      moved("https://Ernest-Lang.org/?q=1")),
+                           elsewhere("HTTP://ernest-lang.com:80/docs",
+                                     "example.com",
+                                     moved("https://Ernest-Lang.org/docs")),
+                           onRedirect("*", "ernest-lang.org", plainError(400)),
+                           onRedirect("ernest-lang.org:443", "ernest-lang.org", plainError(400)),
+                           elsewhere("*", "www.ernest-lang.org", plainError(400)),
+                           elsewhere("a.txt", "ernest-lang.com", plainError(400))]))
+
+// design §9: a HEAD's response is the GET's with its body dropped and its
+// size as Content-Length, as Static.withoutBody makes it: a 421's, a 301's,
+// a 400's, a challenge's and a challenge directory's 404.
+let dropsHeadBodies = Test.Case(name = "drops a body for a HEAD", run = fn() = {
+    fn head(challenge : Optional(Static.Site),
+            target : String,
+            host : String,
+            expected : Compared) : Check =
+        Check(=challenge, request = request("HEAD", target, withHost(host)), =expected);
+    fn sized(expected : Compared, size : String) : Compared =
+        match expected {
+            Responded(=status, =headers) ->
+                Responded(=status,
+                          headers = headers <> [header("Content-Length", size)],
+                          body = Some(""))
+          | BySite ->
+                BySite
+        };
+    decided([head(None, "/a.txt", "example.com", sized(plainError(421), "24")),
+             head(None,
+                  "/a.txt",
+                  "www.ernest-lang.org",
+                  sized(moved("https://Ernest-Lang.org/a.txt"), "0")),
+             head(None, "*", "www.ernest-lang.org", sized(plainError(400), "16")),
+             head(Some(challengeSite),
+                  "/.well-known/acme-challenge/token-1",
+                  "ernest-lang.org",
+                  sized(tokenServed, "11")),
+             head(Some(challengeSite),
+                  "/.well-known/acme-challenge/sub",
+                  "ernest-lang.org",
+                  sized(plainError(404), "14")),
+             head(None, "/a.txt", "ernest-lang.org", BySite)])
+})

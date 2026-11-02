@@ -7,6 +7,8 @@
 /// its method and target; it adds `Date` and the configuration's headers to
 /// the response before it writes it. `error` is the response of a status
 /// the connection answers itself, and `withoutBody` makes it a `HEAD`'s.
+/// `pathAndQuery` and `authority` read a target as `serve` reads it, for
+/// what a request's host decides before the site serves it (design §9).
 ///
 /// `serve` reads the file system for each request, each read bounded by the
 /// milliseconds given, and keeps nothing between requests: a file changed
@@ -243,29 +245,75 @@ fn beginsWithDot(part : String) : Bool =
       | _ -> false
     }
 
-// The target's path as written, without its query: in origin form, or in
-// absolute form after its scheme and its authority, `/` where that path is
-// empty; None for a target of another form. The target is read by code
-// point, as its `/`, `:` and `?` are written.
-fn writtenPath(target : String) : Optional(String) =
+/// The target from its path on, its query among it, as the client wrote
+/// it: an origin-form target whole, and an absolute-form one after its
+/// scheme and its authority, `/` standing for an empty path; `None` for a
+/// target of another form, which `serve` answers 400.
+///
+/// The target is read by code point, as `Path` reads a path.
+///
+/// ### Examples
+///
+/// ```ernest
+/// #(Static.pathAndQuery("/docs?page=2"),
+///   Static.pathAndQuery("http://ernest-lang.org?q=1"),
+///   Static.pathAndQuery("*"))
+/// // => #(Some("/docs?page=2"), Some("/?q=1"), None)
+/// ```
+export fn pathAndQuery(target : String) : Optional(String) =
+    Optional.map(form(target), fn(read) = read.pathAndQuery)
+
+/// The authority of a target in absolute form, between its scheme's `://`
+/// and the next `/` or `?`, as the client wrote it, its port among it;
+/// `None` for a target of another form, origin form among them.
+///
+/// ### Examples
+///
+/// ```ernest
+/// #(Static.authority("http://ernest-lang.org:80/docs"), Static.authority("/docs"))
+/// // => #(Some("ernest-lang.org:80"), None)
+/// ```
+export fn authority(target : String) : Optional(String) =
+    Optional.andThen(form(target), fn(read) = read.authority)
+
+// A target read in origin form or in absolute form: its authority, None in
+// origin form, and its path and query as written, `/` standing for an
+// absolute-form target's empty path.
+type Form = Form(authority : Optional(String), pathAndQuery : String)
+
+// The target read in its form, by code point, as its `/`, `:` and `?` are
+// written; None for a target of another form.
+fn form(target : String) : Optional(Form) =
     match String.toList(target) {
-        '/' :: _ as chars ->
-            Some(beforeQuery(chars))
+        '/' :: _ ->
+            Some(Form(authority = None, pathAndQuery = target))
       | chars -> {
             let #(scheme, rest) = List.span(chars, fn(char) = char != ':');
             match rest {
                 ':' :: '/' :: '/' :: afterScheme when isScheme(scheme) -> {
-                    let #(_, path) = List.span(afterScheme, fn(char) = char != '/' && char != '?');
-                    match beforeQuery(path) {
-                        "" -> Some("/")
-                      | written -> Some(written)
-                    }
+                    let #(authority, path) =
+                        List.span(afterScheme, fn(char) = char != '/' && char != '?');
+                    Some(Form(authority = Some(String.fromList(authority)),
+                              pathAndQuery = rooted(path)))
                 }
               | _ ->
                     None
             }
         }
     }
+
+// An absolute-form target's path and query, `/` before a query or nothing,
+// where the path is empty.
+fn rooted(chars : List(Char)) : String =
+    match chars {
+        '/' :: _ -> String.fromList(chars)
+      | _ -> "/" <> String.fromList(chars)
+    }
+
+// The target's path as written, without its query; None for a target of
+// another form.
+fn writtenPath(target : String) : Optional(String) =
+    Optional.map(pathAndQuery(target), fn(written) = beforeQuery(String.toList(written)))
 
 // The characters up to the first `?`.
 fn beforeQuery(chars : List(Char)) : String = {
@@ -635,6 +683,66 @@ let readsAbsoluteForm =
                           getting(withPage, "HTTPS://ernest-lang.org:443/docs/", htmlFile("docs")),
                           getting(withPage, "web+x.1-2://ernest-lang.org/a.txt", textFile("alpha")),
                           getting(withPage, "http://ernest-lang.org/docs", redirect("/docs/"))]))
+
+// design §5: pathAndQuery answers the target from its path on, the query
+// among it: an origin-form target whole, an absolute-form one after its
+// scheme and its authority, `/` for its empty path, before a query or not;
+// and None for a target of another form.
+let readsPathAndQuery =
+    Test.Case(name = "reads a target's path and query",
+              run = fn() =
+                  Test.equal(List.map(["/",
+                                       "/docs?page=2",
+                                       "//docs/../a.txt?x=/y",
+                                       "http://ernest-lang.org/docs?page=2",
+                                       "http://ernest-lang.org",
+                                       "http://ernest-lang.org?q=/a.txt",
+                                       "HTTPS://user@ernest-lang.org:443/",
+                                       "*",
+                                       "ernest-lang.org:443",
+                                       "a.txt",
+                                       "1http://ernest-lang.org/a.txt",
+                                       "http:/ernest-lang.org/a.txt"],
+                                      pathAndQuery),
+                             [Some("/"),
+                              Some("/docs?page=2"),
+                              Some("//docs/../a.txt?x=/y"),
+                              Some("/docs?page=2"),
+                              Some("/"),
+                              Some("/?q=/a.txt"),
+                              Some("/"),
+                              None,
+                              None,
+                              None,
+                              None,
+                              None]))
+
+// design §5: authority answers an absolute-form target's authority as
+// written, up to the next `/` or `?`, its port among it, and an empty one
+// where it is empty; None for a target of another form, origin form among
+// them.
+let readsAuthority =
+    Test.Case(name = "reads a target's authority",
+              run = fn() =
+                  Test.equal(List.map(["http://ernest-lang.org/docs",
+                                       "http://Ernest-Lang.org:8080?q=1",
+                                       "http://[::1]:80/",
+                                       "web+x.1-2://user@ernest-lang.org",
+                                       "http:///a.txt",
+                                       "/docs",
+                                       "//ernest-lang.org/docs",
+                                       "*",
+                                       "ernest-lang.org:443"],
+                                      authority),
+                             [Some("ernest-lang.org"),
+                              Some("Ernest-Lang.org:8080"),
+                              Some("[::1]:80"),
+                              Some("user@ernest-lang.org"),
+                              Some(""),
+                              None,
+                              None,
+                              None,
+                              None]))
 
 // design §5: an extension the table lacks is application/octet-stream, and
 // the site's own table wins over the built-in one.

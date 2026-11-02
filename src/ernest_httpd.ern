@@ -4,15 +4,19 @@
 /// `main` takes the configuration's path, the one argument, and reads the
 /// file; a file that breaks a rule is refused with the field named, before
 /// anything listens. It then starts the access log and, for each listener
-/// of the configuration, listens, says the port it got, and spawns the
-/// listener's process. At the program's end, a termination signal, it
-/// tells each listener to stop, waits for each to end its connections in
-/// order, has the access log write what it holds, and lets the end go on.
+/// of the configuration, listens, over TLS with the certificate and the key
+/// for a `tls` listener, says the port it got, and spawns the listener's
+/// process, whose connections share the configuration, the site, the
+/// access log and, for the `redirect` listener, the ACME challenge's site.
+/// At the program's end, a termination signal, it tells each listener to
+/// stop, waits for each to end its connections in order, has the access
+/// log write what it holds, and lets the end go on.
 ///
 /// The exit statuses are 2 for a command line of another count of
 /// arguments, 1 for a configuration refused and a listen that fails, and
 /// the signal's at the end. A listener's process that ends before the end
-/// is a failure: the entry process faults, after the others have stopped.
+/// is a failure: the entry process stops the others, says so on standard
+/// error, and exits with the status 1.
 ///
 /// ## Examples
 ///
@@ -47,19 +51,11 @@ export fn main() : Unit receiving MainMsg =
     }
 
 // The configuration read within 5000 milliseconds and refused with the
-// path where it breaks a rule or has a listener that is not plain.
+// path where it breaks a rule.
 fn started(path : String) : Unit receiving MainMsg =
     match Config.read(Path(path), 5000) {
-        Left(error) ->
-            refused(path, Config.reason(error))
-      | Right(config) ->
-            match List.find(List.indexed(config.listeners),
-                            fn(#(_, listener)) = listener.kind != Config.Plain) {
-                Some(#(index, _)) ->
-                    refused(path, "listeners[" <> Int.toString(index) <> "].kind is plain")
-              | None ->
-                    serving(config)
-            }
+        Left(error) -> refused(path, Config.reason(error))
+      | Right(config) -> serving(config)
     }
 
 fn refused(path : String, reason : String) : Unit = {
@@ -67,16 +63,31 @@ fn refused(path : String, reason : String) : Unit = {
     Os.exit(1)
 }
 
-// The site made, the access log started and each listener serving, and
-// then the wait for the program's end.
+// The site made, the access log started and each listener serving with
+// its server, and then the wait for the program's end.
 fn serving(config : Config.Config) : Unit receiving MainMsg = {
     let site = Static.site(config.root, config.contentTypes);
     let log = AccessLog.start(config.accessLog, config.timeouts.file);
-    let server = Connection.Server(=config, =site, =log);
-    let listeners = List.map(config.listeners, fn(listener) = listening(listener, server));
+    let listeners = List.map(config.listeners, fn(listener) = {
+        let server =
+            Connection.Server(=config, =site, challenge = challenge(config, listener), =log);
+        listening(listener, server)
+    });
     Os.termination(Terminated);
     waiting(listeners, log)
 }
+
+// The challenge site of a redirect listener: its directory's
+// .well-known/acme-challenge, with the configuration's content types
+// (design §9); None for another listener.
+fn challenge(config : Config.Config, listener : Config.Listener) : Optional(Static.Site) =
+    match listener.kind {
+        Config.Redirect(=acmeChallenge) ->
+            Some(Static.site(acmeChallenge <> Path(".well-known/acme-challenge"),
+                             config.contentTypes))
+      | Config.Plain or Config.Tls() ->
+            None
+    }
 
 // A listener of the configuration listening, its address and port said on
 // standard output, and its process spawned and monitored; a listen that
@@ -84,7 +95,7 @@ fn serving(config : Config.Config) : Unit receiving MainMsg = {
 fn listening(listener : Config.Listener,
              server : Connection.Server) : Address(Listener.ListenerMsg) receiving MainMsg = {
     let opened = {
-        let socket <- Tcp.listen(listener.address, listener.port);
+        let socket <- listened(listener);
         let port <- Tcp.port(socket);
         Right(#(socket, port))
     };
@@ -104,10 +115,21 @@ fn listening(listener : Config.Listener,
     }
 }
 
+// The listening socket of the listener's kind: over TLS, with its
+// certificate and its key, for a tls listener, and plain for another.
+fn listened(listener : Config.Listener) : Either(Io.Error, Address(Tcp.ListenerMsg)) =
+    match listener.kind {
+        Config.Tls(=certificate, =key) ->
+            Tcp.listenTls(listener.address, listener.port, certificate, key)
+      | Config.Plain or Config.Redirect() ->
+            Tcp.listen(listener.address, listener.port)
+    }
+
 // The wait for the program's end, which is taken in order before its
 // reply is answered. A listener that ends before is a failure of the
-// program: the others are stopped and the log written as at the end, and
-// the entry process faults with the listener's reason.
+// program: the others are stopped and the log written as at the end, the
+// listener's reason said on standard error, and the program ends with the
+// status 1.
 fn waiting(listeners : List(Address(Listener.ListenerMsg)),
            log : Address(AccessLog.LogMsg)) : Unit receiving MainMsg =
     receive {
@@ -149,14 +171,15 @@ fn ended(count : Int) : Unit receiving MainMsg =
 // test runs them.
 let scratch : String = "build/scratch/ernest_httpd"
 
-// A configuration of the scratch site, with the listeners given, as JSON.
+// A configuration of the scratch site, with the listeners given, as JSON,
+// and a redirect host.
 fn configuration(listeners : String) : String =
     "{\"listeners\": ["
         <> listeners
         <> "],\n"
         <> " \"root\": \""
         <> scratch
-        <> "/site\", \"canonical-host\": \"localhost\", \"redirect-hosts\": [],\n"
+        <> "/site\", \"canonical-host\": \"localhost\", \"redirect-hosts\": [\"www.localhost\"],\n"
         <> " \"timeouts\": {\"head\": 5000, \"idle\": 60000, \"write\": 5000, \"file\": 5000},\n"
         <> " \"limits\": {\"request-line\": 1024, \"headers\": 4096,\n"
         <> "            \"connections\": 8, \"connections-per-address\": 8},\n"
@@ -168,15 +191,65 @@ fn configuration(listeners : String) : String =
 fn plain(port : Int) : String =
     "{\"kind\": \"plain\", \"address\": \"127.0.0.1\", \"port\": " <> Int.toString(port) <> "}"
 
-// The configuration written to the scratch directory under the name, the
-// site, a certificate and a key beside it, and its path.
+// A tls listener of the certificate's and the key's files, named under the
+// scratch directory.
+fn tls(certificate : String, key : String) : String =
+    "{\"kind\": \"tls\", \"address\": \"127.0.0.1\", \"port\": 0, \"certificate\": \""
+        <> scratch
+        <> "/"
+        <> certificate
+        <> "\", \"key\": \""
+        <> scratch
+        <> "/"
+        <> key
+        <> "\"}"
+
+// The redirect listener, its challenge's directory acme under the scratch
+// directory.
+let redirect : String =
+    "{\"kind\": \"redirect\", \"address\": \"127.0.0.1\", \"port\": 0, \"acme-challenge\": \""
+        <> scratch
+        <> "/acme\"}"
+
+// A self-signed certificate for localhost, EC P-256, made once with openssl
+// for the tests and valid to 2126, and its key; no key's file stands in the
+// repository, and the tests write both under the scratch directory.
+let certificate : String =
+    "-----BEGIN CERTIFICATE-----\n"
+        <> "MIIBfzCCASWgAwIBAgIUdxJK52fcfMJzTDM31Jn/OzcH9NswCgYIKoZIzj0EAwIw\n"
+        <> "FDESMBAGA1UEAwwJbG9jYWxob3N0MCAXDTI2MTEwMjA3NTA0OFoYDzIxMjYxMDA5\n"
+        <> "MDc1MDQ4WjAUMRIwEAYDVQQDDAlsb2NhbGhvc3QwWTATBgcqhkjOPQIBBggqhkjO\n"
+        <> "PQMBBwNCAAQMt4oqG4LxajICOU/uBLydvgc7gOX+w1ucQgmDDMsPcqC1wCSV36xr\n"
+        <> "NvaLXsKeReEaTV1JLMUAEg3DqxZyrkrlo1MwUTAdBgNVHQ4EFgQU44TLdYD+nf7N\n"
+        <> "LvvxGzX6VyciH0YwHwYDVR0jBBgwFoAU44TLdYD+nf7NLvvxGzX6VyciH0YwDwYD\n"
+        <> "VR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNIADBFAiAw/M9xVbebHBwmrS92MLQz\n"
+        <> "QB1TcfaEXpOyLfigR38+UAIhAL3E1cUqfnMQDGg+SKuhWudI7ZWl37Oy7QnP6U+B\n"
+        <> "f4je\n"
+        <> "-----END CERTIFICATE-----\n"
+
+let key : String =
+    "-----BEGIN PRIVATE KEY-----\n"
+        <> "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgw7sj0Cj2DxBdjSns\n"
+        <> "3K/PHxZXeLFzGE2JRWuRg4ITQaChRANCAAQMt4oqG4LxajICOU/uBLydvgc7gOX+\n"
+        <> "w1ucQgmDDMsPcqC1wCSV36xrNvaLXsKeReEaTV1JLMUAEg3DqxZyrkrl\n"
+        <> "-----END PRIVATE KEY-----\n"
+
+// The configuration written to the scratch directory under the name, and
+// its path; beside it the site, the test's certificate and key, the key
+// the user's alone, an empty file the host refuses as either, also the
+// user's alone, and the challenge's directory with a token's file.
 fn written(name : String, text : String) : Either(Io.Error, String) = {
     let path = scratch <> "/" <> name;
+    let challenges = scratch <> "/acme/.well-known/acme-challenge";
     let _ <- Fs.makeDir(Path(scratch <> "/site"), 5000);
+    let _ <- Fs.makeDir(Path(challenges), 5000);
     let _ <- Fs.write(Path(scratch <> "/site/a.txt"), String.toUtf8("alpha"), 5000);
-    let _ <- Fs.write(Path(scratch <> "/fullchain.pem"), <<>>, 5000);
-    let _ <- Fs.write(Path(scratch <> "/privkey.pem"), <<>>, 5000);
-    let _ <- Fs.setMode(Path(scratch <> "/privkey.pem"), 0o600, 5000);
+    let _ <- Fs.write(Path(challenges <> "/token-1"), String.toUtf8("token-1.key"), 5000);
+    let _ <- Fs.write(Path(scratch <> "/certificate.pem"), String.toUtf8(certificate), 5000);
+    let _ <- Fs.write(Path(scratch <> "/key.pem"), String.toUtf8(key), 5000);
+    let _ <- Fs.setMode(Path(scratch <> "/key.pem"), 0o600, 5000);
+    let _ <- Fs.write(Path(scratch <> "/empty.pem"), <<>>, 5000);
+    let _ <- Fs.setMode(Path(scratch <> "/empty.pem"), 0o600, 5000);
     let _ <- Fs.write(Path(path), String.toUtf8(text), 5000);
     Right(path)
 }
@@ -210,41 +283,47 @@ fn ran(runs : List(List(String))) : List(Either(Io.Error, Os.Finished)) receivin
 // design §2: what the entry process refuses before it serves, each with its
 // line on standard error and nothing on standard output: a command line of
 // another count of arguments than one with the usage and the status 2; a
-// configuration that breaks a rule, and one with a listener that is not
-// plain, the first such by its index, with the path and the reason, and
-// the status 1; and a listen that fails, its port taken, with the address,
-// the port and the error, and the status 1.
+// configuration that breaks a rule with the path and the reason, and the
+// status 1; and a listen that fails, its port taken, and a TLS listen whose
+// certificate the host refuses, each with the address, the port and the
+// error as Io.show writes it, the host's reason for the certificate, and
+// the status 1.
 let refusesStarts = Test.Case(name = "refuses what it cannot serve", run = fn() = {
-    let tls =
-        "{\"kind\": \"tls\", \"address\": \"127.0.0.1\", \"port\": 0, \"certificate\": \""
-            <> scratch
-            <> "/fullchain.pem\", \"key\": \""
-            <> scratch
-            <> "/privkey.pem\"}";
     let result = {
         let taken <- Tcp.listen("127.0.0.1", 0);
         let port <- Tcp.port(taken);
         let bad <- written("bad.json", "{}");
-        let notPlain <- written("tls.json", configuration(plain(0) <> ", " <> tls));
         let busy <- written("taken.json", configuration(plain(port)));
-        let outcomes = ran([[], ["a.json", "b.json"], [bad], [notPlain], [busy]]);
+        let refusedCertificate <- written("tls.json", configuration(tls("empty.pem", "empty.pem")));
+        let outcomes = ran([[], ["a.json", "b.json"], [bad], [busy], [refusedCertificate]]);
         Tcp.closeListener(taken);
         Right(#(outcomes, port))
     };
+    // an outcome as the test compares it: the status, standard output, and
+    // standard error up to the error's text where it begins with the
+    // address and the port of the TLS listener
+    fn compared(outcome : Either(Io.Error,
+                                 Os.Finished)) : Either(Io.Error, #(Int, String, String)) =
+        Either.map(outcome, fn(finished) = {
+            let text = fn(bytes) = Optional.withDefault(String.fromUtf8(bytes), "?");
+            let error = text(finished.stderr);
+            let prefix = "127.0.0.1:0: Other(\"";
+            #(finished.status,
+              text(finished.stdout),
+              if String.startsWith(error, prefix) then prefix else error)
+        });
     match result {
-        Right(#(outcomes, port)) -> {
-            fn refused(status : Int, line : String) : Either(Io.Error, Os.Finished) =
-                Right(Os.Finished(=status, stdout = <<>>, stderr = String.toUtf8(line <> "\n")));
-            Test.equal(outcomes,
-                       [refused(2, "usage: ernest_httpd config.json"),
-                        refused(2, "usage: ernest_httpd config.json"),
-                        refused(1, scratch <> "/bad.json: listeners is required"),
-                        refused(1, scratch <> "/tls.json: listeners[1].kind is plain"),
-                        refused(1,
+        Right(#(outcomes, port)) ->
+            Test.equal(List.map(outcomes, compared),
+                       [Right(#(2, "", "usage: ernest_httpd config.json\n")),
+                        Right(#(2, "", "usage: ernest_httpd config.json\n")),
+                        Right(#(1, "", scratch <> "/bad.json: listeners is required\n")),
+                        Right(#(1,
+                                "",
                                 "127.0.0.1:"
                                     <> Int.toString(port)
-                                    <> ": Other(\"address already in use\")")])
-        }
+                                    <> ": Other(\"address already in use\")\n")),
+                        Right(#(1, "", "127.0.0.1:0: Other(\""))])
       | Left(error) ->
             Test.Failed(Io.show(error))
     }
@@ -275,15 +354,99 @@ fn exited(program : Address(Os.ProgramMsg)) : Either(Io.Error, Int) =
       | Left(error) -> Left(error)
     }
 
-// design §1, §2, §3: the program, its modules together, says the port it
-// listens on, serves a request for a file from the site over HTTP/1.1 and
-// tells it to the access log; at the termination signal it stops its
-// listener at once, the connection kept alive ended though the idle
-// deadline is a minute, writes the log and ends by the signal, after which
-// nothing is taken on the port.
+// The response to a GET of the target naming the host, written to the
+// socket: its status, and its Location where it has one or else its body
+// as text.
+fn got(socket : Address(Tcp.SocketMsg),
+       target : String,
+       host : String) : Either(Io.Error, String) = {
+    let request =
+        Http.Request(method = "GET",
+                     =target,
+                     version = Http.Version(major = 1, minor = 1),
+                     headers = [Http.Header(name = "Host", value = host)]);
+    let _ <- Tcp.write(socket, Http.renderRequest(request, <<>>), 5000);
+    let limits = Http.Limits(line = 1024, headers = 4096);
+    let #(response, rest) <-
+        Either.mapLeft(Http.readResponse(socket, <<>>, limits, 5000), fn(_) = Io.Invalid);
+    let #(body, _) <-
+        Either.mapLeft(Http.readResponseBody(socket, rest, response, 4096, 5000),
+                       fn(_) = Io.Invalid);
+    let text =
+        Http.header(response.headers, "Location")
+            |> Optional.withDefault(Optional.withDefault(String.fromUtf8(body), "?"));
+    Right(Int.toString(response.status) <> " " <> text)
+}
+
+// What the socket answers next: `closed` where the connection closed, and
+// otherwise what came.
+fn next(socket : Address(Tcp.SocketMsg)) : String =
+    match Tcp.read(socket, 5000) {
+        Left(Io.Closed) -> "closed"
+      | other -> Io.show(other)
+    }
+
+// What a connect to the port answers: `connected`, or the error.
+fn connecting(port : Int) : String =
+    match Tcp.connect("127.0.0.1", port, 5000) {
+        Right(_) -> "connected"
+      | Left(error) -> Io.show(error)
+    }
+
+// The ports the program says it listens on, in its listeners' order.
+fn ports(listening : List(String)) : List(Int) =
+    List.filterMap(listening,
+                   fn(line) = String.toInt(String.replace(line, "listening on 127.0.0.1:", "")))
+
+// The program's answers on its plain, its TLS and its redirect listener,
+// each over one connection kept alive: the site's file on the plain one,
+// and a host that is neither; the file over TLS; a redirect to the
+// canonical host and the challenge's file on the redirect listener. Then
+// the three sockets, to be read at the end.
+fn answered(plainPort : Int,
+            tlsPort : Int,
+            redirectPort : Int) : Either(Io.Error,
+                                         #(List(String), List(Address(Tcp.SocketMsg)))) = {
+    let plainSocket <- Tcp.connect("127.0.0.1", plainPort, 5000);
+    let file <- got(plainSocket, "/a.txt", "localhost");
+    let misdirected <- got(plainSocket, "/a.txt", "example.com");
+    let tlsSocket <- Tcp.connectTls("localhost", tlsPort, Tcp.Unverified, 5000);
+    let fileOverTls <- got(tlsSocket, "/a.txt", "localhost");
+    let redirectSocket <- Tcp.connect("127.0.0.1", redirectPort, 5000);
+    let moved <- got(redirectSocket, "/docs?page=2", "localhost");
+    let challenge <- got(redirectSocket, "/.well-known/acme-challenge/token-1", "www.localhost");
+    Right(#([file, misdirected, fileOverTls, moved, challenge],
+            [plainSocket, tlsSocket, redirectSocket]))
+}
+
+// The access log's lines after the time each holds, sorted, since
+// connections tell their entries in no order among them; and whether every
+// line begins with the remote address and the time.
+fn logged(text : String) : #(List(String), Bool) = {
+    let lines = String.lines(text);
+    let afterTime = fn(line) = Optional.map(String.splitOnce(line, "] "), fn(#(_, rest)) = rest);
+    #(List.sort(List.filterMap(lines, afterTime)),
+      List.all(lines, fn(line) = String.startsWith(line, "127.0.0.1 - - [")))
+}
+
+// design §1, §2, §3, §9: the program, its modules together, says the port
+// each of its listeners listens on, a plain, a tls and a redirect
+// listener; serves a request for a file from the site over HTTP/1.1, plain
+// and over TLS, answers a host that is neither with 421, redirects to the
+// canonical host and serves the ACME challenge on the redirect listener,
+// and tells each response to the access log; at the termination signal it
+// stops its listeners at once, the connections kept alive ended though the
+// idle deadline is a minute, writes the log and ends by the signal, after
+// which nothing is taken on the ports.
 let servesAndEnds = Test.Case(name = "serves the site and ends in order", run = fn() = {
     let result = {
-        let path <- written("serving.json", configuration(plain(0)));
+        let path <-
+            written("serving.json",
+                    configuration(plain(0)
+                                      <> ", "
+                                      <> tls("certificate.pem", "key.pem")
+                                      <> ", "
+                                      <> redirect));
         let _ <- match Fs.remove(Path(scratch <> "/access.log"), 5000) {
             Right(Unit) or Left(Io.NotFound) -> Right(Unit)
           | Left(error) -> Left(error)
@@ -294,60 +457,49 @@ let servesAndEnds = Test.Case(name = "serves the site and ends in order", run = 
             Os.start(Os.Command(program = "sh",
                                 arguments = ["-c", "echo $$; exec bin/ernest_httpd \"$0\"", path],
                                 input = <<>>));
-        let out <- lines(program, "", 2);
+        let out <- lines(program, "", 4);
         let #(pid, listening) = match String.lines(out) {
-            [first, second] -> #(first, second)
-          | _ -> #("", out)
+            first :: rest -> #(first, rest)
+          | [] -> #("", [])
         };
-        let port =
-            Optional.withDefault(String.toInt(String.replace(listening,
-                                                             "listening on 127.0.0.1:",
-                                                             "")),
-                                 0);
-        let socket <- Tcp.connect("127.0.0.1", port, 5000);
-        let request =
-            Http.Request(method = "GET",
-                         target = "/a.txt",
-                         version = Http.Version(major = 1, minor = 1),
-                         headers = [Http.Header(name = "Host", value = "localhost")]);
-        let _ <- Tcp.write(socket, Http.renderRequest(request, <<>>), 5000);
-        let limits = Http.Limits(line = 1024, headers = 4096);
-        let #(response, rest) <-
-            Either.mapLeft(Http.readResponse(socket, <<>>, limits, 5000), fn(_) = Io.Invalid);
-        let #(body, _) <-
-            Either.mapLeft(Http.readResponseBody(socket, rest, response, 4096, 5000),
-                           fn(_) = Io.Invalid);
+        let #(plainPort, tlsPort, redirectPort) = match ports(listening) {
+            [one, two, three] -> #(one, two, three)
+          | _ -> #(0, 0, 0)
+        };
+        let #(answers, sockets) <- answered(plainPort, tlsPort, redirectPort);
         let start = Clock.monotonic();
         let _ <-
             Os.run(Os.Command(program = "kill", arguments = ["-TERM", pid], input = <<>>), 5000);
         let status <- exited(program);
         let took = Clock.monotonic() - start;
-        let kept = match Tcp.read(socket, 5000) {
-            Left(Io.Closed) -> "closed"
-          | other -> Io.show(other)
-        };
-        let later = Tcp.connect("127.0.0.1", port, 5000);
-        let logged <- Fs.read(Path(scratch <> "/access.log"), 5000);
-        Right(#(listening == "listening on 127.0.0.1:" <> Int.toString(port),
-                response.status,
-                String.fromUtf8(body),
+        let kept = List.map(sockets, next);
+        let later = List.map([plainPort, tlsPort, redirectPort], connecting);
+        let text <- Fs.read(Path(scratch <> "/access.log"), 5000);
+        Right(#(listening
+                    == List.map([plainPort, tlsPort, redirectPort],
+                                fn(port) = "listening on 127.0.0.1:" <> Int.toString(port)),
+                answers,
                 status,
                 took < 3000,
                 kept,
-                Either.mapLeft(later, Io.show) |> Either.map(fn(_) = "connected"),
-                Optional.map(String.fromUtf8(logged),
-                             fn(text) =
-                                 #(String.startsWith(text, "127.0.0.1 - - ["),
-                                   String.endsWith(text, "] \"GET /a.txt HTTP/1.1\" 200 5\n"),
-                                   List.size(String.lines(text))))))
+                later,
+                Optional.map(String.fromUtf8(text), logged)))
     };
     Test.equal(result,
                Right(#(true,
-                       200,
-                       Some("alpha"),
+                       ["200 alpha",
+                        "421 421 Misdirected Request\n",
+                        "200 alpha",
+                        "301 https://localhost/docs?page=2",
+                        "200 token-1.key"],
                        143,
                        true,
-                       "closed",
-                       Left("Refused"),
-                       Some(#(true, true, 1)))))
+                       ["closed", "closed", "closed"],
+                       ["Refused", "Refused", "Refused"],
+                       Some(#(["\"GET /.well-known/acme-challenge/token-1 HTTP/1.1\" 200 11",
+                               "\"GET /a.txt HTTP/1.1\" 200 5",
+                               "\"GET /a.txt HTTP/1.1\" 200 5",
+                               "\"GET /a.txt HTTP/1.1\" 421 24",
+                               "\"GET /docs?page=2 HTTP/1.1\" 301 0"],
+                              true)))))
 })

@@ -3,11 +3,16 @@
 ///
 /// `serve` is the connection's whole life. It waits for a request within the
 /// idle deadline, reads its head within the head deadline, refuses what the
-/// server does not serve, a version, a host, a body, and answers the rest
-/// from the static site. Every response carries `Date` and the
-/// configuration's headers, and is written within the write deadline; the
-/// connection is kept for the next request, the bytes after the head carried
-/// over, or closed, as HTTP/1.1 and HTTP/1.0 have it.
+/// server does not serve, a version, a host, a body, and answers the rest as
+/// its host decides, `Hosts.answer`, from the static site where the host is
+/// served. Every response carries `Date` and the configuration's headers,
+/// and is written within the write deadline; the connection is kept for the
+/// next request, the bytes after the head carried over, or closed, as
+/// HTTP/1.1 and HTTP/1.0 have it.
+///
+/// On a socket a TLS listener accepted, the first read runs the handshake,
+/// within the idle deadline, and a handshake that fails closes the
+/// connection as a read that fails does, without a response.
 ///
 /// Each response written is told to the access log as an entry, and the
 /// listener is told when a head is read and when its response is written,
@@ -18,10 +23,15 @@
 // Types
 //
 
-/// What every connection shares: the configuration, the site its requests
-/// are served from, and the access log's address.
+/// What every connection of a listener shares: the configuration, the site
+/// its requests are served from, the challenge site on the redirect
+/// listener and `None` on another (design §9), and the access log's
+/// address.
 export type Server =
-    Server(config : Config.Config, site : Static.Site, log : Address(AccessLog.LogMsg))
+    Server(config : Config.Config,
+           site : Static.Site,
+           challenge : Optional(Static.Site),
+           log : Address(AccessLog.LogMsg))
 
 /// What a connection tells its listener, with its own process: a request's
 /// head read, and its response written and told to the log (design §7).
@@ -102,21 +112,27 @@ fn unread(connection : Connection, status : Int) : Unit = {
               Close)
 }
 
-// The request refused, or served from the site, and answered.
+// The request refused, or answered as its host decides and served from the
+// site where its host is served.
 fn answered(connection : Connection, request : Http.Request, rest : Bytes) : Unit = {
-    let site = connection.server.site;
-    let ms = connection.server.config.timeouts.file;
+    let server = connection.server;
+    let ms = server.config.timeouts.file;
     match refusal(request) {
         Some(status) ->
             responded(connection,
                       Some(request),
-                      headed(request, Static.error(site, status, ms)),
+                      headed(request, Static.error(server.site, status, ms)),
                       Close)
-      | None ->
+      | None -> {
+            let response = match Hosts.answer(server.config, server.challenge, request, ms) {
+                Hosts.Served -> Static.serve(server.site, request, ms)
+              | Hosts.Answered(response) -> response
+            };
             responded(connection,
                       Some(request),
-                      Static.serve(site, request, ms),
+                      response,
                       if closes(request) then Close else ReadNext(rest))
+        }
     }
 }
 
@@ -240,8 +256,13 @@ fn header(name : String, value : String) : Http.Header =
 //
 
 // What a test's process takes: the entries its connection tells the log,
-// what it tells its listener, and its end.
-type Seen = Logged(AccessLog.LogMsg) | Heard(Told) | Ended(Down)
+// what it tells its listener, its end, and a client's socket a process of
+// its own connected.
+type Seen =
+    Logged(AccessLog.LogMsg)
+  | Heard(Told)
+  | Ended(Down)
+  | Connected(Either(Io.Error, Address(Tcp.SocketMsg)))
 
 // The scratch directory the tests serve their site from.
 let scratch : String = "build/scratch/connection"
@@ -257,14 +278,14 @@ fn prepared() : Either(Io.Error, Unit) = {
 }
 
 // The tests' configuration, with the idle and the head deadlines given: the
-// scratch site, small limits, and two headers, which every response
-// carries in the order of their names.
+// scratch site, a redirect host, small limits, and two headers, which every
+// response carries in the order of their names.
 fn configuration(idle : Int, head : Int) : String =
     "{\"listeners\": [{\"kind\": \"plain\", \"address\": \"127.0.0.1\", \"port\": 0}],\n"
         <> " \"root\": \""
         <> scratch
         <> "/site\",\n"
-        <> " \"canonical-host\": \"localhost\", \"redirect-hosts\": [],\n"
+        <> " \"canonical-host\": \"localhost\", \"redirect-hosts\": [\"www.localhost\"],\n"
         <> " \"timeouts\": {\"head\": "
         <> Int.toString(head)
         <> ", \"idle\": "
@@ -282,25 +303,101 @@ fn configuration(idle : Int, head : Int) : String =
 // the deadlines given; the test's process is its log and its listener, and
 // is told its end.
 fn connected(idle : Int, head : Int) : Either(String, Address(Tcp.SocketMsg)) receiving Seen = {
-    let _ <-
-        Either.mapLeft(prepared(),
-                       fn(error) = "cannot prepare " <> scratch <> ": " <> Io.show(error));
-    let config <- Either.mapLeft(Config.parse(configuration(idle, head)), Config.reason);
-    let me = self();
-    let server =
-        Server(=config,
-               site = Static.site(config.root, config.contentTypes),
-               log = adapted(me, Logged));
+    let server <- served(idle, head);
     Either.mapLeft({
                        let listening <- Tcp.listen("127.0.0.1", 0);
                        let port <- Tcp.port(listening);
                        let client <- Tcp.connect("127.0.0.1", port, 5000);
                        let socket <- Tcp.accept(listening, 5000);
                        Tcp.closeListener(listening);
-                       let connection =
-                           spawnMonitored(fn() = serve(socket, server, adapted(me, Heard)), Ended);
-                       Tcp.give(socket, Process.fromAddress(connection));
+                       serving(socket, server);
                        Right(client)
+                   },
+                   Io.show)
+}
+
+// The server of the scratch site, with the deadlines given, on a listener
+// that is not the redirect listener; the test's process is its log.
+fn served(idle : Int, head : Int) : Either(String, Server) receiving Seen = {
+    let _ <-
+        Either.mapLeft(prepared(),
+                       fn(error) = "cannot prepare " <> scratch <> ": " <> Io.show(error));
+    let config <- Either.mapLeft(Config.parse(configuration(idle, head)), Config.reason);
+    Right(Server(=config,
+                 site = Static.site(config.root, config.contentTypes),
+                 challenge = None,
+                 log = adapted(self(), Logged)))
+}
+
+// The socket given to a connection served in a process of its own, whose
+// listener is the test's process and whose end it is told.
+fn serving(socket : Address(Tcp.SocketMsg), server : Server) : Unit receiving Seen = {
+    let me = self();
+    let connection = spawnMonitored(fn() = serve(socket, server, adapted(me, Heard)), Ended);
+    Tcp.give(socket, Process.fromAddress(connection))
+}
+
+// A self-signed certificate for localhost, EC P-256, made once with openssl
+// for the tests and valid to 2126, and its key; no key's file stands in the
+// repository, and the tests write both under the scratch directory.
+let certificate : String =
+    "-----BEGIN CERTIFICATE-----\n"
+        <> "MIIBfzCCASWgAwIBAgIUdxJK52fcfMJzTDM31Jn/OzcH9NswCgYIKoZIzj0EAwIw\n"
+        <> "FDESMBAGA1UEAwwJbG9jYWxob3N0MCAXDTI2MTEwMjA3NTA0OFoYDzIxMjYxMDA5\n"
+        <> "MDc1MDQ4WjAUMRIwEAYDVQQDDAlsb2NhbGhvc3QwWTATBgcqhkjOPQIBBggqhkjO\n"
+        <> "PQMBBwNCAAQMt4oqG4LxajICOU/uBLydvgc7gOX+w1ucQgmDDMsPcqC1wCSV36xr\n"
+        <> "NvaLXsKeReEaTV1JLMUAEg3DqxZyrkrlo1MwUTAdBgNVHQ4EFgQU44TLdYD+nf7N\n"
+        <> "LvvxGzX6VyciH0YwHwYDVR0jBBgwFoAU44TLdYD+nf7NLvvxGzX6VyciH0YwDwYD\n"
+        <> "VR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNIADBFAiAw/M9xVbebHBwmrS92MLQz\n"
+        <> "QB1TcfaEXpOyLfigR38+UAIhAL3E1cUqfnMQDGg+SKuhWudI7ZWl37Oy7QnP6U+B\n"
+        <> "f4je\n"
+        <> "-----END CERTIFICATE-----\n"
+
+let key : String =
+    "-----BEGIN PRIVATE KEY-----\n"
+        <> "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgw7sj0Cj2DxBdjSns\n"
+        <> "3K/PHxZXeLFzGE2JRWuRg4ITQaChRANCAAQMt4oqG4LxajICOU/uBLydvgc7gOX+\n"
+        <> "w1ucQgmDDMsPcqC1wCSV36xrNvaLXsKeReEaTV1JLMUAEg3DqxZyrkrl\n"
+        <> "-----END PRIVATE KEY-----\n"
+
+// A client of a TLS listener: one over TLS, and one that writes plain text
+// as a client that knows no TLS does.
+type Client = TlsClient | PlainClient
+
+// A connection a TLS listener of the test's key accepted, served in a
+// process of its own, and the client's socket, connected in a process of
+// its own, since a TLS client's connect waits for the handshake that the
+// connection's first read runs.
+fn tlsConnected(client : Client) : Either(String, Address(Tcp.SocketMsg)) receiving Seen = {
+    let server <- served(5000, 5000);
+    let certificateFile = Path(scratch <> "/certificate.pem");
+    let keyFile = Path(scratch <> "/key.pem");
+    let me = self();
+    let connect = fn(port) = match client {
+        TlsClient -> Tcp.connectTls("localhost", port, Tcp.Unverified, 5000)
+      | PlainClient -> Tcp.connect("127.0.0.1", port, 5000)
+    };
+    Either.mapLeft({
+                       let _ <- Fs.write(certificateFile, String.toUtf8(certificate), 5000);
+                       let _ <- Fs.write(keyFile, String.toUtf8(key), 5000);
+                       let _ <- Fs.setMode(keyFile, 0o600, 5000);
+                       let listening <- Tcp.listenTls("127.0.0.1", 0, certificateFile, keyFile);
+                       let port <- Tcp.port(listening);
+                       let _ = spawn(fn() = {
+                           let connected = connect(port);
+                           match connected {
+                               Right(socket) -> Tcp.give(socket, Process.fromAddress(me))
+                             | Left(_) -> Unit
+                           };
+                           send(me, Connected(connected))
+                       });
+                       let socket <- Tcp.accept(listening, 5000);
+                       Tcp.closeListener(listening);
+                       serving(socket, server);
+                       receive {
+                           Connected(connected) -> connected
+                         | after 10000 -> Left(Io.Timeout)
+                       }
                    },
                    Io.show)
 }
@@ -588,21 +685,22 @@ let answersSlowHeads =
                   Test.equal(written(5000, 200, String.toUtf8("GET /a.txt HTTP/1.1\r\n")),
                              Right(#(refused(408), "closed", ["127.0.0.1 - 408 20"]))))
 
+// The connection's end, and then whether it told anything before it.
+fn ended() : String receiving Seen =
+    receive {
+        Ended(down) ->
+            receive {
+                Logged(_) or Heard(_) -> Io.show(down.reason) <> ", told"
+              | after 0 -> Io.show(down.reason) <> ", told nothing"
+            }
+      | after 5000 ->
+            "no end"
+    }
+
 // design §6: a connection that sends nothing within the idle deadline, and
 // one whose client closes before its head ends, are closed without a
 // response and without a line, and the connection returns.
 let closesSilently = Test.Case(name = "closes a silent connection", run = fn() = {
-    // the connection's end, and then whether it told anything before it
-    fn ended() : String receiving Seen =
-        receive {
-            Ended(down) ->
-                receive {
-                    Logged(_) or Heard(_) -> Io.show(down.reason) <> ", told"
-                  | after 0 -> Io.show(down.reason) <> ", told nothing"
-                }
-          | after 5000 ->
-                "no end"
-        };
     let idle = {
         let client <- connected(200, 5000);
         let answered = next(client);
@@ -617,4 +715,57 @@ let closesSilently = Test.Case(name = "closes a silent connection", run = fn() =
     Test.equal(#(idle, gone),
                #(Right(#("closed", "Returned, told nothing")),
                  Right(#("", "Returned, told nothing"))))
+})
+
+// design §6: on a TLS listener the first read runs the handshake: a TLS
+// client is served over a connection kept alive, and a client that writes
+// its request in plain text fails the handshake, which closes the
+// connection without a response and without a line, and it returns.
+let servesOverTls = Test.Case(name = "serves a connection over TLS", run = fn() = {
+    let overTls = {
+        let client <- tlsConnected(TlsClient);
+        let answers <-
+            exchanged(client,
+                      [request("GET", "/a.txt", 1, [host]),
+                       request("GET", "/a.txt", 1, [host, closing])]);
+        let #(entries, _) = told(2);
+        Right(#(answers, next(client), entries))
+    };
+    let plainText = {
+        let client <- tlsConnected(PlainClient);
+        let bytes = Http.renderRequest(request("GET", "/a.txt", 1, [host]), <<>>);
+        let _ <- Either.mapLeft(Tcp.write(client, bytes, 5000), Io.show);
+        Right(ended())
+    };
+    Test.equal(#(overTls, plainText),
+               #(Right(#([file([header("Content-Length", "5")]),
+                          file([closing, header("Content-Length", "5")])],
+                         "closed",
+                         ["127.0.0.1 GET /a.txt HTTP/1.1 200 5",
+                          "127.0.0.1 GET /a.txt HTTP/1.1 200 5"])),
+                 Right("Returned, told nothing")))
+})
+
+// design §6, §9: a request the connection does not refuse is answered as
+// its host decides before the site serves it, a host that is neither 421
+// and a redirect host 301, and the connection is kept after either as
+// after a served request.
+let answersByHost = Test.Case(name = "answers a request as its host decides", run = fn() = {
+    let moved =
+        Answer(status = 301,
+               headers = first
+                   <> [header("Location", "https://localhost/a.txt"),
+                       header("Content-Length", "0")],
+               body = Some(""));
+    let misdirected = "421 Misdirected Request\n";
+    Test.equal(once([request("GET", "/a.txt", 1, [header("Host", "example.com")]),
+                     request("GET", "/a.txt", 1, [header("Host", "WWW.localhost:80")]),
+                     request("GET", "/a.txt", 1, [host, closing])]),
+               Right(#([plain(421, [length(misdirected)]),
+                        moved,
+                        file([closing, header("Content-Length", "5")])],
+                       "closed",
+                       ["127.0.0.1 GET /a.txt HTTP/1.1 421 24",
+                        "127.0.0.1 GET /a.txt HTTP/1.1 301 0",
+                        "127.0.0.1 GET /a.txt HTTP/1.1 200 5"])))
 })
