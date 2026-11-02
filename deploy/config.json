@@ -32,7 +32,7 @@
     "command": ["podman", "run", "-it", "--rm", "--network", "none", "--read-only",
                 "--cap-drop=ALL", "--security-opt=no-new-privileges",
                 "--memory", "128m", "--pids-limit", "128",
-                "--tmpfs", "/home/shell:size=64m", "ernest-shell"],
+                "--mount", "type=tmpfs,destination=/home/shell,tmpfs-size=64m,U=true", "ernest-shell"],
     "most-at-once": 6,
     "starts": { "count": 10, "within": 3600000 },
     "lifetime": 300000, "warning": 60000,

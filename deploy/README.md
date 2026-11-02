@@ -111,8 +111,10 @@ The image answers a line of Ernest, here from standard input, and the shell's co
 httpd$ printf '1 + 2\n' | podman run -i --rm --network none ernest-shell
 httpd$ podman run -it --rm --network none --read-only --cap-drop=ALL \
       --security-opt=no-new-privileges --memory 128m --pids-limit 128 \
-      --tmpfs /home/shell:size=64m ernest-shell
+      --mount type=tmpfs,destination=/home/shell,tmpfs-size=64m,U=true ernest-shell
 ```
+
+`U=true` gives the tmpfs to the container's user; without it podman mounts it root's, mode 700, and Erlang, started in it, fails to read its own boot file, `File operation error: eacces. Target: no_dot_erlang.boot`.
 
 ## 8. The unit
 
