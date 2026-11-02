@@ -6,7 +6,7 @@
 /// root and content types, and answers each request with `serve`, whatever
 /// its method and target; it adds `Date` and the configuration's headers to
 /// the response before it writes it. `error` is the response of a status
-/// the connection answers itself.
+/// the connection answers itself, and `withoutBody` makes it a `HEAD`'s.
 ///
 /// `serve` reads the file system for each request, each read bounded by the
 /// milliseconds given, and keeps nothing between requests: a file changed
@@ -114,9 +114,19 @@ export fn serve(site : Site, request : Http.Request, ms : Int) : #(Http.Response
         }
     }
 
-// The GET's response with its body dropped and, but for a 304, the body's
-// size as its Content-Length.
-fn withoutBody(#(response, body) : #(Http.Response, Bytes)) : #(Http.Response, Bytes) =
+/// A `HEAD`'s response of a `GET`'s: its body dropped and, but for a 304,
+/// the body's size as its `Content-Length`. The connection drops so the
+/// body of a `HEAD` it refuses itself.
+///
+/// ### Examples
+///
+/// ```ernest
+/// let ok =
+///     Http.Response(version = Http.Version(major = 1, minor = 1), status = 200, headers = []);
+/// Static.withoutBody(#(ok, <<104, 105>>))
+/// // => #(Response(version = Version(major = 1, minor = 1), status = 200, headers = [Header(name = "Content-Length", value = "2")]), <<>>)
+/// ```
+export fn withoutBody(#(response, body) : #(Http.Response, Bytes)) : #(Http.Response, Bytes) =
     if response.status == 304 then
         #(response, <<>>)
     else {
@@ -534,6 +544,19 @@ let answersHead = Test.Case(name = "answers a HEAD", run = fn() = {
                  [header("If-Modified-Since", Http.date(modified))],
                  Answer(status = 304, headers = [], body = Some("")))])
 })
+
+// design §5: withoutBody drops a response's body and gives its size as
+// Content-Length, but for a 304's, which has none.
+let dropsBodies =
+    Test.Case(name = "drops a body for a HEAD",
+              run = fn() =
+                  Test.equal([answer(withoutBody(plain(404))),
+                              answer(withoutBody(#(response(304, []), <<>>)))],
+                             [Answer(..plainError(404),
+                                     headers = plainError(404).headers
+                                         <> [header("Content-Length", "14")],
+                                     body = Some("")),
+                              Answer(status = 304, headers = [], body = Some(""))]))
 
 // design §5: If-Modified-Since at or after the modification time answers
 // 304 with no body and no header; one before it, or one Http.parseDate

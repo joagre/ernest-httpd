@@ -1,0 +1,269 @@
+/// The access log: one process that writes each response a connection tells
+/// it as a line of Common Log Format, appended to the file by its path in
+/// batches (design §8).
+///
+/// The program starts it once, with `start`, and each connection sends it an
+/// `Entry` for each response it has written. The process holds no file open:
+/// each batch is one `Fs.append`, which opens the file by its path, so that a
+/// file renamed by a rotation is begun anew at the next batch. A batch is
+/// every message waiting when the process takes one, so that a busy server
+/// opens the file once for many lines; nothing but what has arrived decides
+/// it.
+///
+/// `Flush` is answered once every entry sent before it is written, which the
+/// program asks at its end. `line` is the line an entry is written as.
+///
+/// ## Examples
+///
+/// The line of an entry, its time in UTC:
+///
+/// ```ernest
+/// AccessLog.line(AccessLog.Entry(remote = "192.0.2.7",
+///                                time = 784111777000,
+///                                request = Some("GET /index.html HTTP/1.1"),
+///                                status = 200,
+///                                size = 2326))
+/// // => Some("192.0.2.7 - - [06/Nov/1994:08:49:37 +0000] \"GET /index.html HTTP/1.1\" 200 2326")
+/// ```
+
+//
+// Types
+//
+
+/// What the access log takes: the entry of a response written, its remote
+/// address, the time it was written in milliseconds since the epoch, its
+/// request line as the client wrote it, none where no head was read, its
+/// status and the size of its body in bytes; and a flush, answered once
+/// every entry sent before it is written or lost.
+export type LogMsg =
+    Entry(remote : String, time : Int, request : Optional(String), status : Int, size : Int)
+  | Flush(Reply(Unit))
+
+//
+// The process
+//
+
+/// The access log's process started, appending its lines to the file at
+/// `path`, each append within `ms` milliseconds; an append that fails is
+/// said on standard error, and its lines are lost.
+///
+/// ### Examples
+///
+/// ```ernest
+/// let log = AccessLog.start(Path("access.log"), 5000);
+/// send(log,
+///      AccessLog.Entry(remote = "192.0.2.7",
+///                      time = Clock.now(),
+///                      request = Some("GET / HTTP/1.1"),
+///                      status = 200,
+///                      size = 4));
+/// Address.callForever(log, AccessLog.Flush)
+/// // => Unit
+/// ```
+export fn start(path : Path, ms : Int) : Address(LogMsg) =
+    spawn(fn() = logging(path, ms))
+
+// Waits for a message, takes every other waiting, appends the entries'
+// lines in one append, and then answers the flushes among them.
+fn logging(path : Path, ms : Int) : Unit receiving LogMsg = {
+    let messages = receive {
+        message -> waiting([message])
+    };
+    match List.filterMap(messages, line) {
+        [] -> Unit
+      | lines -> appended(path, lines, ms)
+    };
+    List.forEach(messages, fn(message) = match message {
+        Flush(reply) -> answer(reply, Unit)
+      | _ -> Unit
+    });
+    logging(path, ms)
+}
+
+// The messages taken and every other waiting, in the order they came.
+fn waiting(acc : List(LogMsg)) : List(LogMsg) receiving LogMsg =
+    receive {
+        message -> waiting(message :: acc)
+      | after 0 -> List.reverse(acc)
+    }
+
+// The lines appended to the file, each with its line feed, or the failure
+// said on standard error.
+fn appended(path : Path, lines : List(String), ms : Int) : Unit =
+    match Fs.append(path, String.toUtf8(String.join(lines, "\n") <> "\n"), ms) {
+        Right(Unit) -> Unit
+      | Left(error) -> Io.printlnError(Path.toString(path) <> ": " <> Io.show(error))
+    }
+
+//
+// The line
+//
+
+/// An entry's line in Common Log Format, without its line feed:
+/// `remote - - [time] "request" status size`, the time in UTC,
+/// `06/Nov/1994:08:49:37 +0000`, and the request `-` where there was none;
+/// `None` for a `Flush`.
+///
+/// The request is written so that no client forges a line: `"` as `\"`, `\`
+/// as `\\`, and each byte outside U+0020 to U+007E as `\x` and two
+/// upper-case hexadecimal digits.
+///
+/// ### Examples
+///
+/// ```ernest
+/// AccessLog.line(AccessLog.Entry(remote = "::1",
+///                                time = 0,
+///                                request = None,
+///                                status = 408,
+///                                size = 15))
+/// // => Some("::1 - - [01/Jan/1970:00:00:00 +0000] \"-\" 408 15")
+/// ```
+export fn line(message : LogMsg) : Optional(String) =
+    match message {
+        Entry(=remote, =time, =request, =status, =size) ->
+            Some(remote
+                     <> " - - ["
+                     <> civilTime(time)
+                     <> "] \""
+                     <> Optional.withDefault(Optional.map(request, escaped), "-")
+                     <> "\" "
+                     <> Int.toString(status)
+                     <> " "
+                     <> Int.toString(size))
+      | Flush(_) ->
+            None
+    }
+
+// The time as Common Log Format writes it, in UTC: the day, the month's
+// three letters in English, the year, and the time of day.
+fn civilTime(time : Int) : String = {
+    let civil = Time.civil(time);
+    digits(civil.day, 2)
+        <> "/"
+        <> String.slice("JanFebMarAprMayJunJulAugSepOctNovDec",
+                        3 * civil.month - 3,
+                        3 * civil.month)
+        <> "/"
+        <> digits(civil.year, 4)
+        <> ":"
+        <> digits(civil.hour, 2)
+        <> ":"
+        <> digits(civil.minute, 2)
+        <> ":"
+        <> digits(civil.second, 2)
+        <> " +0000"
+}
+
+// The number with zeros in front to the count of digits.
+fn digits(number : Int, count : Int) : String =
+    String.padStart(Int.toString(number), count, "0")
+
+// The request with `"` and `\` escaped, and each byte outside U+0020 to
+// U+007E written as `\x` and two hexadecimal digits.
+fn escaped(request : String) : String =
+    String.join(List.map(String.toList(request), escapedChar), "")
+
+fn escapedChar(char : Char) : String =
+    match Char.toCodePoint(char) {
+        34 ->
+            "\\\""
+      | 92 ->
+            "\\\\"
+      | codePoint when codePoint >= 32 && codePoint <= 126 ->
+            Char.toString(char)
+      | _ ->
+            String.join(List.map(Bytes.toList(String.toUtf8(Char.toString(char))),
+                                 fn(byte) = "\\x" <> Bytes.toHex(<<byte>>)),
+                        "")
+    }
+
+//
+// Tests
+//
+
+// The scratch directory the tests append under.
+let scratch : String = "build/scratch/access_log"
+
+fn entry(request : Optional(String)) : LogMsg =
+    Entry(remote = "192.0.2.7", time = 784111777000, =request, status = 200, size = 5)
+
+// design §8: the line of an entry, its time in UTC over Time.civil, the
+// day and the month in English, and `-` for no request.
+let writesLines =
+    Test.Case(name = "writes an entry's line",
+              run = fn() =
+                  Test.equal([line(entry(Some("GET /a.txt HTTP/1.1"))),
+                              line(Entry(remote = "::1",
+                                         time = 1793627736999,
+                                         request = None,
+                                         status = 408,
+                                         size = 15))],
+                             [Some("192.0.2.7 - - [06/Nov/1994:08:49:37 +0000] \"GET /a.txt HTTP/1.1\" 200 5"),
+                              Some("::1 - - [02/Nov/2026:13:55:36 +0000] \"-\" 408 15")]))
+
+// design §8: a request is written so that it forges no line: a quote and a
+// backslash escaped, and a control byte and each byte of a character
+// outside ASCII as `\x` and two upper-case hexadecimal digits.
+let escapesRequests =
+    Test.Case(name = "escapes a request",
+              run = fn() =
+                  Test.equal(line(entry(Some("GET /\"a\\b\"\u{e9}\u{1}\u{7f} HTTP/1.1"))),
+                             Some("192.0.2.7 - - [06/Nov/1994:08:49:37 +0000] "
+                                      <> "\"GET /\\\"a\\\\b\\\"\\xC3\\xA9\\x01\\x7F HTTP/1.1\" 200 5")))
+
+// The file a test appends to, removed first, and the log's process that
+// appends to it.
+fn fresh(name : String) : Either(Io.Error, #(Path, Address(LogMsg))) = {
+    let path = Path(scratch <> "/" <> name);
+    let _ <- Fs.makeDir(Path(scratch), 5000);
+    let _ <- match Fs.remove(path, 5000) {
+        Right(Unit) or Left(Io.NotFound) -> Right(Unit)
+      | Left(error) -> Left(error)
+    };
+    Right(#(path, start(path, 5000)))
+}
+
+fn text(path : Path) : Either(Io.Error, Optional(String)) = {
+    let bytes <- Fs.read(path, 5000);
+    Right(String.fromUtf8(bytes))
+}
+
+// design §8: the entries sent are appended as lines, in the order sent,
+// and a Flush is answered once those before it are written; a file renamed
+// between two batches is begun anew by its path.
+let appendsBatches =
+    Test.Case(name = "appends batches and answers a flush",
+              run = fn() = match fresh("batches.log") {
+                  Right(#(path, log)) -> {
+                      let rotated = Path(scratch <> "/batches.log.1");
+                      send(log, entry(Some("GET /1 HTTP/1.1")));
+                      send(log, entry(Some("GET /2 HTTP/1.1")));
+                      send(log, entry(None));
+                      let first = Address.call(log, Flush, 5000);
+                      let renamed = Fs.rename(path, rotated, 5000);
+                      send(log, entry(Some("GET /3 HTTP/1.1")));
+                      let second = Address.call(log, Flush, 5000);
+                      Test.equal(#(first, renamed, text(rotated), second, text(path)),
+                                 #(Some(Unit),
+                                   Right(Unit),
+                                   Right(Some(String.join(List.filterMap([entry(Some("GET /1 HTTP/1.1")),
+                                                                          entry(Some("GET /2 HTTP/1.1")),
+                                                                          entry(None)],
+                                                                         line),
+                                                          "\n")
+                                                  <> "\n")),
+                                   Some(Unit),
+                                   Right(Optional.map(line(entry(Some("GET /3 HTTP/1.1"))),
+                                                      fn(written) = written <> "\n"))))
+                  }
+                | Left(error) ->
+                      Test.Failed("cannot prepare " <> scratch <> ": " <> Io.show(error))
+              })
+
+// design §8: an append that fails loses its lines, and a Flush after them
+// is answered all the same.
+let losesFailedAppends = Test.Case(name = "answers a flush after a failed append", run = fn() = {
+    let log = start(Path(scratch <> "/none/access.log"), 5000);
+    send(log, entry(None));
+    Test.equal(Address.call(log, Flush, 5000), Some(Unit))
+})

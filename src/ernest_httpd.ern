@@ -1,16 +1,352 @@
+/// The program's entry point: the server started from its configuration
+/// and stopped in order at the program's end (design §2).
+///
+/// `main` takes the configuration's path, the one argument, and reads the
+/// file; a file that breaks a rule is refused with the field named, before
+/// anything listens. It then starts the access log and, for each listener
+/// of the configuration, listens, says the port it got, and spawns the
+/// listener's process. At the program's end, a termination signal, it
+/// tells each listener to stop, waits for each to end its connections in
+/// order, has the access log write what it holds, and lets the end go on.
+///
+/// The exit statuses are 2 for a command line of another count of
+/// arguments, 1 for a configuration refused and a listen that fails, and
+/// the signal's at the end. A listener's process that ends before the end
+/// is a failure: the entry process faults, after the others have stopped.
+///
+/// ## Examples
+///
+/// Run by its launcher, the configuration's path its argument:
+///
+/// ```sh
+/// bin/ernest_httpd /etc/ernest-httpd/config.json
+/// ```
+
 //
-// ErnestHttpd: the program's entry point, to be written
-//
-// The module the launcher runs, `build/ernest_httpd.erc`, whose `main` is the entry
-// point (report §8.1). It is the template's placeholder: rename the file to
-// the program's name and write the program here, as README.md's last
-// section says.
+// Types
 //
 
-export fn main() : Unit =
-    Io.println("ernest_httpd: nothing yet")
+/// What the entry process takes: the program's end, with the reply the end
+/// waits for, and a listener's process ending.
+export type MainMsg = Terminated(Reply(Unit)) | ListenerEnded(Down)
 
-// design §1, §2, §3: what the program does, its processes and its modules
-// wait for the items that write the program's entry point and its
-// processes; this test goes when real tests cite each section.
-let nothingYet = Test.Case(name = "nothing yet", run = fn() = Test.equal(1 + 1, 2))
+//
+// Program
+//
+
+/// The program: the configuration read from the path its one argument
+/// names, the listeners served, and the end taken in order.
+export fn main() : Unit receiving MainMsg =
+    match Os.arguments {
+        [path] ->
+            started(path)
+      | _ -> {
+            Io.printlnError("usage: ernest_httpd config.json");
+            Os.exit(2)
+        }
+    }
+
+// The configuration read within 5000 milliseconds and refused with the
+// path where it breaks a rule or has a listener that is not plain.
+fn started(path : String) : Unit receiving MainMsg =
+    match Config.read(Path(path), 5000) {
+        Left(error) ->
+            refused(path, Config.reason(error))
+      | Right(config) ->
+            match List.find(List.indexed(config.listeners),
+                            fn(#(_, listener)) = listener.kind != Config.Plain) {
+                Some(#(index, _)) ->
+                    refused(path, "listeners[" <> Int.toString(index) <> "].kind is plain")
+              | None ->
+                    serving(config)
+            }
+    }
+
+fn refused(path : String, reason : String) : Unit = {
+    Io.printlnError(path <> ": " <> reason);
+    Os.exit(1)
+}
+
+// The site made, the access log started and each listener serving, and
+// then the wait for the program's end.
+fn serving(config : Config.Config) : Unit receiving MainMsg = {
+    let site = Static.site(config.root, config.contentTypes);
+    let log = AccessLog.start(config.accessLog, config.timeouts.file);
+    let server = Connection.Server(=config, =site, =log);
+    let listeners = List.map(config.listeners, fn(listener) = listening(listener, server));
+    Os.termination(Terminated);
+    waiting(listeners, log)
+}
+
+// A listener of the configuration listening, its address and port said on
+// standard output, and its process spawned and monitored; a listen that
+// fails is said on standard error and ends the program.
+fn listening(listener : Config.Listener,
+             server : Connection.Server) : Address(Listener.ListenerMsg) receiving MainMsg = {
+    let opened = {
+        let socket <- Tcp.listen(listener.address, listener.port);
+        let port <- Tcp.port(socket);
+        Right(#(socket, port))
+    };
+    match opened {
+        Right(#(socket, port)) -> {
+            Io.println("listening on " <> listener.address <> ":" <> Int.toString(port));
+            spawnMonitored(fn() = Listener.serve(socket, server), ListenerEnded)
+        }
+      | Left(error) -> {
+            Io.printlnError(listener.address
+                                <> ":"
+                                <> Int.toString(listener.port)
+                                <> ": "
+                                <> Io.show(error));
+            Os.exit(1)
+        }
+    }
+}
+
+// The wait for the program's end, which is taken in order before its
+// reply is answered. A listener that ends before is a failure of the
+// program: the others are stopped and the log written as at the end, and
+// the entry process faults with the listener's reason.
+fn waiting(listeners : List(Address(Listener.ListenerMsg)),
+           log : Address(AccessLog.LogMsg)) : Unit receiving MainMsg =
+    receive {
+        Terminated(reply) -> {
+            stopped(listeners, List.size(listeners), log);
+            answer(reply, Unit)
+        }
+      | ListenerEnded(down) -> {
+            stopped(listeners, List.size(listeners) - 1, log);
+            fault("a listener ended: " <> Io.show(down.reason))
+        }
+    }
+
+// Each listener told to stop, the count of them that live waited for to
+// end, and the access log flushed.
+fn stopped(listeners : List(Address(Listener.ListenerMsg)),
+           count : Int,
+           log : Address(AccessLog.LogMsg)) : Unit receiving MainMsg = {
+    List.forEach(listeners, fn(listener) = send(listener, Listener.Stop));
+    ended(count);
+    Address.callForever(log, AccessLog.Flush)
+}
+
+// Each of the count of listeners waited for to end.
+fn ended(count : Int) : Unit receiving MainMsg =
+    if count == 0 then
+        Unit
+    else receive {
+        ListenerEnded(_) -> ended(count - 1)
+    }
+
+//
+// Tests
+//
+
+// The scratch directory the tests write their configurations and site
+// under; the tests run the launcher from the repository's root, where make
+// test runs them.
+let scratch : String = "build/scratch/ernest_httpd"
+
+// A configuration of the scratch site, with the listeners given, as JSON.
+fn configuration(listeners : String) : String =
+    "{\"listeners\": ["
+        <> listeners
+        <> "],\n"
+        <> " \"root\": \""
+        <> scratch
+        <> "/site\", \"canonical-host\": \"localhost\", \"redirect-hosts\": [],\n"
+        <> " \"timeouts\": {\"head\": 5000, \"idle\": 60000, \"write\": 5000, \"file\": 5000},\n"
+        <> " \"limits\": {\"request-line\": 1024, \"headers\": 4096,\n"
+        <> "            \"connections\": 8, \"connections-per-address\": 8},\n"
+        <> " \"content-types\": {}, \"headers\": {},\n"
+        <> " \"access-log\": \""
+        <> scratch
+        <> "/access.log\"}\n"
+
+fn plain(port : Int) : String =
+    "{\"kind\": \"plain\", \"address\": \"127.0.0.1\", \"port\": " <> Int.toString(port) <> "}"
+
+// The configuration written to the scratch directory under the name, the
+// site, a certificate and a key beside it, and its path.
+fn written(name : String, text : String) : Either(Io.Error, String) = {
+    let path = scratch <> "/" <> name;
+    let _ <- Fs.makeDir(Path(scratch <> "/site"), 5000);
+    let _ <- Fs.write(Path(scratch <> "/site/a.txt"), String.toUtf8("alpha"), 5000);
+    let _ <- Fs.write(Path(scratch <> "/fullchain.pem"), <<>>, 5000);
+    let _ <- Fs.write(Path(scratch <> "/privkey.pem"), <<>>, 5000);
+    let _ <- Fs.setMode(Path(scratch <> "/privkey.pem"), 0o600, 5000);
+    let _ <- Fs.write(Path(path), String.toUtf8(text), 5000);
+    Right(path)
+}
+
+// What a test's process takes: a run of the launcher's outcome, by the
+// index of its arguments.
+type Ran = Ran(index : Int, outcome : Either(Io.Error, Os.Finished))
+
+// The launcher run to its end with each list of arguments, the runs at
+// once, each in a process of its own, since each starts a runtime: their
+// outcomes, in the order given.
+fn ran(runs : List(List(String))) : List(Either(Io.Error, Os.Finished)) receiving Ran = {
+    let me = self();
+    List.forEach(List.indexed(runs), fn(#(index, arguments)) = {
+        let _ =
+            spawn(fn() =
+                      send(me,
+                           Ran(=index,
+                               outcome = Os.run(Os.Command(program = "bin/ernest_httpd",
+                                                           =arguments,
+                                                           input = <<>>),
+                                                30000))));
+        Unit
+    });
+    List.map(List.indexed(runs), fn(#(wanted, _)) = receive {
+        Ran(=index, =outcome) when index == wanted -> outcome
+      | after 60000 -> Left(Io.Timeout)
+    })
+}
+
+// design §2: what the entry process refuses before it serves, each with its
+// line on standard error and nothing on standard output: a command line of
+// another count of arguments than one with the usage and the status 2; a
+// configuration that breaks a rule, and one with a listener that is not
+// plain, the first such by its index, with the path and the reason, and
+// the status 1; and a listen that fails, its port taken, with the address,
+// the port and the error, and the status 1.
+let refusesStarts = Test.Case(name = "refuses what it cannot serve", run = fn() = {
+    let tls =
+        "{\"kind\": \"tls\", \"address\": \"127.0.0.1\", \"port\": 0, \"certificate\": \""
+            <> scratch
+            <> "/fullchain.pem\", \"key\": \""
+            <> scratch
+            <> "/privkey.pem\"}";
+    let result = {
+        let taken <- Tcp.listen("127.0.0.1", 0);
+        let port <- Tcp.port(taken);
+        let bad <- written("bad.json", "{}");
+        let notPlain <- written("tls.json", configuration(plain(0) <> ", " <> tls));
+        let busy <- written("taken.json", configuration(plain(port)));
+        let outcomes = ran([[], ["a.json", "b.json"], [bad], [notPlain], [busy]]);
+        Tcp.closeListener(taken);
+        Right(#(outcomes, port))
+    };
+    match result {
+        Right(#(outcomes, port)) -> {
+            fn refused(status : Int, line : String) : Either(Io.Error, Os.Finished) =
+                Right(Os.Finished(=status, stdout = <<>>, stderr = String.toUtf8(line <> "\n")));
+            Test.equal(outcomes,
+                       [refused(2, "usage: ernest_httpd config.json"),
+                        refused(2, "usage: ernest_httpd config.json"),
+                        refused(1, scratch <> "/bad.json: listeners is required"),
+                        refused(1, scratch <> "/tls.json: listeners[1].kind is plain"),
+                        refused(1,
+                                "127.0.0.1:"
+                                    <> Int.toString(port)
+                                    <> ": Other(\"address already in use\")")])
+        }
+      | Left(error) ->
+            Test.Failed(Io.show(error))
+    }
+})
+
+// What a running program writes to standard output until its lines are
+// the count, and the text so far.
+fn lines(program : Address(Os.ProgramMsg), acc : String, count : Int) : Either(Io.Error, String) =
+    if List.size(String.lines(acc)) >= count && String.endsWith(acc, "\n") then
+        Right(acc)
+    else match Os.read(program, 30000) {
+        Right(Os.Stdout(bytes)) ->
+            lines(program, acc <> Optional.withDefault(String.fromUtf8(bytes), "?"), count)
+      | Right(Os.Stderr(_)) ->
+            lines(program, acc, count)
+      | Right(Os.Exited(status)) ->
+            Left(Io.Other("exited with " <> Int.toString(status) <> " after " <> acc))
+      | Left(error) ->
+            Left(error)
+    }
+
+// A running program's status once it has exited, what it writes before
+// left unread.
+fn exited(program : Address(Os.ProgramMsg)) : Either(Io.Error, Int) =
+    match Os.read(program, 30000) {
+        Right(Os.Exited(status)) -> Right(status)
+      | Right(_) -> exited(program)
+      | Left(error) -> Left(error)
+    }
+
+// design §1, §2, §3: the program, its modules together, says the port it
+// listens on, serves a request for a file from the site over HTTP/1.1 and
+// tells it to the access log; at the termination signal it stops its
+// listener at once, the connection kept alive ended though the idle
+// deadline is a minute, writes the log and ends by the signal, after which
+// nothing is taken on the port.
+let servesAndEnds = Test.Case(name = "serves the site and ends in order", run = fn() = {
+    let result = {
+        let path <- written("serving.json", configuration(plain(0)));
+        let _ <- match Fs.remove(Path(scratch <> "/access.log"), 5000) {
+            Right(Unit) or Left(Io.NotFound) -> Right(Unit)
+          | Left(error) -> Left(error)
+        };
+        // the shell's process number is the server's, the shell and the
+        // launcher each running the next in its place
+        let program <-
+            Os.start(Os.Command(program = "sh",
+                                arguments = ["-c", "echo $$; exec bin/ernest_httpd \"$0\"", path],
+                                input = <<>>));
+        let out <- lines(program, "", 2);
+        let #(pid, listening) = match String.lines(out) {
+            [first, second] -> #(first, second)
+          | _ -> #("", out)
+        };
+        let port =
+            Optional.withDefault(String.toInt(String.replace(listening,
+                                                             "listening on 127.0.0.1:",
+                                                             "")),
+                                 0);
+        let socket <- Tcp.connect("127.0.0.1", port, 5000);
+        let request =
+            Http.Request(method = "GET",
+                         target = "/a.txt",
+                         version = Http.Version(major = 1, minor = 1),
+                         headers = [Http.Header(name = "Host", value = "localhost")]);
+        let _ <- Tcp.write(socket, Http.renderRequest(request, <<>>), 5000);
+        let limits = Http.Limits(line = 1024, headers = 4096);
+        let #(response, rest) <-
+            Either.mapLeft(Http.readResponse(socket, <<>>, limits, 5000), fn(_) = Io.Invalid);
+        let #(body, _) <-
+            Either.mapLeft(Http.readResponseBody(socket, rest, response, 4096, 5000),
+                           fn(_) = Io.Invalid);
+        let start = Clock.monotonic();
+        let _ <-
+            Os.run(Os.Command(program = "kill", arguments = ["-TERM", pid], input = <<>>), 5000);
+        let status <- exited(program);
+        let took = Clock.monotonic() - start;
+        let kept = match Tcp.read(socket, 5000) {
+            Left(Io.Closed) -> "closed"
+          | other -> Io.show(other)
+        };
+        let later = Tcp.connect("127.0.0.1", port, 5000);
+        let logged <- Fs.read(Path(scratch <> "/access.log"), 5000);
+        Right(#(listening == "listening on 127.0.0.1:" <> Int.toString(port),
+                response.status,
+                String.fromUtf8(body),
+                status,
+                took < 3000,
+                kept,
+                Either.mapLeft(later, Io.show) |> Either.map(fn(_) = "connected"),
+                Optional.map(String.fromUtf8(logged),
+                             fn(text) =
+                                 #(String.startsWith(text, "127.0.0.1 - - ["),
+                                   String.endsWith(text, "] \"GET /a.txt HTTP/1.1\" 200 5\n"),
+                                   List.size(String.lines(text))))))
+    };
+    Test.equal(result,
+               Right(#(true,
+                       200,
+                       Some("alpha"),
+                       143,
+                       true,
+                       "closed",
+                       Left("Refused"),
+                       Some(#(true, true, 1)))))
+})

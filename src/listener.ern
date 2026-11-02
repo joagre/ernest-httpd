@@ -1,0 +1,554 @@
+/// A listener: the connections of one listening socket, each accepted
+/// within the caps and served in a process of its own, and ended in order
+/// at the program's end (design §7).
+///
+/// `serve` is the listener's whole life, in a process of its own. It
+/// spawns an acceptor, which alone calls `Tcp.accept`, one connection each
+/// time the listener asks, and gives it each socket; the listener itself
+/// waits on its mailbox alone, so that a `Stop` is taken at once. It
+/// counts its connections by what they tell it and by their ends: in all,
+/// where at the cap it asks for no accept until one ends, and by remote
+/// address, where a socket past the cap is closed at once. Each connection
+/// is given its socket and the listener's address, adapted to `Told`.
+///
+/// Told to `Stop`, the listener ends the acceptor, closes the listening
+/// socket, ends each connection that waits for a request, lets each that
+/// serves one write its response and then ends it, and returns once every
+/// connection has ended.
+
+//
+// Types
+//
+
+/// What a listener takes: an accept's outcome, the acceptor's end, what a
+/// connection told it, a connection's end, the alarm to ask for an accept
+/// again after one failed, and the request to stop, which the program's
+/// end sends.
+export type ListenerMsg =
+    Accepted(Either(Io.Error, Address(Tcp.SocketMsg)))
+  | AcceptorEnded(Down)
+  | Told(Connection.Told)
+  | ConnectionEnded(Down)
+  | Retry(Int)
+  | Stop
+
+/// What the acceptor takes: the request to accept one connection.
+export type AcceptorMsg = Accept
+
+// What a listener holds for its life: the listening socket, the server its
+// connections share, its own address as they tell it, and its acceptor.
+type Listening =
+    Listening(socket : Address(Tcp.ListenerMsg),
+              server : Connection.Server,
+              told : Address(Connection.Told),
+              acceptor : Address(AcceptorMsg))
+
+// A connection open: its remote address, and whether it serves a request,
+// having told RequestRead and not yet ResponseWritten.
+type Open = Open(remote : String, serving : Bool)
+
+// Whether the listener has asked its acceptor for a connection: asked and
+// not yet answered, an alarm set to ask again after a failed accept, or
+// neither, at the cap, until a connection ends.
+type Asking = Asked | Retrying | Waiting
+
+//
+// Accepting
+//
+
+/// The listener's life on the listening socket: connections accepted
+/// through an acceptor within the caps of `server`'s configuration, each in
+/// a process of its own, until a `Stop`; then the acceptor ended, the socket
+/// closed and every connection ended in order, and it returns. An acceptor
+/// that ends before the stop ends the listener, which closes the socket and
+/// returns.
+export fn serve(socket : Address(Tcp.ListenerMsg),
+                server : Connection.Server) : Unit receiving ListenerMsg = {
+    let me = self();
+    let idle = server.config.timeouts.idle;
+    let acceptor = spawnMonitored(fn() = accepting(socket, me, idle), AcceptorEnded);
+    send(acceptor, Accept);
+    waiting(Listening(=socket, =server, told = adapted(me, Told), =acceptor), Map.empty, Asked)
+}
+
+// The acceptor: one connection accepted for each Accept, in rounds of the
+// idle deadline until one comes or the accept fails otherwise, its socket
+// given to the listener, and the outcome told it.
+fn accepting(socket : Address(Tcp.ListenerMsg),
+             listener : Address(ListenerMsg),
+             idle : Int) : Unit receiving AcceptorMsg =
+    receive {
+        Accept -> {
+            send(listener, Accepted(accepted(socket, listener, idle)));
+            accepting(socket, listener, idle)
+        }
+    }
+
+fn accepted(socket : Address(Tcp.ListenerMsg),
+            listener : Address(ListenerMsg),
+            idle : Int) : Either(Io.Error, Address(Tcp.SocketMsg)) =
+    match Tcp.accept(socket, idle) {
+        Right(connection) -> {
+            Tcp.give(connection, Process.fromAddress(listener));
+            Right(connection)
+        }
+      | Left(Io.Timeout) ->
+            accepted(socket, listener, idle)
+      | Left(error) ->
+            Left(error)
+    }
+
+// The listener waiting on its mailbox: each message taken as it comes.
+fn waiting(listening : Listening,
+           connections : Map(Process, Open),
+           asking : Asking) : Unit receiving ListenerMsg =
+    receive {
+        Accepted(Right(socket)) ->
+            asked(listening, admitted(listening, connections, socket))
+      | Accepted(Left(error)) -> {
+            Io.printlnError("cannot accept: " <> Io.show(error));
+            let _ = Clock.alarm(listening.server.config.timeouts.idle, Retry);
+            waiting(listening, connections, Retrying)
+        }
+      | Retry(_) ->
+            asked(listening, connections)
+      | Told(told) ->
+            waiting(listening, recorded(connections, told), asking)
+      | ConnectionEnded(down) -> {
+            let open = Map.remove(connections, down.process);
+            match asking {
+                Waiting -> asked(listening, open)
+              | Asked or Retrying -> waiting(listening, open, asking)
+            }
+        }
+      | AcceptorEnded(_) ->
+            Tcp.closeListener(listening.socket)
+      | Stop ->
+            ending(listening, connections)
+    }
+
+// The next accept asked for where fewer connections than the cap are open,
+// and otherwise none until one ends.
+fn asked(listening : Listening, connections : Map(Process, Open)) : Unit receiving ListenerMsg =
+    if Map.size(connections) < listening.server.config.limits.connections then {
+        send(listening.acceptor, Accept);
+        waiting(listening, connections, Asked)
+    } else
+        waiting(listening, connections, Waiting)
+
+// The socket given to a connection process spawned and monitored for it,
+// or closed at once where its remote address has its cap of connections
+// open or the host cannot tell it.
+fn admitted(listening : Listening,
+            connections : Map(Process, Open),
+            socket : Address(Tcp.SocketMsg)) : Map(Process, Open) receiving ListenerMsg = {
+    let cap = listening.server.config.limits.connectionsPerAddress;
+    match Tcp.remote(socket) {
+        Right(endpoint) ->
+            if count(connections, endpoint.host) < cap then {
+                let server = listening.server;
+                let told = listening.told;
+                let connection =
+                    spawnMonitored(fn() = Connection.serve(socket, server, told), ConnectionEnded);
+                let process = Process.fromAddress(connection);
+                Tcp.give(socket, process);
+                Map.put(connections, process, Open(remote = endpoint.host, serving = false))
+            } else {
+                Tcp.close(socket);
+                connections
+            }
+      | Left(_) -> {
+            Tcp.close(socket);
+            connections
+        }
+    }
+}
+
+// The connections open from the remote address.
+fn count(connections : Map(Process, Open), remote : String) : Int =
+    Map.fold(connections, 0, fn(acc, _, open) = if open.remote == remote then acc + 1 else acc)
+
+// What a connection told, recorded where it is open; what one that has
+// ended told, which may come after its end, is dropped.
+fn recorded(connections : Map(Process, Open), told : Connection.Told) : Map(Process, Open) = {
+    let #(process, serving) = match told {
+        Connection.RequestRead(process) -> #(process, true)
+      | Connection.ResponseWritten(process) -> #(process, false)
+    };
+    match Map.get(connections, process) {
+        Some(open) -> Map.put(connections, process, Open(..open, =serving))
+      | None -> connections
+    }
+}
+
+//
+// The end
+//
+
+// The end: the acceptor ended and waited for, and the socket closed; then
+// what the connections told taken, each not serving a request ended, and
+// each that tells ResponseWritten after, until every connection has ended.
+fn ending(listening : Listening, connections : Map(Process, Open)) : Unit receiving ListenerMsg = {
+    Process.kill(Process.fromAddress(listening.acceptor));
+    let open = acceptorEnded(connections);
+    Tcp.closeListener(listening.socket);
+    let current = taken(open);
+    Map.forEach(current,
+                fn(process, connection) =
+                    if connection.serving then Unit else Process.kill(process));
+    closing(current)
+}
+
+// The wait for the acceptor's end, what comes meanwhile taken.
+fn acceptorEnded(connections : Map(Process, Open)) : Map(Process, Open) receiving ListenerMsg =
+    receive {
+        AcceptorEnded(_) -> connections
+      | message -> acceptorEnded(ended(connections, message))
+    }
+
+// What has come taken, while any waits.
+fn taken(connections : Map(Process, Open)) : Map(Process, Open) receiving ListenerMsg =
+    receive {
+        message -> taken(ended(connections, message))
+      | after 0 -> connections
+    }
+
+fn closing(connections : Map(Process, Open)) : Unit receiving ListenerMsg =
+    if Map.isEmpty(connections) then
+        Unit
+    else receive {
+        Told(Connection.ResponseWritten(process)) -> {
+            Process.kill(process);
+            closing(connections)
+        }
+      | message ->
+            closing(ended(connections, message))
+    }
+
+// A message taken at the end: what a connection told and its end
+// recorded, a socket the acceptor gave closed, and the rest dropped.
+fn ended(connections : Map(Process, Open), message : ListenerMsg) : Map(Process, Open) =
+    match message {
+        Told(told) ->
+            recorded(connections, told)
+      | ConnectionEnded(down) ->
+            Map.remove(connections, down.process)
+      | Accepted(Right(socket)) -> {
+            Tcp.close(socket);
+            connections
+        }
+      | Accepted(Left(_)) or AcceptorEnded(_) or Retry(_) or Stop ->
+            connections
+    }
+
+//
+// Tests
+//
+
+// What a test's process takes: the entries the connections tell the log,
+// the listener's end, the stand-ins for connections a test's listener
+// spawned, and their ends.
+type Seen =
+    Logged(AccessLog.LogMsg)
+  | Ended(Down)
+  | Spawned(idle : Process, serving : Process)
+  | Watched(Down)
+
+// The scratch directory the tests serve their site from.
+let scratch : String = "build/scratch/listener"
+
+fn prepared() : Either(Io.Error, Unit) = {
+    let _ <- Fs.makeDir(Path(scratch <> "/site"), 5000);
+    Fs.write(Path(scratch <> "/site/a.txt"), String.toUtf8("alpha"), 5000)
+}
+
+// The tests' configuration, with the idle deadline and the caps given.
+fn configuration(idle : Int, connections : Int, perAddress : Int) : String =
+    "{\"listeners\": [{\"kind\": \"plain\", \"address\": \"127.0.0.1\", \"port\": 0}],\n"
+        <> " \"root\": \""
+        <> scratch
+        <> "/site\",\n"
+        <> " \"canonical-host\": \"localhost\", \"redirect-hosts\": [],\n"
+        <> " \"timeouts\": {\"head\": 5000, \"idle\": "
+        <> Int.toString(idle)
+        <> ", \"write\": 5000, \"file\": 5000},\n"
+        <> " \"limits\": {\"request-line\": 1024, \"headers\": 4096, \"connections\": "
+        <> Int.toString(connections)
+        <> ", \"connections-per-address\": "
+        <> Int.toString(perAddress)
+        <> "},\n"
+        <> " \"content-types\": {}, \"headers\": {},\n"
+        <> " \"access-log\": \""
+        <> scratch
+        <> "/access.log\"}\n"
+
+// A listener serving on a port of the loopback with the idle deadline and
+// the caps given, monitored by the test's process, which is its log; its
+// address and its port.
+fn listening(idle : Int,
+             connections : Int,
+             perAddress : Int) : Either(String, #(Address(ListenerMsg), Int)) receiving Seen = {
+    let _ <-
+        Either.mapLeft(prepared(),
+                       fn(error) = "cannot prepare " <> scratch <> ": " <> Io.show(error));
+    let config <-
+        Either.mapLeft(Config.parse(configuration(idle, connections, perAddress)), Config.reason);
+    let server =
+        Connection.Server(=config,
+                          site = Static.site(config.root, config.contentTypes),
+                          log = adapted(self(), Logged));
+    Either.mapLeft({
+                       let socket <- Tcp.listen("127.0.0.1", 0);
+                       let port <- Tcp.port(socket);
+                       Right(#(spawnMonitored(fn() = serve(socket, server), Ended), port))
+                   },
+                   Io.show)
+}
+
+fn client(port : Int) : Either(String, Address(Tcp.SocketMsg)) =
+    Either.mapLeft(Tcp.connect("127.0.0.1", port, 5000), Io.show)
+
+let limits : Http.Limits = Http.Limits(line = 1024, headers = 4096)
+
+// The status of the response to a GET of the target written to the socket,
+// read within the milliseconds, and the size of its body, or the error.
+fn got(socket : Address(Tcp.SocketMsg),
+       target : String,
+       headers : List(Http.Header),
+       ms : Int) : Either(String, #(Int, Int)) = {
+    let request =
+        Http.Request(method = "GET",
+                     =target,
+                     version = Http.Version(major = 1, minor = 1),
+                     headers = Http.Header(name = "Host", value = "localhost") :: headers);
+    let _ <- Either.mapLeft(Tcp.write(socket, Http.renderRequest(request, <<>>), 5000), Io.show);
+    answer(socket, ms)
+}
+
+fn answer(socket : Address(Tcp.SocketMsg), ms : Int) : Either(String, #(Int, Int)) = {
+    let #(response, rest) <- Either.mapLeft(Http.readResponse(socket, <<>>, limits, ms), Io.show);
+    let #(body, _) <-
+        Either.mapLeft(Http.readResponseBody(socket, rest, response, 4096, 5000), Io.show);
+    Right(#(response.status, Bytes.size(body)))
+}
+
+let close : Http.Header = Http.Header(name = "Connection", value = "close")
+
+// What the socket answers next: `closed` where the connection closed, and
+// otherwise what came.
+fn next(socket : Address(Tcp.SocketMsg)) : String =
+    match Tcp.read(socket, 5000) {
+        Left(Io.Closed) -> "closed"
+      | other -> Io.show(other)
+    }
+
+// The listener told to stop: its end, and the milliseconds the stop took,
+// within 5000 milliseconds.
+fn stopped(listener : Address(ListenerMsg)) : #(String, Int) receiving Seen = {
+    let start = Clock.monotonic();
+    send(listener, Stop);
+    receive {
+        Ended(down) -> #(Io.show(down.reason), Clock.monotonic() - start)
+      | after 5000 -> #("no end", 5000)
+    }
+}
+
+// Whether a stop took well within the tests' idle deadline, a minute: it
+// waits for nothing but its connections.
+fn prompt(#(end, ms) : #(String, Int)) : #(String, Bool) =
+    #(end, ms < 2000)
+
+// design §7: a socket whose remote address has its cap of connections open
+// is closed at once, without a response, and the connection open goes on.
+let capsAddresses = Test.Case(name = "closes a connection past an address's cap", run = fn() = {
+    let result = {
+        let #(listener, port) <- listening(60000, 4, 1);
+        let first <- client(port);
+        let one <- got(first, "/a.txt", [], 5000);
+        let second <- client(port);
+        let refused = next(second);
+        let two <- got(first, "/a.txt", [close], 5000);
+        let closed = next(first);
+        Right(#(one, refused, two, closed, prompt(stopped(listener))))
+    };
+    Test.equal(result, Right(#(#(200, 5), "closed", #(200, 5), "closed", #("Returned", true))))
+})
+
+// design §7: with its cap of connections open the listener accepts none,
+// and a connection waits in the host's backlog until one ends.
+let capsConnections =
+    Test.Case(name = "holds a connection past the cap until one ends", run = fn() = {
+        let result = {
+            let #(listener, port) <- listening(60000, 1, 4);
+            let first <- client(port);
+            let one <- got(first, "/a.txt", [], 5000);
+            let second <- client(port);
+            let held = got(second, "/a.txt", [], 300);
+            let two <- got(first, "/a.txt", [close], 5000);
+            let three <- answer(second, 5000);
+            let four <- got(second, "/a.txt", [close], 5000);
+            Right(#(one, held, two, three, four, prompt(stopped(listener))))
+        };
+        Test.equal(result,
+                   Right(#(#(200, 5),
+                           Left("Socket(Timeout)"),
+                           #(200, 5),
+                           #(200, 5),
+                           #(200, 5),
+                           #("Returned", true))))
+    })
+
+// The entries told to the log, by request, status and size, taken once
+// the connections that told them have ended.
+fn logged(acc : List(String)) : List(String) receiving Seen =
+    receive {
+        Logged(AccessLog.Entry(=request, =status, =size)) ->
+            logged(acc
+                       <> [Optional.withDefault(request, "-")
+                               <> " "
+                               <> Int.toString(status)
+                               <> " "
+                               <> Int.toString(size)])
+      | after 0 ->
+            acc
+    }
+
+// design §7: told to stop, the listener ends its acceptor, closes its
+// socket and ends each connection waiting for a request, the one that has
+// served a request and the one that has sent nothing, at once, though the
+// idle deadline is a minute; it returns once both have ended, the served
+// one's entry told, and nothing is taken on the port after.
+let endsInOrder = Test.Case(name = "ends its connections when told to stop", run = fn() = {
+    let result = {
+        let #(listener, port) <- listening(60000, 4, 4);
+        let silent <- client(port);
+        let served <- client(port);
+        let one <- got(served, "/a.txt", [], 5000);
+        let end = prompt(stopped(listener));
+        let silentEnd = next(silent);
+        let servedEnd = next(served);
+        let refused = match Tcp.connect("127.0.0.1", port, 5000) {
+            Left(error) -> Io.show(error)
+          | Right(_) -> "connected"
+        };
+        Right(#(one, end, silentEnd, servedEnd, refused, logged([])))
+    };
+    Test.equal(result,
+               Right(#(#(200, 5),
+                       #("Returned", true),
+                       "closed",
+                       "closed",
+                       "Refused",
+                       ["GET /a.txt HTTP/1.1 200 5"])))
+})
+
+// Whether the process is an acceptor waiting in its accept: spawned in
+// serve, and waiting for a call's answer.
+fn isAccepting(process : Process) : Bool =
+    match Process.status(process) {
+        Some(Process.Status(=site, activity = Process.Calling)) ->
+            String.startsWith(site, "Listener.serve:")
+      | _ ->
+            false
+    }
+
+// design §7: an accept that fails, answering Closed since another process
+// closed the socket, is said, and asked again after an idle deadline; the
+// acceptor's next accept faults, as one does on a socket closed before it,
+// and an acceptor that ends before the stop ends the listener.
+let endsWithItsAcceptor = Test.Case(name = "ends when its acceptor ends", run = fn() = {
+    let result = {
+        let _ <- Either.mapLeft(prepared(), Io.show);
+        let config <- Either.mapLeft(Config.parse(configuration(200, 4, 4)), Config.reason);
+        let socket <- Either.mapLeft(Tcp.listen("127.0.0.1", 0), Io.show);
+        let server =
+            Connection.Server(=config,
+                              site = Static.site(config.root, config.contentTypes),
+                              log = adapted(self(), Logged));
+        let _ = spawnMonitored(fn() = serve(socket, server), Ended);
+        // the acceptor, spawned in serve, waits in its accept, which the
+        // socket has taken, before the close
+        let taken =
+            fn() =
+                Optional.map(Process.status(Process.fromAddress(socket)),
+                             fn(status) = status.queued)
+                    == Some(0);
+        let accepting =
+            Test.until(fn() =
+                           if List.any(Process.live(), isAccepting) && taken() then
+                               Test.Passed
+                           else
+                               Test.Failed("no acceptor waits in an accept"),
+                       5000);
+        Tcp.closeListener(socket);
+        Right(#(accepting, receive {
+                  Ended(down) -> Io.show(down.reason)
+                | after 5000 -> "no end"
+              }))
+    };
+    Test.equal(result, Right(#(Test.Passed, "Returned")))
+})
+
+// A stand-in for a connection, which waits until it is ended.
+fn standing() : Unit receiving Unit =
+    receive {
+        Unit -> Unit
+    }
+
+// A listener at its end with an acceptor asked for nothing and two
+// stand-ins for connections, one serving a request and one not, which it
+// tells the test's process of.
+fn endingWithStandIns(me : Address(Seen),
+                      socket : Address(Tcp.ListenerMsg),
+                      server : Connection.Server) : Unit receiving ListenerMsg = {
+    let idle = Process.fromAddress(spawnMonitored(standing, ConnectionEnded));
+    let serving = Process.fromAddress(spawnMonitored(standing, ConnectionEnded));
+    let listener = self();
+    let acceptor = spawnMonitored(fn() = accepting(socket, listener, 60000), AcceptorEnded);
+    let open = Open(remote = "192.0.2.7", serving = false);
+    send(me, Spawned(=idle, =serving));
+    ending(Listening(=socket, =server, told = adapted(listener, Told), =acceptor),
+           Map.fromList([#(idle, open), #(serving, Open(..open, serving = true))]))
+}
+
+// design §7: at the end, a connection that serves a request, by what it
+// told, is ended once it tells ResponseWritten and not before, one that
+// does not is ended at once, and the listener returns once both have ended.
+let endsServingLast =
+    Test.Case(name = "ends a connection serving a request after its response", run = fn() = {
+        let me = self();
+        let result = {
+            let _ <- Either.mapLeft(prepared(), Io.show);
+            let config <- Either.mapLeft(Config.parse(configuration(5000, 4, 4)), Config.reason);
+            let socket <- Either.mapLeft(Tcp.listen("127.0.0.1", 0), Io.show);
+            let server =
+                Connection.Server(=config,
+                                  site = Static.site(config.root, config.contentTypes),
+                                  log = adapted(me, Logged));
+            let listener = spawnMonitored(fn() = endingWithStandIns(me, socket, server), Ended);
+            receive {
+                Spawned(=idle, =serving) -> {
+                    monitor(idle, Watched);
+                    monitor(serving, Watched);
+                    let first = receive {
+                        Watched(down) when down.process == idle -> Io.show(down.reason)
+                      | after 5000 -> "the idle one lives"
+                    };
+                    let standingStill = Process.status(serving) != None;
+                    send(listener, Told(Connection.ResponseWritten(serving)));
+                    let second = receive {
+                        Watched(down) when down.process == serving -> Io.show(down.reason)
+                      | after 5000 -> "the serving one lives"
+                    };
+                    let end = receive {
+                        Ended(down) -> Io.show(down.reason)
+                      | after 5000 -> "no end"
+                    };
+                    Right(#(first, standingStill, second, end))
+                }
+              | after 5000 ->
+                    Left("no stand-ins")
+            }
+        };
+        Test.equal(result, Right(#("Killed", true, "Killed", "Returned")))
+    })

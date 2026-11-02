@@ -1,0 +1,620 @@
+/// A connection: a socket a listener accepted, served one request at a time
+/// in the process that owns it, until it closes (design §6).
+///
+/// `serve` is the connection's whole life. It waits for a request within the
+/// idle deadline, reads its head within the head deadline, refuses what the
+/// server does not serve, a version, a host, a body, and answers the rest
+/// from the static site. Every response carries `Date` and the
+/// configuration's headers, and is written within the write deadline; the
+/// connection is kept for the next request, the bytes after the head carried
+/// over, or closed, as HTTP/1.1 and HTTP/1.0 have it.
+///
+/// Each response written is told to the access log as an entry, and the
+/// listener is told when a head is read and when its response is written,
+/// so that the program's end ends an idle connection and not one serving a
+/// request.
+
+//
+// Types
+//
+
+/// What every connection shares: the configuration, the site its requests
+/// are served from, and the access log's address.
+export type Server =
+    Server(config : Config.Config, site : Static.Site, log : Address(AccessLog.LogMsg))
+
+/// What a connection tells its listener, with its own process: a request's
+/// head read, and its response written and told to the log (design §7).
+export type Told = RequestRead(Process) | ResponseWritten(Process)
+
+// A connection as it serves: its socket, the server, its listener's address
+// and its remote address.
+type Connection =
+    Connection(socket : Address(Tcp.SocketMsg),
+               server : Server,
+               listener : Address(Told),
+               remote : String)
+
+// What a connection does after a response: it reads the next request with
+// the bytes after the head carried, or it closes.
+type Next = ReadNext(Bytes) | Close
+
+//
+// Serving
+//
+
+/// The connection's life on the socket: each request read, answered and
+/// told, until the connection closes; then it returns.
+///
+/// The connection closes without a response where the client sends nothing
+/// within the idle deadline or closes, and after a response that refuses a
+/// head or a request, after a 1.1 request that asks it to close, and after
+/// a 1.0 request that does not ask it to keep alive.
+export fn serve(socket : Address(Tcp.SocketMsg), server : Server, listener : Address(Told)) : Unit =
+    match Tcp.remote(socket) {
+        Right(endpoint) ->
+            nextRequest(Connection(=socket, =server, =listener, remote = endpoint.host), <<>>)
+      | Left(_) ->
+            Tcp.close(socket)
+    }
+
+// The next request: its first bytes waited for within the idle deadline
+// where none were carried, and then its head.
+fn nextRequest(connection : Connection, carried : Bytes) : Unit =
+    if Bytes.isEmpty(carried) then
+        match Tcp.read(connection.socket, connection.server.config.timeouts.idle) {
+            Right(bytes) -> head(connection, bytes)
+          | Left(_) -> Tcp.close(connection.socket)
+        }
+    else
+        head(connection, carried)
+
+// The head read within the head deadline and the request answered, or the
+// head refused, or the connection closed where the client went away.
+fn head(connection : Connection, carried : Bytes) : Unit = {
+    let config = connection.server.config;
+    let limits = Http.Limits(line = config.limits.requestLine, headers = config.limits.headers);
+    match Http.readRequest(connection.socket, carried, limits, config.timeouts.head) {
+        Right(#(request, rest)) -> {
+            send(connection.listener, RequestRead(Process.current()));
+            answered(connection, request, rest)
+        }
+      | Left(Http.Socket(Io.Timeout)) ->
+            unread(connection, 408)
+      | Left(Http.Protocol(Http.LineTooLong)) ->
+            unread(connection, 414)
+      | Left(Http.Protocol(Http.HeadersTooLarge)) ->
+            unread(connection, 431)
+      | Left(Http.Protocol(_)) ->
+            unread(connection, 400) // Malformed: a head's read answers no BodyTooLarge
+      | Left(Http.Socket(_)) ->
+            Tcp.close(connection.socket)
+    }
+}
+
+// A head refused before it was read whole: the error's response, and the
+// connection closed.
+fn unread(connection : Connection, status : Int) : Unit = {
+    let config = connection.server.config;
+    responded(connection,
+              None,
+              Static.error(connection.server.site, status, config.timeouts.file),
+              Close)
+}
+
+// The request refused, or served from the site, and answered.
+fn answered(connection : Connection, request : Http.Request, rest : Bytes) : Unit = {
+    let site = connection.server.site;
+    let ms = connection.server.config.timeouts.file;
+    match refusal(request) {
+        Some(status) ->
+            responded(connection,
+                      Some(request),
+                      headed(request, Static.error(site, status, ms)),
+                      Close)
+      | None ->
+            responded(connection,
+                      Some(request),
+                      Static.serve(site, request, ms),
+                      if closes(request) then Close else ReadNext(rest))
+    }
+}
+
+// The response written with the headers every response carries, and
+// `Connection: close` or, for a 1.0 request kept, `keep-alive`, told to the
+// log and then to the listener, and what follows it done; a write that
+// fails or does not end in time closes the connection, told to neither.
+fn responded(connection : Connection,
+             request : Optional(Http.Request),
+             #(response, body) : #(Http.Response, Bytes),
+             next : Next) : Unit = {
+    let config = connection.server.config;
+    let time = Clock.now();
+    let persistence = match #(next, request) {
+        #(Close, _) ->
+            [header("Connection", "close")]
+      | #(ReadNext(_), Some(read)) when read.version.minor == 0 ->
+            [header("Connection", "keep-alive")]
+      | #(ReadNext(_), _) ->
+            []
+    };
+    let headers =
+        [header("Date", Http.date(time))] <> config.headers <> response.headers <> persistence;
+    let bytes = Http.render(Http.Response(..response, =headers), body);
+    match Tcp.write(connection.socket, bytes, config.timeouts.write) {
+        Right(Unit) -> {
+            send(connection.server.log,
+                 AccessLog.Entry(remote = connection.remote,
+                                 =time,
+                                 request = Optional.map(request, requestLine),
+                                 status = response.status,
+                                 size = Bytes.size(body)));
+            send(connection.listener, ResponseWritten(Process.current()));
+            match next {
+                ReadNext(rest) -> nextRequest(connection, rest)
+              | Close -> Tcp.close(connection.socket)
+            }
+        }
+      | Left(_) ->
+            Tcp.close(connection.socket)
+    }
+}
+
+//
+// The request
+//
+
+// The status a request is refused with before it is served, in design §6's
+// order: its version, its hosts, and a body; None for one that is served.
+fn refusal(request : Http.Request) : Optional(Int) = {
+    let hosts = Http.headers(request.headers, "Host");
+    if request.version != version(1, 0) && request.version != version(1, 1) then
+        Some(505)
+    else if request.version == version(1, 1) && List.isEmpty(hosts) || List.size(hosts) > 1 then
+        Some(400)
+    else if !List.isEmpty(Http.headers(request.headers, "Transfer-Encoding")) then
+        Some(413)
+    else match Http.headers(request.headers, "Content-Length") {
+        [] ->
+            None
+      | values ->
+            match decimal(values) {
+                Some(0) -> None
+              | Some(_) -> Some(413)
+              | None -> Some(400)
+            }
+    }
+}
+
+fn version(major : Int, minor : Int) : Http.Version =
+    Http.Version(=major, =minor)
+
+// The number the values write, each digits alone and every one the same;
+// None where they write no one decimal number.
+fn decimal(values : List(String)) : Optional(Int) =
+    if List.all(values, isDigits) then match List.unique(List.filterMap(values, String.toInt)) {
+        [number] -> Some(number)
+      | _ -> None
+    } else
+        None
+
+fn isDigits(value : String) : Bool =
+    !String.isEmpty(value) && List.all(String.toList(value), Char.isAsciiDigit)
+
+// The refusal's response, its body dropped for a HEAD.
+fn headed(request : Http.Request, response : #(Http.Response, Bytes)) : #(Http.Response, Bytes) =
+    if request.method == "HEAD" then Static.withoutBody(response) else response
+
+// Whether the connection closes after the request's response: a 1.1
+// request that lists `close`, and a 1.0 one that does not list
+// `keep-alive`.
+fn closes(request : Http.Request) : Bool =
+    if request.version == version(1, 1) then
+        lists(request, "close")
+    else
+        !lists(request, "keep-alive")
+
+// Whether the request's Connection headers list the token, their values
+// parted at commas, trimmed and compared in any case.
+fn lists(request : Http.Request, token : String) : Bool =
+    List.any(List.flatMap(Http.headers(request.headers, "Connection"),
+                          fn(value) = String.split(value, ",")),
+             fn(part) = String.toLower(String.trim(part)) == token)
+
+// The request line as the client wrote it: the method, the target and the
+// version, parted by spaces.
+fn requestLine(request : Http.Request) : String =
+    request.method
+        <> " "
+        <> request.target
+        <> " HTTP/"
+        <> Int.toString(request.version.major)
+        <> "."
+        <> Int.toString(request.version.minor)
+
+fn header(name : String, value : String) : Http.Header =
+    Http.Header(=name, =value)
+
+//
+// Tests
+//
+
+// What a test's process takes: the entries its connection tells the log,
+// what it tells its listener, and its end.
+type Seen = Logged(AccessLog.LogMsg) | Heard(Told) | Ended(Down)
+
+// The scratch directory the tests serve their site from.
+let scratch : String = "build/scratch/connection"
+
+// The modification time of the site's file, Sun, 06 Nov 1994 08:49:37 GMT.
+let modified : Int = 784111777000
+
+fn prepared() : Either(Io.Error, Unit) = {
+    let file = Path(scratch <> "/site/a.txt");
+    let _ <- Fs.makeDir(Path(scratch <> "/site"), 5000);
+    let _ <- Fs.write(file, String.toUtf8("alpha"), 5000);
+    Fs.setModified(file, modified, 5000)
+}
+
+// The tests' configuration, with the idle and the head deadlines given: the
+// scratch site, small limits, and two headers, which every response
+// carries in the order of their names.
+fn configuration(idle : Int, head : Int) : String =
+    "{\"listeners\": [{\"kind\": \"plain\", \"address\": \"127.0.0.1\", \"port\": 0}],\n"
+        <> " \"root\": \""
+        <> scratch
+        <> "/site\",\n"
+        <> " \"canonical-host\": \"localhost\", \"redirect-hosts\": [],\n"
+        <> " \"timeouts\": {\"head\": "
+        <> Int.toString(head)
+        <> ", \"idle\": "
+        <> Int.toString(idle)
+        <> ", \"write\": 5000, \"file\": 5000},\n"
+        <> " \"limits\": {\"request-line\": 64, \"headers\": 256,\n"
+        <> "            \"connections\": 4, \"connections-per-address\": 4},\n"
+        <> " \"content-types\": {},\n"
+        <> " \"headers\": {\"X-Content-Type-Options\": \"nosniff\", \"Cache-Control\": \"no-store\"},\n"
+        <> " \"access-log\": \""
+        <> scratch
+        <> "/access.log\"}\n"
+
+// A client's socket to a connection served in a process of its own, with
+// the deadlines given; the test's process is its log and its listener, and
+// is told its end.
+fn connected(idle : Int, head : Int) : Either(String, Address(Tcp.SocketMsg)) receiving Seen = {
+    let _ <-
+        Either.mapLeft(prepared(),
+                       fn(error) = "cannot prepare " <> scratch <> ": " <> Io.show(error));
+    let config <- Either.mapLeft(Config.parse(configuration(idle, head)), Config.reason);
+    let me = self();
+    let server =
+        Server(=config,
+               site = Static.site(config.root, config.contentTypes),
+               log = adapted(me, Logged));
+    Either.mapLeft({
+                       let listening <- Tcp.listen("127.0.0.1", 0);
+                       let port <- Tcp.port(listening);
+                       let client <- Tcp.connect("127.0.0.1", port, 5000);
+                       let socket <- Tcp.accept(listening, 5000);
+                       Tcp.closeListener(listening);
+                       let connection =
+                           spawnMonitored(fn() = serve(socket, server, adapted(me, Heard)), Ended);
+                       Tcp.give(socket, Process.fromAddress(connection));
+                       Right(client)
+                   },
+                   Io.show)
+}
+
+// A response as a test compares it: its status, its headers, a Date that
+// Http.parseDate reads written `a date`, and its body as text.
+type Answer = Answer(status : Int, headers : List(Http.Header), body : Optional(String))
+
+// The requests written in one write, and their responses read in order, a
+// HEAD's without a body.
+fn exchanged(client : Address(Tcp.SocketMsg),
+             requests : List(Http.Request)) : Either(String, List(Answer)) = {
+    let bytes =
+        List.foldLeft(requests, <<>>, fn(acc, request) = acc <> Http.renderRequest(request, <<>>));
+    let _ <- Either.mapLeft(Tcp.write(client, bytes, 5000), Io.show);
+    let #(_, answers) <- List.tryFold(requests, #(<<>>, []), fn(#(carried, acc), request) = {
+        let #(answer, rest) <- received(client, carried, request.method);
+        Right(#(rest, answer :: acc))
+    });
+    Right(List.reverse(answers))
+}
+
+// A response read from the client's socket, and the bytes after it.
+fn received(client : Address(Tcp.SocketMsg),
+            carried : Bytes,
+            method : String) : Either(String, #(Answer, Bytes)) = {
+    let limits = Http.Limits(line = 1024, headers = 4096);
+    let #(response, rest) <-
+        Either.mapLeft(Http.readResponse(client, carried, limits, 5000), Io.show);
+    let #(body, beyond) <- if method == "HEAD" then
+        Right(#(<<>>, rest))
+    else
+        Either.mapLeft(Http.readResponseBody(client, rest, response, 4096, 5000), Io.show);
+    Right(#(Answer(status = response.status,
+                   headers = List.map(response.headers, dated),
+                   body = String.fromUtf8(body)),
+            beyond))
+}
+
+fn dated(header : Http.Header) : Http.Header =
+    match Http.parseDate(header.value) {
+        Some(_) when header.name == "Date" -> Http.Header(name = "Date", value = "a date")
+      | _ -> header
+    }
+
+// What the client's socket answers next: `closed` where the connection
+// closed, and otherwise what came.
+fn next(client : Address(Tcp.SocketMsg)) : String =
+    match Tcp.read(client, 5000) {
+        Left(Io.Closed) -> "closed"
+      | other -> Io.show(other)
+    }
+
+fn request(method : String,
+           target : String,
+           minor : Int,
+           headers : List(Http.Header)) : Http.Request =
+    Http.Request(=method, =target, version = version(1, minor), =headers)
+
+let host : Http.Header = header("Host", "localhost")
+
+// The headers every response begins with: Date, then the configuration's.
+let first : List(Http.Header) =
+    [header("Date", "a date"),
+     header("Cache-Control", "no-store"),
+     header("X-Content-Type-Options", "nosniff")]
+
+let textType : Http.Header = header("Content-Type", "text/plain; charset=utf-8")
+
+let closing : Http.Header = header("Connection", "close")
+
+// The answer to a GET of the site's file, and to a HEAD of it.
+fn file(last : List(Http.Header)) : Answer =
+    Answer(status = 200,
+           headers = first
+               <> [textType, header("Last-Modified", "Sun, 06 Nov 1994 08:49:37 GMT")]
+               <> last,
+           body = Some("alpha"))
+
+fn headOfFile(last : List(Http.Header)) : Answer =
+    Answer(..file([header("Content-Length", "5")] <> last), body = Some(""))
+
+// The answer of an error's plain text.
+fn plain(status : Int, last : List(Http.Header)) : Answer = {
+    let text = Int.toString(status) <> " " <> Http.reason(status) <> "\n";
+    Answer(=status, headers = first <> [textType] <> last, body = Some(text))
+}
+
+fn length(text : String) : Http.Header =
+    header("Content-Length", Int.toString(String.size(text)))
+
+// The answer of a refusal, which closes the connection.
+fn refused(status : Int) : Answer =
+    plain(status, [closing, length(Int.toString(status) <> " " <> Http.reason(status) <> "\n")])
+
+// The entries the connection told the log for its next `count` responses,
+// by remote address, request, status and size, and what it told its
+// listener; each entry comes before its ResponseWritten, from the one
+// sender, and nothing is waited for after the last.
+fn told(count : Int) : #(List(String), List(String)) receiving Seen = {
+    fn taken(count : Int,
+             entries : List(String),
+             heard : List(String)) : #(List(String), List(String)) receiving Seen =
+        if count == 0 then
+            #(entries, heard)
+        else receive {
+            Logged(AccessLog.Entry(=remote, =request, =status, =size)) ->
+                taken(count,
+                      entries
+                          <> [remote
+                                  <> " "
+                                  <> Optional.withDefault(request, "-")
+                                  <> " "
+                                  <> Int.toString(status)
+                                  <> " "
+                                  <> Int.toString(size)],
+                      heard)
+          | Heard(RequestRead(_)) ->
+                taken(count, entries, heard <> ["RequestRead"])
+          | Heard(ResponseWritten(_)) ->
+                taken(count - 1, entries, heard <> ["ResponseWritten"])
+          | after 5000 ->
+                #(entries, heard <> ["no more"])
+        };
+    taken(count, [], [])
+}
+
+// design §6: GET and HEAD of a file and of a missing one over one
+// connection kept alive, two requests pipelined in one write each; every
+// response carries Date, then the configuration's headers, then its own,
+// and the last, asked to close, `Connection: close`; each response is told
+// to the log and to the listener.
+let keepsAlive = Test.Case(name = "serves requests over one connection", run = fn() = {
+    let result = {
+        let client <- connected(5000, 5000);
+        let one <-
+            exchanged(client,
+                      [request("GET", "/a.txt", 1, [host]), request("HEAD", "/a.txt", 1, [host])]);
+        let two <-
+            exchanged(client,
+                      [request("GET", "/missing.txt", 1, [host]),
+                       request("HEAD", "/missing.txt", 1, [host])]);
+        let three <-
+            exchanged(client, [request("GET", "/a.txt", 1, [host, header("Connection", "close")])]);
+        Right(#(one <> two <> three, next(client), told(5)))
+    };
+    let notFound = "404 Not Found\n";
+    Test.equal(result,
+               Right(#([file([header("Content-Length", "5")]),
+                        headOfFile([]),
+                        plain(404, [length(notFound)]),
+                        Answer(..plain(404, [length(notFound)]), body = Some("")),
+                        file([closing, header("Content-Length", "5")])],
+                       "closed",
+                       #(["127.0.0.1 GET /a.txt HTTP/1.1 200 5",
+                          "127.0.0.1 HEAD /a.txt HTTP/1.1 200 0",
+                          "127.0.0.1 GET /missing.txt HTTP/1.1 404 14",
+                          "127.0.0.1 HEAD /missing.txt HTTP/1.1 404 0",
+                          "127.0.0.1 GET /a.txt HTTP/1.1 200 5"],
+                         List.flatMap(List.range(1, 5),
+                                      fn(_) = ["RequestRead", "ResponseWritten"])))))
+})
+
+// The answers to the requests, written in one write to a fresh connection,
+// what its socket answers after them, and the lines told to the log.
+fn once(requests : List(Http.Request)) : Either(String,
+                                                #(List(Answer),
+                                                  String,
+                                                  List(String))) receiving Seen = {
+    let client <- connected(5000, 5000);
+    let answers <- exchanged(client, requests);
+    let #(entries, _) = told(List.size(answers));
+    Right(#(answers, next(client), entries))
+}
+
+// The answer to the bytes written to a fresh connection with the deadlines
+// given, what its socket answers after it, and the lines told to the log.
+fn written(idle : Int,
+           head : Int,
+           bytes : Bytes) : Either(String, #(Answer, String, List(String))) receiving Seen = {
+    let client <- connected(idle, head);
+    let _ <- Either.mapLeft(Tcp.write(client, bytes, 5000), Io.show);
+    let #(answer, _) <- received(client, <<>>, "GET");
+    let #(entries, _) = told(1);
+    Right(#(answer, next(client), entries))
+}
+
+// design §6: a 1.0 request closes the connection, and one that lists
+// keep-alive keeps it, its response saying so with `Connection:
+// keep-alive`; a 1.1 request whose Connection header lists close, in any
+// case among other tokens, closes it.
+let keepsOrCloses = Test.Case(name = "keeps or closes by the version and Connection", run = fn() = {
+    let fileClosed = file([closing, header("Content-Length", "5")]);
+    let fileKept = file([header("Connection", "keep-alive"), header("Content-Length", "5")]);
+    let kept = {
+        let client <- connected(5000, 5000);
+        let one <-
+            exchanged(client, [request("GET", "/a.txt", 0, [header("Connection", "Keep-Alive")])]);
+        let two <-
+            exchanged(client,
+                      [request("GET",
+                               "/a.txt",
+                               1,
+                               [host, header("Connection", "upgrade,  Close ")])]);
+        let #(entries, _) = told(2);
+        Right(#(one <> two, next(client), entries))
+    };
+    Test.equal(#(once([request("GET", "/a.txt", 0, [])]), kept),
+               #(Right(#([fileClosed], "closed", ["127.0.0.1 GET /a.txt HTTP/1.0 200 5"])),
+                 Right(#([fileKept, fileClosed],
+                         "closed",
+                         ["127.0.0.1 GET /a.txt HTTP/1.0 200 5",
+                          "127.0.0.1 GET /a.txt HTTP/1.1 200 5"]))))
+})
+
+// design §6: the requests refused, in the paragraph's order, each closing
+// the connection: a version other than 1.0 and 1.1 with 505, though the
+// request has two Hosts too, a 1.1 request
+// without Host and one with two with 400, Transfer-Encoding and a
+// Content-Length above 0 with 413, and Content-Length values that are not
+// one decimal number with 400; a HEAD's refusal has no body. A
+// Content-Length of 0 is no body, and the request is served and the
+// connection kept.
+let refusesRequests = Test.Case(name = "refuses a request it does not serve", run = fn() = {
+    fn get(minor : Int, headers : List(Http.Header)) : List(Http.Request) =
+        [request("GET", "/a.txt", minor, headers)];
+    let twoHosts = request("GET", "/a.txt", 1, [host, host]);
+    let emptyBody = request("GET", "/a.txt", 1, [host, header("Content-Length", "0")]);
+    Test.equal([once([Http.Request(..twoHosts, version = version(2, 0))]),
+                once(get(1, [])),
+                once([twoHosts]),
+                once(get(1, [host, header("Transfer-Encoding", "chunked")])),
+                once(get(1, [host, header("Content-Length", "5")])),
+                once(get(1, [host, header("Content-Length", "x")])),
+                once(get(1, [host, header("Content-Length", "1"), header("Content-Length", "2")])),
+                once(get(1, [host, header("Content-Length", "1, 1")])),
+                once([request("HEAD", "/a.txt", 1, [])]),
+                once([emptyBody,
+                      Http.Request(..emptyBody, headers = emptyBody.headers <> [closing])])],
+               [Right(#([refused(505)], "closed", ["127.0.0.1 GET /a.txt HTTP/2.0 505 31"])),
+                Right(#([refused(400)], "closed", ["127.0.0.1 GET /a.txt HTTP/1.1 400 16"])),
+                Right(#([refused(400)], "closed", ["127.0.0.1 GET /a.txt HTTP/1.1 400 16"])),
+                Right(#([refused(413)], "closed", ["127.0.0.1 GET /a.txt HTTP/1.1 413 22"])),
+                Right(#([refused(413)], "closed", ["127.0.0.1 GET /a.txt HTTP/1.1 413 22"])),
+                Right(#([refused(400)], "closed", ["127.0.0.1 GET /a.txt HTTP/1.1 400 16"])),
+                Right(#([refused(400)], "closed", ["127.0.0.1 GET /a.txt HTTP/1.1 400 16"])),
+                Right(#([refused(400)], "closed", ["127.0.0.1 GET /a.txt HTTP/1.1 400 16"])),
+                Right(#([Answer(..plain(400, [header("Content-Length", "16"), closing]),
+                                body = Some(""))],
+                        "closed",
+                        ["127.0.0.1 HEAD /a.txt HTTP/1.1 400 0"])),
+                Right(#([file([header("Content-Length", "5")]),
+                         file([closing, header("Content-Length", "5")])],
+                        "closed",
+                        ["127.0.0.1 GET /a.txt HTTP/1.1 200 5",
+                         "127.0.0.1 GET /a.txt HTTP/1.1 200 5"]))])
+})
+
+// design §6: a head refused before it is read whole, each closing the
+// connection and told with no request: a malformed line with 400, a line
+// past the limit with 414 and headers past theirs with 431.
+let refusesHeads = Test.Case(name = "refuses a head it cannot read", run = fn() = {
+    fn entry(status : Int) : List(String) = {
+        let text = Int.toString(status) <> " " <> Http.reason(status) <> "\n";
+        ["127.0.0.1 - " <> Int.toString(status) <> " " <> Int.toString(String.size(text))]
+    };
+    let long = "GET /" <> String.repeat("a", 64) <> " HTTP/1.1\r\n\r\n";
+    let large =
+        "GET / HTTP/1.1\r\n"
+            <> String.repeat("X-Padding: " <> String.repeat("p", 48) <> "\r\n", 5)
+            <> "\r\n";
+    Test.equal([written(5000, 5000, String.toUtf8("garbage\r\n\r\n")),
+                written(5000, 5000, String.toUtf8(long)),
+                written(5000, 5000, String.toUtf8(large))],
+               [Right(#(refused(400), "closed", entry(400))),
+                Right(#(refused(414), "closed", entry(414))),
+                Right(#(refused(431), "closed", entry(431)))])
+})
+
+// design §6: a head that does not end within the head deadline answers 408
+// and closes the connection.
+let answersSlowHeads =
+    Test.Case(name = "answers a head that stalls with 408",
+              run = fn() =
+                  Test.equal(written(5000, 200, String.toUtf8("GET /a.txt HTTP/1.1\r\n")),
+                             Right(#(refused(408), "closed", ["127.0.0.1 - 408 20"]))))
+
+// design §6: a connection that sends nothing within the idle deadline, and
+// one whose client closes before its head ends, are closed without a
+// response and without a line, and the connection returns.
+let closesSilently = Test.Case(name = "closes a silent connection", run = fn() = {
+    // the connection's end, and then whether it told anything before it
+    fn ended() : String receiving Seen =
+        receive {
+            Ended(down) ->
+                receive {
+                    Logged(_) or Heard(_) -> Io.show(down.reason) <> ", told"
+                  | after 0 -> Io.show(down.reason) <> ", told nothing"
+                }
+          | after 5000 ->
+                "no end"
+        };
+    let idle = {
+        let client <- connected(200, 5000);
+        let answered = next(client);
+        Right(#(answered, ended()))
+    };
+    let gone = {
+        let client <- connected(5000, 5000);
+        let _ <- Either.mapLeft(Tcp.write(client, String.toUtf8("GET /a.txt HT"), 5000), Io.show);
+        Tcp.close(client);
+        Right(#("", ended()))
+    };
+    Test.equal(#(idle, gone),
+               #(Right(#("closed", "Returned, told nothing")),
+                 Right(#("", "Returned, told nothing"))))
+})

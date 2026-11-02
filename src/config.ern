@@ -52,8 +52,8 @@ export type Listener = Listener(kind : Kind, address : String, port : Int)
 export type Kind = Plain | Tls(certificate : Path, key : Path) | Redirect(acmeChallenge : Path)
 
 /// The deadlines, in milliseconds: for a request's head, for an idle
-/// connection, and for a write.
-export type Timeouts = Timeouts(head : Int, idle : Int, write : Int)
+/// connection, for a write, and for a read or an append of the file system.
+export type Timeouts = Timeouts(head : Int, idle : Int, write : Int, file : Int)
 
 /// The limits: the most bytes of a request line and of the headers
 /// together, and the most connections open in all and from one address.
@@ -190,11 +190,12 @@ fn listener(field : String, value : Json.Value) : Either(Error, Listener) = {
 
 fn timeouts(top : Map(String, Json.Value)) : Either(Error, Timeouts) = {
     let object <- objectField(top, "", "timeouts");
-    let _ <- members(object, "timeouts", "timeouts", ["head", "idle", "write"]);
+    let _ <- members(object, "timeouts", "timeouts", ["head", "idle", "write", "file"]);
     let head <- positive(object, "timeouts", "head");
     let idle <- positive(object, "timeouts", "idle");
     let write <- positive(object, "timeouts", "write");
-    Right(Timeouts(=head, =idle, =write))
+    let file <- positive(object, "timeouts", "file");
+    Right(Timeouts(=head, =idle, =write, =file))
 }
 
 fn limits(top : Map(String, Json.Value)) : Either(Error, Limits) = {
@@ -230,9 +231,18 @@ fn headers(top : Map(String, Json.Value)) : Either(Error, List(Http.Header)) =
             Right(Unit)
         else
             Left(Invalid(=field, rule = "is a token"));
+        let _ <- if List.contains(written, String.toLower(name)) then
+            Left(Invalid(=field,
+                         rule = "is none of Content-Length, Date, Connection and Transfer-Encoding"))
+        else
+            Right(Unit);
         let text <- stringValue(field, value);
         Right(Http.Header(=name, value = text))
     })
+
+// The headers the server writes itself, which the configuration's may not
+// name, in lower case.
+let written : List(String) = ["content-length", "date", "connection", "transfer-encoding"]
 
 // A character of a token, RFC 9110's: a letter, a digit, or one of
 // !#$%&'*+-.^_`|~.
@@ -502,7 +512,7 @@ let withoutShell : String =
         <> "  \"root\": \"/srv/ernest-lang.org/site\",\n"
         <> "  \"canonical-host\": \"ernest-lang.org\",\n"
         <> "  \"redirect-hosts\": [\"www.ernest-lang.org\", \"ernest-lang.se\"],\n"
-        <> "  \"timeouts\": { \"head\": 10000, \"idle\": 60000, \"write\": 30000 },\n"
+        <> "  \"timeouts\": { \"head\": 10000, \"idle\": 60000, \"write\": 30000, \"file\": 5000 },\n"
         <> "  \"limits\": { \"request-line\": 8192, \"headers\": 16384,\n"
         <> "               \"connections\": 1024, \"connections-per-address\": 32 },\n"
         <> "  \"content-types\": { \".wasm\": \"application/wasm\" },\n"
@@ -558,7 +568,7 @@ let readsTheExample =
                                        port = 443)),
                          Path("/srv/ernest-lang.org/site"),
                          ["www.ernest-lang.org", "ernest-lang.se"],
-                         Timeouts(head = 10000, idle = 60000, write = 30000),
+                         Timeouts(head = 10000, idle = 60000, write = 30000, file = 5000),
                          Limits(requestLine = 8192,
                                 headers = 16384,
                                 connections = 1024,
@@ -625,7 +635,7 @@ let refusesTypes =
                                             "\"root\": 1")),
                               broken(edited("\"redirect-hosts\": [\"www.ernest-lang.org\", \"ernest-lang.se\"]",
                                             "\"redirect-hosts\": [\"www.ernest-lang.org\", 2]")),
-                              broken(edited("\"timeouts\": { \"head\": 10000, \"idle\": 60000, \"write\": 30000 }",
+                              broken(edited("\"timeouts\": { \"head\": 10000, \"idle\": 60000, \"write\": 30000, \"file\": 5000 }",
                                             "\"timeouts\": 5")),
                               broken(edited("\"application/wasm\"", "[]")),
                               broken("{\"listeners\": {}}")],
@@ -639,7 +649,8 @@ let refusesTypes =
 
 // design §4: the rules on values: a kind, a port, a count, an empty string
 // and an empty array, a control character, a content type's dot, a header's
-// token, the shell's path and its warning.
+// token and a header the server writes itself, in any case, the shell's
+// path and its warning.
 let refusesValues =
     Test.Case(name = "refuses a value that breaks a rule",
               run = fn() =
@@ -647,6 +658,7 @@ let refusesValues =
                               broken(edited("\"port\": 8080", "\"port\": 65536")),
                               broken(edited("\"port\": 8080", "\"port\": -1")),
                               broken(edited("\"idle\": 60000", "\"idle\": 0")),
+                              broken(edited("\"file\": 5000", "\"file\": -5")),
                               broken(edited("\"canonical-host\": \"ernest-lang.org\"",
                                             "\"canonical-host\": \"\"")),
                               broken(edited("\"listeners\": [",
@@ -662,12 +674,15 @@ let refusesValues =
                               broken(edited("\".wasm\"", "\".w\\tasm\"")),
                               broken(edited("\"X-Content-Type-Options\"", "\"X Content\"")),
                               broken(edited("\"X-Content-Type-Options\"", "\"\"")),
+                              broken(edited("\"X-Content-Type-Options\"", "\"date\"")),
+                              broken(edited("\"X-Content-Type-Options\"", "\"Transfer-ENCODING\"")),
                               broken(edited("\"path\": \"/shell/session\"", "\"path\": \"shell\"")),
                               broken(edited("\"warning\": 60000", "\"warning\": 300000"))],
                              [Some(#("listeners[2].kind", "is one of plain, tls and redirect")),
                               Some(#("listeners[2].port", "is 0 to 65535")),
                               Some(#("listeners[2].port", "is 0 to 65535")),
                               Some(#("timeouts.idle", "is above 0")),
+                              Some(#("timeouts.file", "is above 0")),
                               Some(#("canonical-host", "is not empty")),
                               Some(#("unused", "is no field of the configuration")),
                               Some(#("shell.command", "is not empty")),
@@ -678,6 +693,10 @@ let refusesValues =
                               Some(#("content-types..w\tasm", "holds no control character")),
                               Some(#("headers.X Content", "is a token")),
                               Some(#("headers.", "is a token")),
+                              Some(#("headers.date",
+                                     "is none of Content-Length, Date, Connection and Transfer-Encoding")),
+                              Some(#("headers.Transfer-ENCODING",
+                                     "is none of Content-Length, Date, Connection and Transfer-Encoding")),
                               Some(#("shell.path", "begins with /")),
                               Some(#("shell.warning", "is below the lifetime"))]))
 
