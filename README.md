@@ -56,7 +56,7 @@ The server runs on its machine as [`deploy/README.md`](deploy/README.md) says, s
 - [`docs/release.md`](docs/release.md): what a release runs to be ready.
 - [`examples/README.md`](examples/README.md): the example site, what it shows and how it is run.
 - [`deploy/README.md`](deploy/README.md): the deployment, the operator's steps in their order.
-- [`docs/language_feedback.md`](docs/language_feedback.md), from its first line: what writing Ernest felt against the principles, carried to Ernest by copy.
+- `language_feedback.md`, under `docs/` from its first line and gone when it is empty: what writing Ernest felt against the principles, carried to Ernest by copy.
 - [`CLAUDE.md`](CLAUDE.md): the working rules.
 
 The tests live in the modules they test, which `make test` runs; `test/`, where it exists, holds a program run end to end, and `tools/` the checker of the documents, `make test` runs them too.
