@@ -1,12 +1,12 @@
 # Deploying ernest-httpd
 
-The operator's steps, in their order, from a machine with Ubuntu 24.04, systemd, podman and certbot to the smoke test passing. Each step gives its commands and what it says when it fails. What each file of `deploy/` is, and the server's arrangement on the machine, is the design's §13, [`docs/design.md`](../docs/design.md); the files stand here as they are installed, and the release archive carries them under its own `deploy/`.
+The operator's steps, in their order, from a machine with Debian 13, systemd, podman and certbot to the smoke test passing. Each step gives its commands and what it says when it fails. What each file of `deploy/` is, and the server's arrangement on the machine, is the design's §13, [`docs/design.md`](../docs/design.md); the files stand here as they are installed, and the release archive carries them under its own `deploy/`.
 
 A line whose prompt is `$` is typed by the operator, `sudo` before what the superuser runs. A line whose prompt is `httpd$` is typed in a shell of the server's user, `sudo -u httpd -H bash` and then `cd`, its home, with `export PATH=/home/httpd/opt/local/bin:$PATH`, the user's prefix's `bin` first, so that the prefix's `erl` and `ern` are found once steps 3 and 4 install them.
 
 ## 1. The machine
 
-The machine runs Ubuntu 24.04 with systemd, podman and certbot, `sudo apt install podman certbot`, its ports 80 and 443 open, and the four names in DNS: `ernest-lang.org`, `www.ernest-lang.org`, `ernest-lang.se` and `www.ernest-lang.se`. The operator brings the server's release archive, `ernest_httpd-0.1.0.tar.gz`, which `make release` writes, and Ernest's, `ern-0.9.0.tar.gz`, the one the release was built with.
+The machine runs Debian 13 with systemd, podman and certbot, `sudo apt install podman certbot`, its ports 80 and 443 open, and the four names in DNS: `ernest-lang.org`, `www.ernest-lang.org`, `ernest-lang.se` and `www.ernest-lang.se`. The operator brings the server's release archive, `ernest_httpd-0.1.0.tar.gz`, which `make release` writes, and Ernest's, `ern-0.9.0.tar.gz`, the one the release was built with.
 
 Each of the two ports has a listener on `0.0.0.0` and one on `::`, since a listener takes connections of its address's family alone, and the four names resolve to the machine's address of each family it serves.
 
@@ -24,7 +24,7 @@ $ sudo install -o httpd -g httpd -m 0644 ern-0.9.0.tar.gz ernest_httpd-0.1.0.tar
 
 ## 3. Erlang/OTP
 
-`ern` runs on Erlang/OTP 29, which Ubuntu 24.04 does not package, its own being 25, so OTP is built as `httpd` from its source release, the one the shell's image runs, and installed under the user's prefix:
+`ern` runs on Erlang/OTP 29, which Debian 13 does not package, so OTP is built as `httpd` from its source release, the one the shell's image runs, and installed under the user's prefix:
 
 ```console
 $ sudo apt install build-essential autoconf libncurses-dev libssl-dev
@@ -58,7 +58,7 @@ The server's `make install` puts the launcher in `/home/httpd/opt/local/bin/erne
 
 ## 5. The directories
 
-The server's directory, `/home/httpd/ernest-httpd`, holds the site, `site/`, the challenge's directory, `acme/`, which certbot writes into, and the access log's, `log/`; the site's files, its pages and its shell page, are copied under `site/`:
+The server's directory, `/home/httpd/ernest-httpd`, holds the site, `site/`, the challenge's directory, `acme/`, which certbot writes into, and the access log's, `log/`; the site's files, `site/` of the site's own repository, https://github.com/joagre/ernest-lang.org, are copied under `site/`:
 
 ```console
 httpd$ mkdir -p ernest-httpd/site ernest-httpd/acme ernest-httpd/log
@@ -91,28 +91,54 @@ The certificate is the server's own until certbot's first replaces it, in step 9
 
 `limits.connections` is 80, counted by listener, and `limits.connections-per-address` 16, so that the two `tls` listeners' 160 connections whose clients read nothing, each holding five times the site's largest file over TLS, xterm.js's 0.3 MiB, stay under 256 MiB; a site that gains a larger file sizes the two again by that rule. `timeouts.idle` is 15000, so that an idle connection gives back what it holds soon.
 
-## 7. The shell's image
+## 7. The shell
 
-The visitor's shell runs in a container of the image `ernest-shell`, built by `httpd` from `deploy/Containerfile` with Ernest's archive beside it as `ern.tar.gz`, its storage under the user's home, `/home/httpd/.local/share/containers`. The user's systemd instance, kept running by its linger, gives podman its run directory, `/run/user/` and the user's number, and the limits of the container's memory and processes:
+The linger and podman's directories are made whether or not the configuration takes a shell, since the unit's `ExecStartPre` runs podman and its `ReadWritePaths` names podman's storage and run directories. The user's systemd instance, kept running by its linger, gives podman its run directory, `/run/user/` and the user's number, and the limits of the container's memory and processes; `podman info` makes podman's storage under the user's home, `/home/httpd/.local/share/containers`, and names the two:
 
 ```console
 $ sudo loginctl enable-linger httpd
-httpd$ mkdir image && cp ernest_httpd-0.1.0/deploy/Containerfile image/ && cp ern-0.9.0.tar.gz image/ern.tar.gz
-httpd$ podman build -t ernest-shell image
 httpd$ podman info --format '{{.Store.GraphRoot}} {{.Store.RunRoot}}'
 /home/httpd/.local/share/containers/storage /run/user/1001/containers
 ```
 
-`podman info` names podman's storage and run directories, which the unit's `ReadWritePaths` makes writable under `ProtectSystem=strict`. A podman without the linger says `The cgroupv2 manager is set to systemd but there is no systemd user session available`, and a container it starts takes no `--memory`.
+A podman without the linger says `The cgroupv2 manager is set to systemd but there is no systemd user session available`, and a container it starts takes no `--memory`.
 
-The image answers a line of Ernest, here from standard input, and the shell's command, at a terminal of the operator's, runs it as a visitor's session does, where `1 + 2` answers `3 : Int`, `Fs.write(Path("x"), <<1>>, 1000)` answers `Right(Unit)` in the size-capped home, and `:quit` leaves:
+The rest of the step is run when the configuration takes a shell, which it does once the site's page has one: `deploy/config.json` then holds the member `shell`, as the design's §13 gives it, and step 6 installs it again:
+
+```json
+"shell": {
+  "path": "/shell/session",
+  "origins": ["https://ernest-lang.org"],
+  "command": ["/home/httpd/ernest-httpd/shell.sh", "-it", "--rm", "--network", "none", "--read-only",
+              "--cap-drop=ALL", "--security-opt=no-new-privileges",
+              "--memory", "128m", "--pids-limit", "128",
+              "--mount", "type=tmpfs,destination=/home/shell,tmpfs-size=64m,U=true", "ernest-shell"],
+  "most-at-once": 6,
+  "starts": { "count": 10, "within": 3600000 },
+  "lifetime": 300000, "warning": 60000,
+  "message-limit": 65536, "hangup": 5000
+}
+```
+
+The visitor's shell runs in a container of the image `ernest-shell`, built by `httpd` from `deploy/Containerfile` with Ernest's archive beside it as `ern.tar.gz`, through the shell's wrapper, `deploy/shell.sh`, installed in the server's directory:
+
+```console
+httpd$ mkdir image && cp ernest_httpd-0.1.0/deploy/Containerfile image/ && cp ern-0.9.0.tar.gz image/ern.tar.gz
+httpd$ podman build -t ernest-shell image
+httpd$ install -m 0755 ernest_httpd-0.1.0/deploy/shell.sh ernest-httpd/shell.sh
+```
+
+The image answers a line of Ernest, here from standard input, and the shell's command, at a terminal of the operator's, runs it through the wrapper as a visitor's session does, where `1 + 2` answers `3 : Int`, `Fs.write(Path("x"), <<1>>, 1000)` answers `Right(Unit)` in the size-capped home, and `:quit` leaves; `podman ps` then lists no container, nor does it after a terminal closed before `:quit`, within a second:
 
 ```console
 httpd$ printf '1 + 2\n' | podman run -i --rm --network none ernest-shell
-httpd$ podman run -it --rm --network none --read-only --cap-drop=ALL \
+httpd$ ernest-httpd/shell.sh -it --rm --network none --read-only --cap-drop=ALL \
       --security-opt=no-new-privileges --memory 128m --pids-limit 128 \
       --mount type=tmpfs,destination=/home/shell,tmpfs-size=64m,U=true ernest-shell
+httpd$ podman ps
 ```
+
+Without the wrapper, a command of `podman run` alone, the container outlives its visitor: `podman run` leaves running a container whose terminal hangs up, so each visitor's stop leaves one `Up`, which `podman ps` shows, and `podman rm -f -t 0` and its id removes. A wrapper run without the linger exits at once, `mktemp: failed to create directory via template`, since `/run/user/` and the user's number is not there.
 
 `U=true` gives the tmpfs to the container's user; without it podman mounts it root's, mode 700, and Erlang, started in it, fails to read its own boot file, `File operation error: eacces. Target: no_dot_erlang.boot`.
 
@@ -125,7 +151,7 @@ $ sudo systemctl enable --now ernest-httpd
 $ journalctl -u ernest-httpd
 ```
 
-The journal says `listening on 127.0.0.1:8654`, the node's own listener, then `listening on 0.0.0.0:443`, `listening on :::443`, `listening on 0.0.0.0:80` and `listening on :::80`, in the configuration's order. A configuration the server refuses is said with its field, `/home/httpd/ernest-httpd/node/config.json: listeners[0].key is readable by the program's user alone`, a port another server holds as `:::443: Other("address already in use")`, and a directory of `ReadWritePaths` that does not exist, the image not yet built, by systemd: `Failed to set up mount namespacing`, the status `226/NAMESPACE`.
+The journal says `listening on 127.0.0.1:8654`, the node's own listener, then `listening on 0.0.0.0:443`, `listening on :::443`, `listening on 0.0.0.0:80` and `listening on :::80`, in the configuration's order. A configuration the server refuses is said with its field, `/home/httpd/ernest-httpd/node/config.json: listeners[0].key is readable by the program's user alone`, a port another server holds as `:::443: Other("address already in use")`, and a directory of `ReadWritePaths` that does not exist, step 7's `podman info` not yet run, by systemd: `Failed to set up mount namespacing`, the status `226/NAMESPACE`.
 
 The unit binds 80 and 443 as no root by `AmbientCapabilities=CAP_NET_BIND_SERVICE`, a capability that goes with systemd. A server run without systemd binds the two ports by `setcap cap_net_bind_service=+ep` on the prefix's own BEAM binary, `/home/httpd/opt/local/lib/erlang/erts-*/bin/beam.smp`, the binary itself and not a link to it, redone at each install of OTP, a file capability putting the binary in secure-exec mode, which drops `LD_LIBRARY_PATH` and the like; authbind and privbind, root's helpers in front of `ern`, are not used.
 
@@ -145,7 +171,7 @@ $ sudo certbot certonly --webroot -w /home/httpd/ernest-httpd/acme --cert-name e
 $ sudo certbot renew --dry-run
 ```
 
-certbot 3.2 and later runs the hook after the issue itself; an earlier one, Ubuntu 24.04's own package among them, runs the hooks of the directory only at a renewal, `certbot --version` says which, and the hook then runs once by hand, `sudo /etc/letsencrypt/renewal-hooks/deploy/ernest-httpd.sh`. A name that does not lead to the server fails its challenge, `Invalid response from http://ernest-lang.se/.well-known/acme-challenge/...`, or `Connection refused` where nothing listens on 80.
+certbot 3.2 and later runs the hook after the issue itself; an earlier one runs the hooks of the directory only at a renewal, `certbot --version` says which, and the hook then runs once by hand, `sudo /etc/letsencrypt/renewal-hooks/deploy/ernest-httpd.sh`. A name that does not lead to the server fails its challenge, `Invalid response from http://ernest-lang.se/.well-known/acme-challenge/...`, or `Connection refused` where nothing listens on 80.
 
 ## 10. The access log
 
@@ -166,6 +192,11 @@ https://ernest-lang.org:443/ answers 200: ok
 http://ernest-lang.org:80/ answers 301 to https://ernest-lang.org/: ok
 https://ernest-lang.org:443/ for www.ernest-lang.org answers 301 to https://ernest-lang.org/: ok
 https://ernest-lang.org:443/ for elsewhere answers 421: ok
+```
+
+The smoke test reads the checks it runs from `deploy/config.json`, the archive's own, whose rules but the file system's it checks, the files being the machine's; one it refuses is said with its path, `smoke: deploy/config.json: listeners is required`. A configuration with a shell, step 7's, adds a fifth line:
+
+```console
 https://ernest-lang.org:443/shell/session runs 1 + 2 and closes with 4004 at a stop: ok
 ```
 

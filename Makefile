@@ -11,7 +11,8 @@
 #   make run      runs the example site through the launcher, or the
 #                 configuration CONFIG names, CONFIG=path make run
 #   make smoke    the smoke test against the deployed site whose canonical
-#                 host HOST names, make smoke HOST=ernest-lang.org
+#                 host HOST names, make smoke HOST=ernest-lang.org, the
+#                 checks deploy/config.json takes
 #   make lib      fills lib/: each dependency fetched and unpacked where it is
 #                 not there, and each Erlang application under erl/ built by
 #                 its own make and linked
@@ -169,11 +170,12 @@ run: all xterm
 	bin/$(NAME) $(CONFIG)
 
 # The smoke test, design §13: Smoke's own compiled form run with the host
-# as its argument, since ern run's --main names a function of the file's
-# own module alone. A missing HOST is refused before the build.
+# and the deployed configuration as its arguments, since ern run's --main
+# names a function of the file's own module alone. A missing HOST is
+# refused before the build.
 smoke: $(if $(HOST),all)
 	@test -n "$(HOST)" || { echo "HOST is required: make smoke HOST=ernest-lang.org"; exit 1; }
-	$(ERN) run $(RUN_LOAD_PATH) build/smoke.erc $(HOST)
+	$(ERN) run $(RUN_LOAD_PATH) build/smoke.erc $(HOST) deploy/config.json
 
 doc: all
 	$(ERN) doc --source-root src --build-root build $(LOAD_PATH) src

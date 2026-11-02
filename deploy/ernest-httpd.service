@@ -14,7 +14,7 @@ Type=exec
 User=httpd
 WorkingDirectory=/home/httpd
 # The prefix's bin first: the launcher finds ern there, and ern the prefix's
-# erl; the shell's command finds podman in /usr/bin.
+# erl; the shell's wrapper finds podman in /usr/bin.
 Environment=PATH=/home/httpd/opt/local/bin:/usr/local/bin:/usr/bin:/bin
 # Rootless podman keeps a pause process in the user's own scope, outside
 # this unit, holding the mount namespace of the instance that started it;
@@ -27,8 +27,9 @@ ExecStart=/home/httpd/opt/local/bin/ernest_httpd --config-dir /home/httpd/ernest
 # change is a restart.
 ExecReload=/home/httpd/opt/local/bin/ern reload --config-dir /home/httpd/ernest-httpd/node
 Restart=on-failure
-# Above timeouts.write and shell.hangup of config.json together, 30 and 5
-# seconds, so that the orderly stop ends before systemd kills what is left.
+# Above timeouts.write of config.json, 30 seconds, and, where it has a
+# shell, shell.hangup, 5, together, so that the orderly stop ends before
+# systemd kills what is left.
 TimeoutStopSec=40
 # The stop's signal goes to the server alone, which ends each session's
 # program itself, by its terminal's hangup; what is left once the server

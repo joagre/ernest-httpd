@@ -25,17 +25,5 @@
     "X-Content-Type-Options": "nosniff",
     "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' wss://ernest-lang.org"
   },
-  "access-log": "/home/httpd/ernest-httpd/log/access.log",
-  "shell": {
-    "path": "/shell/session",
-    "origins": ["https://ernest-lang.org"],
-    "command": ["podman", "run", "-it", "--rm", "--network", "none", "--read-only",
-                "--cap-drop=ALL", "--security-opt=no-new-privileges",
-                "--memory", "128m", "--pids-limit", "128",
-                "--mount", "type=tmpfs,destination=/home/shell,tmpfs-size=64m,U=true", "ernest-shell"],
-    "most-at-once": 6,
-    "starts": { "count": 10, "within": 3600000 },
-    "lifetime": 300000, "warning": 60000,
-    "message-limit": 65536, "hangup": 5000
-  }
+  "access-log": "/home/httpd/ernest-httpd/log/access.log"
 }

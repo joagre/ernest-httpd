@@ -2,20 +2,28 @@
 /// standard output as a line, and the program's status whether every one
 /// passed (design §13).
 ///
-/// `main` takes the site's canonical host, its one argument, and runs the
-/// checks against it over TLS on 443, the far end's certificate verified
-/// against the host's bundle, `/etc/ssl/certs/ca-certificates.crt`, and
-/// over plain HTTP on 80. It prints each check's line, the check's name and
-/// `: ok`, or `: failed: ` and what came, and exits with the status 0 where
-/// every check passed and 1 otherwise; it refuses another count of
-/// arguments with `usage: smoke host` on standard error and the status 2.
+/// `main` takes the site's canonical host and the path of its
+/// configuration, `deploy/config.json` for the deployed site, and runs the
+/// checks the configuration takes against the host over TLS on 443, the
+/// far end's certificate verified against the host's bundle,
+/// `/etc/ssl/certs/ca-certificates.crt`, and over plain HTTP on 80, the
+/// shell's where the configuration has a `shell`, at its path, from the
+/// origin `https://` and the host. It prints each check's line, the check's
+/// name and `: ok`, or `: failed: ` and what came, and exits with the
+/// status 0 where every check passed and 1 otherwise. It refuses another
+/// count of arguments with `usage: smoke host config.json` on standard
+/// error and the status 2, and a configuration it cannot read, or whose
+/// text `Config.parse` refuses, with `smoke: `, the path, `: ` and
+/// `Config.reason` on standard error and the status 2; the rules of the
+/// file system's are not checked, since the files they name are the
+/// machine's.
 ///
 /// `checks` runs the same checks against any site, over the scheme its
 /// port takes, `https` or `http`: `/` answered 200; `/` on the redirect
 /// port, and `/` for the first redirect host, `www.` and the host, each
 /// answered 301 to `https://`, the host and `/`; `/` for a host that is
-/// neither, `elsewhere`, answered 421; and the shell's path,
-/// `/shell/session`, upgraded from the origin, a resize of 24 rows by 80
+/// neither, `elsewhere`, answered 421; and where it is given the shell's
+/// path, the path upgraded from the origin, a resize of 24 rows by 80
 /// columns attaching a session, `1 + 2` and a line feed typed as keys
 /// answering output that holds `3 : Int` within 5000 milliseconds, its
 /// type dimmed as the shell writes it at a terminal or plain where
@@ -35,6 +43,8 @@
 /// ```sh
 /// make smoke HOST=ernest-lang.org
 /// ```
+///
+/// which runs `ern run build/smoke.erc ernest-lang.org deploy/config.json`.
 
 //
 // Types
@@ -48,21 +58,42 @@ export type Check = Check(name : String, result : Either(String, Unit))
 // Program
 //
 
-/// The checks run against the site of the host the one argument names,
-/// over TLS on 443 and plain HTTP on 80, each check's line printed, and
-/// the status 0 where every one passed and 1 otherwise.
+/// The checks the configuration the second argument names takes, run
+/// against the site of the host the first names, over TLS on 443 and plain
+/// HTTP on 80, each check's line printed, and the status 0 where every one
+/// passed and 1 otherwise.
 export fn main() : Unit =
     match Os.arguments {
-        [host] -> {
-            let checked = checks("https", host, 443, 80, "https://" <> host);
-            List.forEach(checked, fn(check) = Io.println(line(check)));
-            Os.exit(if List.all(checked, passed) then 0 else 1)
-        }
+        [host, path] ->
+            match configured(path) {
+                Right(config) -> {
+                    let shellPath = Optional.map(config.shell, fn(shell) = shell.path);
+                    let checked = checks("https", host, 443, 80, shellPath, "https://" <> host);
+                    List.forEach(checked, fn(check) = Io.println(line(check)));
+                    Os.exit(if List.all(checked, passed) then 0 else 1)
+                }
+              | Left(error) -> {
+                    Io.printlnError("smoke: " <> path <> ": " <> Config.reason(error));
+                    Os.exit(2)
+                }
+            }
       | _ -> {
-            Io.printlnError("usage: smoke host");
+            Io.printlnError("usage: smoke host config.json");
             Os.exit(2)
         }
     }
+
+// The configuration of the file's text, read within fileMs, every rule but
+// the file system's checked: the files those rules name are the deployed
+// machine's, not the smoke test's.
+fn configured(path : String) : Either(Config.Error, Config.Config) = {
+    let bytes <- Either.mapLeft(Fs.read(Path(path), fileMs), Config.Unreadable);
+    let text <- Either.fromOptional(String.fromUtf8(bytes), Config.Unreadable(Io.NotUtf8(bytes)));
+    Config.parse(text)
+}
+
+// The milliseconds the configuration's file is read within.
+let fileMs : Int = 5000
 
 // A check's line: its name, and `: ok` where it passed or `: failed: ` and
 // what came where it failed.
@@ -83,9 +114,6 @@ fn passed(check : Check) : Bool =
 // certificate is verified against over TLS.
 let bundle : Path = Path("/etc/ssl/certs/ca-certificates.crt")
 
-// The shell's path the site serves.
-let shellPath : String = "/shell/session"
-
 // The milliseconds each connect, write and read of a check waits.
 let socketMs : Int = 5000
 
@@ -96,12 +124,14 @@ let answerMs : Int = 5000
 
 /// The checks run against the site of the host on the port, over the
 /// scheme, `https` or `http`, and on the redirect port over plain HTTP,
-/// the shell's upgrade from the origin, each with its name and what came
-/// where it failed, in the order the module's documentation gives them.
+/// and the shell's upgrade at the shell's path from the origin where the
+/// path is given, each with its name and what came where it failed, in the
+/// order the module's documentation gives them.
 export fn checks(scheme : String,
                  host : String,
                  port : Int,
                  redirectPort : Int,
+                 shellPath : Optional(String),
                  origin : String) : List(Check) = {
     let canonical = "https://" <> host <> "/";
     let site = scheme <> "://" <> host <> ":" <> Int.toString(port);
@@ -113,9 +143,14 @@ export fn checks(scheme : String,
      Check(name = site <> "/ for www." <> host <> " answers 301 to " <> canonical,
            result = answered(opened(scheme, host, port), "www." <> host, "301 " <> canonical)),
      Check(name = site <> "/ for elsewhere answers 421",
-           result = answered(opened(scheme, host, port), "elsewhere", "421")),
-     Check(name = site <> shellPath <> " runs 1 + 2 and closes with 4004 at a stop",
-           result = shell(opened(scheme, host, port), host, origin))]
+           result = answered(opened(scheme, host, port), "elsewhere", "421"))]
+        <> match shellPath {
+            Some(path) ->
+                [Check(name = site <> path <> " runs 1 + 2 and closes with 4004 at a stop",
+                       result = shell(opened(scheme, host, port), path, host, origin))]
+          | None ->
+                []
+        }
 }
 
 // A connection to the host's port: over TLS, the far end's certificate
@@ -152,12 +187,14 @@ fn shown(#(response, _) : #(Http.Response, Bytes)) : String =
       | None -> Int.toString(response.status)
     }
 
-// The shell's check over the connection, which is then closed.
+// The shell's check at the path over the connection, which is then
+// closed.
 fn shell(connection : Either(String, Address(Tcp.SocketMsg)),
+         path : String,
          host : String,
          origin : String) : Either(String, Unit) = {
     let socket <- connection;
-    let result = shellOver(socket, host, origin);
+    let result = shellOver(socket, path, host, origin);
     Tcp.close(socket);
     result
 }
@@ -167,10 +204,11 @@ fn shell(connection : Either(String, Address(Tcp.SocketMsg)),
 // answerMs by output that holds `3 : Int`; and a stop, answered by a close
 // of 4004, the output before it passed over.
 fn shellOver(socket : Address(Tcp.SocketMsg),
+             path : String,
              host : String,
              origin : String) : Either(String, Unit) = {
     let #(response, carried) <-
-        Either.mapLeft(upgrade(socket, shellPath, host, origin, socketMs), Io.show);
+        Either.mapLeft(upgrade(socket, path, host, origin, socketMs), Io.show);
     let _ <- if response.status == 101 then Right(Unit) else Left(shown(#(response, <<>>)));
     let typed =
         masked(WebSocket.Text("{\"resize\": [24, 80]}"))
@@ -432,11 +470,12 @@ fn exited(program : Address(Os.ProgramMsg)) : Either(Io.Error, Int) =
 // launcher over plain HTTP: every check passes and says `: ok` against the
 // site whose host, redirect host, listeners and shell they check, the
 // shell's stand-in answering the keys typed and the stop closing with
-// 4004; and against the same site from an origin it does not take, the
-// shell's check fails and says what came, the 403, while the rest pass;
-// and against a port where nothing listens every check fails and says
-// `Refused`, each in a connection of its own. get, upgrade, masked and
-// readOutput are the client they run with.
+// 4004; given no shell's path, the four checks of the rest alone pass;
+// against the same site from an origin it does not take, the shell's check
+// fails and says what came, the 403, while the rest pass; and against a
+// port where nothing listens every check fails and says `Refused`, each in
+// a connection of its own. get, upgrade, masked and readOutput are the
+// client they run with.
 let checksASite = Test.Case(name = "checks a site and says what came", run = fn() = {
     let result = {
         let path <- written();
@@ -445,14 +484,21 @@ let checksASite = Test.Case(name = "checks a site and says what came", run = fn(
             [one, two] -> #(one, two)
           | _ -> #(0, 0)
         };
-        let passing = checks("http", "localhost", plainPort, redirectPort, "http://localhost");
-        let refused = checks("http", "localhost", plainPort, redirectPort, "http://elsewhere");
+        let shellPath = Some("/shell/session");
+        let passing =
+            checks("http", "localhost", plainPort, redirectPort, shellPath, "http://localhost");
+        let withoutShell =
+            checks("http", "localhost", plainPort, redirectPort, None, "http://localhost");
+        let refused =
+            checks("http", "localhost", plainPort, redirectPort, shellPath, "http://elsewhere");
         let closed <- Tcp.listen("127.0.0.1", 0);
         let nothing <- Tcp.port(closed);
         Tcp.closeListener(closed);
-        let unanswered = checks("http", "localhost", nothing, nothing, "http://localhost");
+        let unanswered =
+            checks("http", "localhost", nothing, nothing, shellPath, "http://localhost");
         let status <- stopped(program, pid);
         Right(#(List.map(passing, line),
+                List.map(withoutShell, line),
                 List.map(refused, line),
                 List.map(unanswered, line),
                 status,
@@ -461,7 +507,14 @@ let checksASite = Test.Case(name = "checks a site and says what came", run = fn(
                 nothing))
     };
     match result {
-        Right(#(passing, refused, unanswered, status, plainPort, redirectPort, nothing)) -> {
+        Right(#(passing,
+                withoutShell,
+                refused,
+                unanswered,
+                status,
+                plainPort,
+                redirectPort,
+                nothing)) -> {
             let named = fn(port, redirect) = {
                 let site = "http://localhost:" <> Int.toString(port);
                 [site <> "/ answers 200",
@@ -477,8 +530,9 @@ let checksASite = Test.Case(name = "checks a site and says what came", run = fn(
                 "http://localhost:"
                     <> Int.toString(plainPort)
                     <> "/shell/session runs 1 + 2 and closes with 4004 at a stop";
-            Test.equal(#(passing, refused, unanswered, status),
+            Test.equal(#(passing, withoutShell, refused, unanswered, status),
                        #(ok,
+                         List.take(ok, 4),
                          List.take(ok, 4) <> [shellName <> ": failed: 403"],
                          List.map(named(nothing, nothing), fn(name) = name <> ": failed: Refused"),
                          143))
@@ -493,12 +547,44 @@ let checksASite = Test.Case(name = "checks a site and says what came", run = fn(
 type Ran = Ran(index : Int, outcome : Either(Io.Error, Os.Finished))
 
 // design §13: the program refuses a command line of another count of
-// arguments than one, none and two, with the usage on standard error,
-// nothing on standard output, and the status 2; each is run by `ern run`
-// on the module's own compiled form, as make smoke runs it, at once.
-let refusesUsage = Test.Case(name = "refuses another count of arguments", run = fn() = {
+// arguments than two, none, one and three, with the usage on standard
+// error, nothing on standard output, and the status 2; and a configuration
+// it cannot take, a file that is not there and one whose text breaks a
+// rule, `{}`, with `smoke: `, the path, `: ` and the reason on standard
+// error, nothing on standard output, and the status 2, before any check
+// runs; each is run by `ern run` on the module's own compiled form, as
+// make smoke runs it, at once.
+let refusesTheCommandLine = Test.Case(name = "refuses a command line it cannot take", run = fn() = {
+    let directory = "build/scratch/smoke-refusal";
+    let missing = directory <> "/missing.json";
+    let empty = directory <> "/empty.json";
+    let result = {
+        let _ <- Fs.makeDir(Path(directory), 5000);
+        let _ <- Fs.write(Path(empty), String.toUtf8("{}\n"), 5000);
+        Right(ranSmoke([[],
+                        ["ernest-lang.org"],
+                        ["ernest-lang.org", "deploy/config.json", "www.ernest-lang.org"],
+                        ["ernest-lang.org", missing],
+                        ["ernest-lang.org", empty]]))
+    };
+    let refusal = Right(#(2, Some(""), Some("usage: smoke host config.json\n")));
+    let refused = fn(said) = Right(#(2, Some(""), Some("smoke: " <> said <> "\n")));
+    Test.equal(result,
+               Right([refusal,
+                      refusal,
+                      refusal,
+                      refused(missing <> ": cannot read the file: NotFound"),
+                      refused(empty <> ": listeners is required")]))
+})
+
+// Each command line run by `ern run` on the module's compiled form, at
+// once, each in a process of its own: its status, its standard output and
+// its standard error, in the order of the command lines.
+fn ranSmoke(runs : List(List(String))) : List(Either(Io.Error,
+                                                     #(Int,
+                                                       Optional(String),
+                                                       Optional(String)))) receiving Ran = {
     let me = self();
-    let runs = [[], ["ernest-lang.org", "www.ernest-lang.org"]];
     List.forEach(List.indexed(runs), fn(#(index, arguments)) = {
         let _ =
             spawn(fn() =
@@ -511,7 +597,7 @@ let refusesUsage = Test.Case(name = "refuses another count of arguments", run = 
                                                 30000))));
         Unit
     });
-    let outcomes = List.map(List.indexed(runs), fn(#(wanted, _)) = receive {
+    List.map(List.indexed(runs), fn(#(wanted, _)) = receive {
         Ran(=index, =outcome) when index == wanted ->
             Either.map(outcome,
                        fn(finished) =
@@ -520,10 +606,8 @@ let refusesUsage = Test.Case(name = "refuses another count of arguments", run = 
                              String.fromUtf8(finished.stderr)))
       | after 60000 ->
             Left(Io.Timeout)
-    });
-    let refusal = Right(#(2, Some(""), Some("usage: smoke host\n")));
-    Test.equal(outcomes, [refusal, refusal])
-})
+    })
+}
 
 // The text of a file of the repository, by its path; "" where it cannot be
 // read.
@@ -549,15 +633,17 @@ fn stopSeconds(unit : String) : Optional(Int) =
         |> List.get(0)
 
 // design §13: the files of deploy/ as they are installed: config.json
-// passes Config.parse, every rule but the file system's, with a shell;
+// passes Config.parse, every rule but the file system's, and has no shell;
 // the unit holds each line the design names, Type=exec, User=httpd, the
 // working directory, the PATH with the prefix's bin first, the installed
 // launcher's ExecStart with node/ and its config.json, the migrate in
-// ExecStartPre, the prefix's ern in
-// ExecReload, Restart=on-failure, KillMode=mixed,
-// AmbientCapabilities=CAP_NET_BIND_SERVICE, ProtectSystem=strict,
-// PrivateTmp=yes and the ReadWritePaths, and a TimeoutStopSec above
-// timeouts.write and shell.hangup of config.json together; the deploy hook
+// ExecStartPre, the prefix's ern in ExecReload, Restart=on-failure,
+// KillMode=mixed, AmbientCapabilities=CAP_NET_BIND_SERVICE,
+// ProtectSystem=strict, PrivateTmp=yes and the ReadWritePaths, and a
+// TimeoutStopSec above timeouts.write of config.json and, where it has a
+// shell, shell.hangup together; the shell's wrapper makes its directory
+// under /run/user, traps HUP and TERM, runs podman run with --cidfile, and
+// removes the container by its id with podman rm -f -t 0; the deploy hook
 // copies fullchain.pem and privkey.pem into node/, owned by httpd, the
 // key's mode 0600, and restarts the unit; and logrotate rotates log/'s
 // access.log as httpd. A line that is missing is named.
@@ -565,13 +651,19 @@ let holdsTheDeployment = Test.Case(name = "holds the files of deploy/", run = fn
     let unit = "deploy/ernest-httpd.service";
     let parsed = Config.parse(text("deploy/config.json"));
     let stop = match #(parsed, stopSeconds(text(unit))) {
-        #(Right(Config.Config(=timeouts, shell = Some(shell))), Some(seconds)) ->
-            if seconds * 1000 > timeouts.write + shell.hangup then
+        #(Right(Config.Config(=timeouts, =shell)), Some(seconds)) -> {
+            // the design's deployed configuration has no shell; the rule
+            // counts shell.hangup where one has
+            let #(hangup, held) = match shell {
+                Some(configured) -> #(configured.hangup, ["deploy/config.json has a shell"])
+              | None -> #(0, [])
+            };
+            let above = if seconds * 1000 > timeouts.write + hangup then
                 []
             else
-                [unit <> "'s TimeoutStopSec is not above timeouts.write and shell.hangup together"]
-      | #(Right(Config.Config(shell = None)), _) ->
-            ["deploy/config.json has no shell"]
+                [unit <> "'s TimeoutStopSec is not above timeouts.write and shell.hangup together"];
+            held <> above
+        }
       | #(_, None) ->
             [unit <> " lacks TimeoutStopSec"]
       | #(Left(error), _) ->
@@ -618,6 +710,12 @@ let holdsTheDeployment = Test.Case(name = "holds the files of deploy/", run = fn
                                   <> node
                                   <> "/privkey.pem",
                               "systemctl restart ernest-httpd.service"])
+                   <> lacked("deploy/shell.sh",
+                             ["dir=$(mktemp -d -p \"/run/user/$(id -u)\") || exit 1",
+                              "trap 'end; exit 129' HUP",
+                              "trap 'end; exit 143' TERM",
+                              "podman run --cidfile \"$dir/cid\" \"$@\" <&3 &",
+                              "podman rm -f -t 0 --cidfile \"$dir/cid\" > /dev/null 2>&1"])
                    <> lacked("deploy/logrotate", [home <> "/log/access.log {", "su httpd httpd"]),
                [])
 })

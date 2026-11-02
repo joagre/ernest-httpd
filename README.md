@@ -16,7 +16,8 @@ make test       the layout, every module's tests, the documents and the design's
 make run        runs the example site through the launcher, bin/ernest_httpd, on
                 examples/site/config.json; CONFIG=path make run serves another configuration
 make smoke      the smoke test against the deployed site whose canonical host HOST
-                names, make smoke HOST=ernest-lang.org
+                names, make smoke HOST=ernest-lang.org, the checks its configuration,
+                deploy/config.json, takes
 make xterm      fetches xterm.js and its fit addon into the example site, once
 make release    the archive, build/ernest_httpd-VERSION.tar.gz
 make install    installs what stands built under PREFIX, /usr/local by default, from a
@@ -35,7 +36,7 @@ Everything the program loads beyond the standard library and Ernest's own librar
 
 `make run` serves the example site under `examples/site/`, its pages and its shell, on localhost; [`examples/README.md`](examples/README.md) says what it shows and how to try it.
 
-The server runs on its machine as [`deploy/README.md`](deploy/README.md) says, step by step, from the machine to `make smoke HOST=ernest-lang.org` passing, with the files of `deploy/` it installs.
+The server runs on its machine as [`deploy/README.md`](deploy/README.md) says, step by step, from the machine to `make smoke HOST=ernest-lang.org` passing, with the files of `deploy/` it installs; the smoke test reads `deploy/config.json` and checks the shell where it has one.
 
 ## The documents
 
