@@ -1,0 +1,5 @@
+# Language feedback
+
+What writing Ernest felt against the principles, a line each, a queue: a line is carried to Ernest's `language_feedback.md` by copy, Ernest's verdict comes as `language_feedback_reply.md` under its `docs/tmp/`, the log here cites Ernest's number, and the line then goes; a line not answered, or not agreed with, stays with the verdict and the reason beneath it. The file goes when it is empty. The lines are numbered from where the seventh sweep left off; the line below was found on 2026-11-02 against the archive `0.9.0+877fb5a6`, by the first release's cold reader.
+
+17. **A JSON error names a byte and no position.** `Json.parse` of a file with a stray `}` answers `UnexpectedByte(125)`, and the program's user, shown it as `Io.show` writes it, `config.json is not JSON: UnexpectedByte(125)`, has the byte's value and not where it is; a configuration of forty lines is read whole for it. Principle 3: the place is known where the error is made and is not said. Ask: the error carries the position, the line and the column or the offset, and E's Json page says so.

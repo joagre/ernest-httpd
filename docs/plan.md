@@ -8,7 +8,7 @@ Read *Where we are* first, then the table of milestones; the milestones to come 
 
 Begun from `ernest-template` on 2026-10-30. Ernest 0.9.0 was installed from its release archive on 2026-11-02, under a prefix of the user's, and milestone 1's items 1 to 6 were built against it the same day, the design's §2 and §4 to §13: the site served over plain HTTP and TLS, with the redirect listener and the hosts, the live shell over a WebSocket, the example site `make run` serves, and the deployment's files under `deploy/` with the smoke test, which the server passed on its machine on 2026-11-02, serving https://ernest-lang.org; archives that answered the feedback lines were installed that day as they came, each saying its commit, `ern 0.9.0+877fb5a6` the last.
 
-The server's design is `docs/proposals/basic/proposal.md`, decided in Ernest's repository through 2026-10-30 and split here; what it asks of Ernest, TLS in `Tcp`, a pseudo-terminal in `Os` and four libraries, is Ernest's MVP 4.1, the WebSocket's frames a module of this program's since 2026-11-01 (the proposal's *WebSocket*, *The module*), whose first four items come before this milestone's build, and this repository builds against Ernest installed from a release archive.
+The server's design is `docs/design.md`, argued in `docs/proposals/basic/proposal.md`, which was decided in Ernest's repository through 2026-10-30 and split here; what it asks of Ernest, TLS in `Tcp`, a pseudo-terminal in `Os` and four libraries, is Ernest's MVP 4.1, the WebSocket's frames a module of this program's since 2026-11-01 (the proposal's *WebSocket*, *The module*), whose first four items come before this milestone's build, and this repository builds against Ernest installed from a release archive.
 
 ## Milestones
 
@@ -30,3 +30,11 @@ The proposal's order of work, each item a step of it, once Ernest's half is inst
 **The shell after MVP 4.2 (2026-11-02).** The site publishes one page and no shell until Ernest's MVP 4.2 runs; then `deploy/config.json` takes the member `shell` that design §13 gives, and `deploy/README.md`'s step 7 installs the image and the wrapper (the log's *The wrapper and the smoke test's configuration*).
 
 **The caps after Ernest's collection at a wait (2026-11-02).** `deploy/config.json`'s connection caps are sized by §13's rule with a factor of five, what an idle connection holds after a response (the log's *Item 6: the deployment*). Ernest's MVP 4.15 moves the host's collection to the wait; when an archive carries it, the measurement under `docs/proposals/basic/measure/` is run again and the caps sized again by the rule, in the release that follows.
+
+## Milestone 2: after the first release
+
+What the first release's readers found and the milestone's own items, each a step with its log entry when built.
+
+1. **Quiet tests**: `make test` prints no fault's trace and no `cannot accept: Closed` among its passes; each test ends what it started in the design's order, and a message the end prints is decided in §2 or goes (the cold reader's finding 10, 2026-11-02).
+
+**The refusal's form, a decision (2026-11-02).** A configuration's refusal states its rule, `listeners is not empty`, which reads as a claim when the list is empty, and names no value; a host's error comes out as `Io.show` writes it, `Other("address already in use")`, `Denied` on a port below 1024 with no word of the capability. The form was never argued in the log; the decision is whether the message names the value and what is required, `root: /srv/site is no directory`, and whether a host's error carries a hint, with §4's table and §2's lines changing with it. Recommended: the value named and the rule kept as the table writes it, after `must`; decided with the user before milestone 2 is built.
