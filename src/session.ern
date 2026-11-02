@@ -716,3 +716,18 @@ let endsWithItsReader = Test.Case(name = "ends with 1011 when its reader ends", 
     List.forEach(List.filter(Process.live(), isReader), Process.kill);
     Test.equal(#(attached, next("shell"), sessionEnded()), #("Attached", "Ended(1011)", "Returned"))
 })
+
+// design §12: a write that fails is dropped, its Exited being read: keys
+// written as the program exits end nothing but the session, with 4004. A
+// regression test, written after Ernest's 197 made such a write answer
+// Left(Closed); it cannot tell a write that lands before the exit from
+// one after it, and asserts the session's end alone.
+let dropsKeysAtTheExit = Test.Case(name = "drops keys written as its program exits", run = fn() = {
+    let session = started(["sh", "-c", "read line; exit 0"], 60000, 30000, 5000);
+    send(session, Attach(named("shell")));
+    let attached = next("shell");
+    send(session, keys("go\n"));
+    send(session, keys("late"));
+    Test.equal(#(attached, messages("shell"), sessionEnded()),
+               #("Attached", ["Ended(4004)"], "Returned"))
+})
