@@ -1,8 +1,13 @@
 {
   "listeners": [
+    { "kind": "tls", "address": "0.0.0.0", "port": 443,
+      "certificate": "/home/httpd/ernest-httpd/node/fullchain.pem",
+      "key": "/home/httpd/ernest-httpd/node/privkey.pem" },
     { "kind": "tls", "address": "::", "port": 443,
       "certificate": "/home/httpd/ernest-httpd/node/fullchain.pem",
       "key": "/home/httpd/ernest-httpd/node/privkey.pem" },
+    { "kind": "redirect", "address": "0.0.0.0", "port": 80,
+      "acme-challenge": "/home/httpd/ernest-httpd/acme" },
     { "kind": "redirect", "address": "::", "port": 80,
       "acme-challenge": "/home/httpd/ernest-httpd/acme" }
   ],
@@ -12,7 +17,7 @@
   "timeouts": { "head": 10000, "idle": 15000, "write": 30000, "file": 5000 },
   "limits": {
     "request-line": 8192, "headers": 16384,
-    "connections": 160, "connections-per-address": 16
+    "connections": 80, "connections-per-address": 16
   },
   "content-types": {},
   "headers": {

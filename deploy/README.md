@@ -8,7 +8,7 @@ A line whose prompt is `$` is typed by the operator, `sudo` before what the supe
 
 The machine runs Ubuntu 24.04 with systemd, podman and certbot, `sudo apt install podman certbot`, its ports 80 and 443 open, and the four names in DNS: `ernest-lang.org`, `www.ernest-lang.org`, `ernest-lang.se` and `www.ernest-lang.se`. The operator brings the server's release archive, `ernest_httpd-0.1.0.tar.gz`, which `make release` writes, and Ernest's, `ern-0.9.0.tar.gz`, the one the release was built with.
 
-The listeners stand on `::`, which takes IPv4 as well where the kernel's dual stack is on, Ubuntu's default: `sysctl net.ipv6.bindv6only` says `= 0`. Where it says `= 1`, the server serves IPv6 alone.
+Each of the two ports has a listener on `0.0.0.0` and one on `::`, since a listener takes connections of its address's family alone, and the four names resolve to the machine's address of each family it serves.
 
 ## 2. The user
 
@@ -89,7 +89,7 @@ httpd$ chmod 0600 ernest-httpd/node/privkey.pem
 
 The certificate is the server's own until certbot's first replaces it, in step 9: the server listens on 443 only with a certificate, and certbot's webroot asks the server, on 80, for the challenge. A key that others may read is refused at the server's start, in step 8.
 
-`limits.connections` is 160 and `limits.connections-per-address` 16, so that 160 connections whose clients read nothing, each holding five times the site's largest file over TLS, xterm.js's 0.3 MiB, stay under 256 MiB; a site that gains a larger file sizes the two again by that rule. `timeouts.idle` is 15000, so that an idle connection gives back what it holds soon.
+`limits.connections` is 80, counted by listener, and `limits.connections-per-address` 16, so that the two `tls` listeners' 160 connections whose clients read nothing, each holding five times the site's largest file over TLS, xterm.js's 0.3 MiB, stay under 256 MiB; a site that gains a larger file sizes the two again by that rule. `timeouts.idle` is 15000, so that an idle connection gives back what it holds soon.
 
 ## 7. The shell's image
 
@@ -123,7 +123,7 @@ $ sudo systemctl enable --now ernest-httpd
 $ journalctl -u ernest-httpd
 ```
 
-The journal says `listening on 127.0.0.1:8654`, the node's own listener, then `listening on :::443` and `listening on :::80`. A configuration the server refuses is said with its field, `/home/httpd/ernest-httpd/node/config.json: listeners[0].key is readable by the program's user alone`, a port another server holds as `:::443: Other("address already in use")`, and a directory of `ReadWritePaths` that does not exist, the image not yet built, by systemd: `Failed to set up mount namespacing`, the status `226/NAMESPACE`.
+The journal says `listening on 127.0.0.1:8654`, the node's own listener, then `listening on 0.0.0.0:443`, `listening on :::443`, `listening on 0.0.0.0:80` and `listening on :::80`, in the configuration's order. A configuration the server refuses is said with its field, `/home/httpd/ernest-httpd/node/config.json: listeners[0].key is readable by the program's user alone`, a port another server holds as `:::443: Other("address already in use")`, and a directory of `ReadWritePaths` that does not exist, the image not yet built, by systemd: `Failed to set up mount namespacing`, the status `226/NAMESPACE`.
 
 The unit binds 80 and 443 as no root by `AmbientCapabilities=CAP_NET_BIND_SERVICE`, a capability that goes with systemd. A server run without systemd binds the two ports by `setcap cap_net_bind_service=+ep` on the prefix's own BEAM binary, `/home/httpd/opt/local/lib/erlang/erts-*/bin/beam.smp`, the binary itself and not a link to it, redone at each install of OTP, a file capability putting the binary in secure-exec mode, which drops `LD_LIBRARY_PATH` and the like; authbind and privbind, root's helpers in front of `ern`, are not used.
 
@@ -171,12 +171,12 @@ A check that fails says what came, and `make smoke` then exits with an error: `f
 
 ## 12. Looking in
 
-The operator's shell attaches to the server's node from the operator's directory, as the deployment guide of the installation, `share/doc/ernest/guide/deployment.md`, shows in its section 6, with an `ern` of the same archive as the server's, installed under a prefix of the operator's own as step 4 installs it. The attach waits on Ernest today, as [`docs/plan.md`](../docs/plan.md)'s *The attached shell, a gap waiting on Ernest* says, and this step stands as it will run:
+The operator's shell attaches to the server's node from the operator's directory, as the deployment guide of the installation, `share/doc/ernest/guide/deployment.md`, shows in its section 6, with an `ern` of the same archive as the server's, installed under a prefix of the operator's own as step 4 installs it:
 
 ```console
 $ ern shell --config-dir ~/ops --attach node
 the peer node connected
-Ernest 0.9.0, session 1. :help for the commands, :quit to leave.
+Ernest 0.9.0+877fb5a6, session 1. :help for the commands, :quit to leave.
 > :processes
 > :quit
 ```
