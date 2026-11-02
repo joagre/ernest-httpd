@@ -21,6 +21,7 @@ Each fact has one owner. Every other document points at the owner and does not r
 | [`docs/log.md`](docs/log.md) | the rationale: why the design and the plan say what they say. Never normative |
 | [`docs/release.md`](docs/release.md) | what a release runs to be ready |
 | [`CHANGES.md`](CHANGES.md) | each release's note, newest first, from the first release on: what the release is and one line a change naming where it is read, restating nothing; the release step writes it and copies it to the release on GitHub |
+| `deploy/README.md`, where `deploy/` exists | the operator's steps, from a machine to the smoke test passing, with the files of `deploy/` as each is installed |
 | `examples/README.md`, where `examples/` exists | the example programs, by topic, with what each shows and how each is run |
 | Ernest's `guide/style.md`, installed as `share/doc/ernest/guide/style.md` beside `ern` | the rules an Ernest program is written by, Ernest's own, read from the installation and not copied here |
 | the code and its tests | what is built |
