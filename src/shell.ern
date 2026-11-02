@@ -1,0 +1,883 @@
+/// A shell: a connection upgraded to a WebSocket on the shell's path, which
+/// carries a visitor's terminal between the page and the visitor's session
+/// (design §11).
+///
+/// `handshake` decides whether a request on the shell's path is an upgrade
+/// the server takes: a refusal, with its status and its headers, or the 101
+/// and the connection's cookie, the request's own or one drawn for it,
+/// which the 101 then sets.
+///
+/// `serve` is the shell's life after the 101, in the process that owns the
+/// socket. A reader of its own alone reads the socket and decodes the
+/// client's messages; the shell writes the socket itself. The page's first
+/// resize attaches the shell to the session its cookie names, or to one the
+/// sessions start for it, and from then on the visitor's keys go to the
+/// session and the program's output comes back, each as a binary message,
+/// with the page's resizes, extensions and stop beside them as small JSON
+/// texts and the session's warning as one. A shell closes with a close
+/// code that says why: 4001 its session expired, 4002 another shell took it
+/// over, 4003 no session was to be had and 4004 it was stopped, or a code
+/// of RFC 6455's.
+
+//
+// Types
+//
+
+/// A request refused: the status, and the headers its response carries
+/// beside the error's own.
+export type Refusal = Refusal(status : Int, headers : List(Http.Header))
+
+/// An upgrade taken: the 101 response, and the connection's cookie, which
+/// names its session.
+export type Accepted = Accepted(response : Http.Response, cookie : String)
+
+/// What a shell takes: from its reader, a message the client sent, an
+/// error of the client's frames, a round of the idle deadline that read
+/// nothing, and the connection's close; the reader's end; what its session
+/// or the sessions tell it; and its session's end.
+export type ShellMsg =
+    Received(WebSocket.Message)
+  | Failed(WebSocket.Error)
+  | Idle
+  | Closed
+  | ReaderEnded(Down)
+  | Told(Session.Told)
+  | SessionEnded(Down)
+
+// What a shell holds for its life: its socket, the sessions, its cookie,
+// its remote address, the deadlines, and its own address as its session
+// tells it.
+type Connected =
+    Connected(socket : Address(Tcp.SocketMsg),
+              sessions : Sessions.Sessions,
+              cookie : String,
+              remote : String,
+              timeouts : Config.Timeouts,
+              told : Address(Session.Told))
+
+// Whether a session is attached: none, an attach under way with what is
+// for the session meanwhile, the latest first, or the session attached.
+type Attachment =
+    Unattached
+  | Attaching(List(Session.SessionMsg))
+  | AttachedTo(Address(Session.SessionMsg))
+
+// What the page asks in a text: a resize of its terminal, an extension of
+// the session's deadline, or its stop.
+type Asked = Resize(Terminal.Size) | Extend | Stop
+
+//
+// The handshake
+//
+
+/// Whether the request is an upgrade the server takes, in design §11's
+/// order: a method other than `GET` refused 405 with `Allow: GET`; a
+/// version other than 1.1, an `Upgrade` that lists no `websocket`, a
+/// `Connection` that lists no `Upgrade`, or a `Sec-WebSocket-Version` that
+/// is not one `13`, refused 426 with `Upgrade: websocket` and
+/// `Sec-WebSocket-Version: 13`; no `Origin` of the shell's, refused 403;
+/// and no one `Sec-WebSocket-Key` of 16 bytes in base64, refused 400.
+///
+/// The rest is taken: the 101 with `Upgrade`, `Connection` and
+/// `Sec-WebSocket-Accept`, and, where the request carried no cookie of the
+/// shell's, `Set-Cookie` of the one drawn, 16 bytes of `Crypto.randomBytes`
+/// in lower-case hexadecimal, for the shell's path alone.
+///
+/// ### Examples
+///
+/// ```ernest
+/// let shell =
+///     Config.Shell(path = "/shell",
+///                  origins = ["https://ernest-lang.org"],
+///                  command = ["cat"],
+///                  mostAtOnce = 1,
+///                  starts = Config.Starts(count = 1, within = 1000),
+///                  lifetime = 2000,
+///                  warning = 1000,
+///                  messageLimit = 1024,
+///                  hangup = 1000);
+/// let request =
+///     Http.Request(method = "POST",
+///                  target = "/shell",
+///                  version = Http.Version(major = 1, minor = 1),
+///                  headers = []);
+/// Shell.handshake(shell, request)
+/// // => Left(Refusal(status = 405, headers = [Header(name = "Allow", value = "GET")]))
+/// ```
+export fn handshake(shell : Config.Shell, request : Http.Request) : Either(Refusal, Accepted) = {
+    let headers = request.headers;
+    if request.method != "GET" then
+        Left(Refusal(status = 405, headers = [header("Allow", "GET")]))
+    else if request.version != Http.Version(major = 1, minor = 1)
+        || !lists(headers, "Upgrade", "websocket")
+        || !lists(headers, "Connection", "upgrade")
+        || Http.headers(headers, "Sec-WebSocket-Version") != ["13"] then
+        Left(Refusal(status = 426,
+                     headers = [header("Upgrade", "websocket"),
+                                header("Sec-WebSocket-Version", "13")]))
+    else if !List.contains(shell.origins, Optional.withDefault(origin(headers), "")) then
+        Left(Refusal(status = 403, headers = []))
+    else match key(headers) {
+        None ->
+            Left(Refusal(status = 400, headers = []))
+      | Some(key) -> {
+            let #(cookie, set) = match carried(headers) {
+                Some(cookie) ->
+                    #(cookie, [])
+              | None -> {
+                    let cookie = String.toLower(Bytes.toHex(Crypto.randomBytes(16)));
+                    #(cookie,
+                      [header("Set-Cookie",
+                              "shell="
+                                  <> cookie
+                                  <> "; Path="
+                                  <> shell.path
+                                  <> "; Secure; HttpOnly; SameSite=Strict")])
+                }
+            };
+            let response =
+                Http.Response(version = Http.Version(major = 1, minor = 1),
+                              status = 101,
+                              headers = [header("Upgrade", "websocket"),
+                                         header("Connection", "Upgrade"),
+                                         header("Sec-WebSocket-Accept", WebSocket.accept(key))]
+                                  <> set);
+            Right(Accepted(=response, =cookie))
+        }
+    }
+}
+
+// Whether the headers of the name list the token, their values parted at
+// commas, trimmed and compared in any case.
+fn lists(headers : List(Http.Header), name : String, token : String) : Bool =
+    List.any(List.flatMap(Http.headers(headers, name), fn(value) = String.split(value, ",")),
+             fn(part) = String.toLower(String.trim(part)) == String.toLower(token))
+
+// The request's one Origin; None where it has none or more than one.
+fn origin(headers : List(Http.Header)) : Optional(String) =
+    match Http.headers(headers, "Origin") {
+        [value] -> Some(value)
+      | _ -> None
+    }
+
+// The request's one Sec-WebSocket-Key, where it is 16 bytes in base64.
+fn key(headers : List(Http.Header)) : Optional(String) =
+    match Http.headers(headers, "Sec-WebSocket-Key") {
+        [value] ->
+            match Base64.decode(value) {
+                Some(bytes) when Bytes.size(bytes) == 16 -> Some(value)
+              | _ -> None
+            }
+      | _ ->
+            None
+    }
+
+// The request's cookie: the first value of a member `shell` of its Cookie
+// headers, their pairs parted at `;` and trimmed, that is 32 lower-case
+// hexadecimal digits.
+fn carried(headers : List(Http.Header)) : Optional(String) = {
+    let pairs =
+        List.filterMap(List.flatMap(Http.headers(headers, "Cookie"),
+                                    fn(value) = String.split(value, ";")),
+                       fn(pair) = String.splitOnce(String.trim(pair), "="));
+    Optional.map(List.find(pairs, fn(#(name, value)) = name == "shell" && isCookie(value)),
+                 fn(#(_, value)) = value)
+}
+
+fn isCookie(value : String) : Bool =
+    String.size(value) == 32
+        && List.all(String.toList(value),
+                    fn(char) = List.contains(String.toList("0123456789abcdef"), char))
+
+fn header(name : String, value : String) : Http.Header =
+    Http.Header(=name, =value)
+
+//
+// Serving
+//
+
+/// The shell's life on the socket after the 101: `carried` the bytes after
+/// the request's head, which the reader decodes first, the sessions the
+/// shell attaches to, its cookie and its remote address, and the
+/// deadlines; it returns once the connection has closed, the socket closed
+/// and its session told it is detached.
+export fn serve(socket : Address(Tcp.SocketMsg),
+                carried : Bytes,
+                sessions : Sessions.Sessions,
+                cookie : String,
+                remote : String,
+                timeouts : Config.Timeouts) : Unit receiving ShellMsg = {
+    let me = self();
+    let decoder = WebSocket.decoder(WebSocket.FromClient, sessions.shell.messageLimit);
+    let idle = timeouts.idle;
+    let reader = spawnMonitored(fn() = reading(socket, me, decoder, carried, idle), ReaderEnded);
+    serving(Connected(=socket, =sessions, =cookie, =remote, =timeouts, told = adapted(me, Told)),
+            Unattached,
+            Some(Process.fromAddress(reader)))
+}
+
+// The reader: the bytes decoded, the carried ones first and then each read
+// of the socket within the idle deadline, and the shell told each message,
+// a round that read nothing, an error of the frames, or the connection's
+// close.
+fn reading(socket : Address(Tcp.SocketMsg),
+           shell : Address(ShellMsg),
+           decoder : WebSocket.Decoder,
+           bytes : Bytes,
+           idle : Int) : Unit =
+    match WebSocket.decode(decoder, bytes) {
+        Right(#(messages, rest)) -> {
+            List.forEach(messages, fn(message) = send(shell, Received(message)));
+            match Tcp.read(socket, idle) {
+                Right(more) ->
+                    reading(socket, shell, rest, more, idle)
+              | Left(Io.Timeout) -> {
+                    send(shell, Idle);
+                    reading(socket, shell, rest, <<>>, idle)
+                }
+              | Left(_) ->
+                    send(shell, Closed)
+            }
+        }
+      | Left(error) ->
+            send(shell, Failed(error))
+    }
+
+// The shell waiting on its mailbox: each message taken as it comes, until
+// the connection closes. `reader` is the reader's process while it lives.
+fn serving(connected : Connected,
+           attachment : Attachment,
+           reader : Optional(Process)) : Unit receiving ShellMsg =
+    receive {
+        Received(message) ->
+            received(connected, attachment, reader, message)
+      | Failed(error) ->
+            closedWith(connected, attachment, reader, WebSocket.closeCode(error))
+      | Closed ->
+            closed(connected, attachment, reader)
+      | Idle ->
+            match attachment {
+                AttachedTo(_) -> serving(connected, attachment, reader)
+              | Unattached or Attaching(_) -> closed(connected, attachment, reader)
+            }
+      | ReaderEnded(down) ->
+            // a reader that returned has told its last message, which may
+            // come after its end (report §6.9)
+            match down.reason {
+                Returned -> serving(connected, attachment, None)
+              | _ -> closed(connected, attachment, None)
+            }
+      | Told(told) ->
+            toldBy(connected, attachment, reader, told)
+      | SessionEnded(_) ->
+            closedWith(connected, attachment, reader, 1011)
+    }
+
+// A message the client sent: a text of the page's, the visitor's keys, a
+// ping answered with its pong, a pong dropped, and a close answered with
+// its code.
+fn received(connected : Connected,
+            attachment : Attachment,
+            reader : Optional(Process),
+            message : WebSocket.Message) : Unit receiving ShellMsg =
+    match message {
+        WebSocket.Text(text) ->
+            match asked(text) {
+                Some(Resize(size)) -> resized(connected, attachment, reader, size)
+              | Some(Extend) -> serving(connected, toSession(attachment, Session.Extend), reader)
+              | Some(Stop) -> serving(connected, toSession(attachment, Session.Stop), reader)
+              | None -> closedWith(connected, attachment, reader, 1008)
+            }
+      | WebSocket.Binary(bytes) ->
+            serving(connected, toSession(attachment, Session.Keys(bytes)), reader)
+      | WebSocket.Ping(payload) ->
+            written(connected, attachment, reader, WebSocket.Pong(payload))
+      | WebSocket.Pong(_) ->
+            serving(connected, attachment, reader)
+      | WebSocket.Close(=code) -> {
+            let _ = write(connected, WebSocket.Close(=code, reason = ""));
+            closed(connected, attachment, reader)
+        }
+    }
+
+// What the page asks in a text, one JSON object of one member:
+// `{"resize": [rows, columns]}`, each an integer from 1 to 65535,
+// `{"extend": true}` or `{"stop": true}`; None for any other text.
+fn asked(text : String) : Optional(Asked) =
+    match Json.parse(text) {
+        Right(Json.Object(members)) ->
+            match Map.toList(members) {
+                [#("resize", Json.Array([Json.Integer(rows), Json.Integer(columns)]))] ->
+                    resize(rows, columns)
+              | [#("extend", Json.Boolean(true))] ->
+                    Some(Extend)
+              | [#("stop", Json.Boolean(true))] ->
+                    Some(Stop)
+              | _ ->
+                    None
+            }
+      | _ ->
+            None
+    }
+
+// A resize of the rows and the columns, each from 1 to 65535.
+fn resize(rows : Int, columns : Int) : Optional(Asked) =
+    if rows >= 1 && rows <= 65535 && columns >= 1 && columns <= 65535 then
+        Some(Resize(Terminal.Size(=rows, =columns)))
+    else
+        None
+
+// A resize: the shell attached where no session is, and otherwise the
+// session told it.
+fn resized(connected : Connected,
+           attachment : Attachment,
+           reader : Optional(Process),
+           size : Terminal.Size) : Unit receiving ShellMsg =
+    match attachment {
+        Unattached -> {
+            send(connected.sessions.address,
+                 Sessions.Attach(cookie = connected.cookie,
+                                 remote = connected.remote,
+                                 =size,
+                                 shell = connected.told));
+            serving(connected, Attaching([]), reader)
+        }
+      | Attaching(_) or AttachedTo(_) ->
+            serving(connected, toSession(attachment, Session.Resize(size)), reader)
+    }
+
+// The message sent to the attached session, held while the attach is under
+// way, and dropped where no session is.
+fn toSession(attachment : Attachment, message : Session.SessionMsg) : Attachment =
+    match attachment {
+        AttachedTo(session) -> {
+            send(session, message);
+            attachment
+        }
+      | Attaching(held) ->
+            Attaching(message :: held)
+      | Unattached ->
+            Unattached
+    }
+
+// What the session, or the sessions, told: the session attached and
+// monitored, and told what was held for it meanwhile, in order; no session
+// to be had; the program's output written as a binary message; the warning
+// as a text; and the session's end with its close code.
+fn toldBy(connected : Connected,
+          attachment : Attachment,
+          reader : Optional(Process),
+          told : Session.Told) : Unit receiving ShellMsg =
+    match told {
+        Session.Attached(session) -> {
+            monitor(Process.fromAddress(session), SessionEnded);
+            let held = match attachment {
+                Attaching(held) -> List.reverse(held)
+              | Unattached or AttachedTo(_) -> []
+            };
+            List.forEach(held, fn(message) = send(session, message));
+            serving(connected, AttachedTo(session), reader)
+        }
+      | Session.Unavailable ->
+            closedWith(connected, attachment, reader, 4003)
+      | Session.Output(bytes) ->
+            written(connected, attachment, reader, WebSocket.Binary(bytes))
+      | Session.Warning(seconds) -> {
+            let text =
+                Json.format(Json.Object(Map.fromList([#("warning", Json.Integer(seconds))])));
+            written(connected, attachment, reader, WebSocket.Text(text))
+        }
+      | Session.Ended(code) ->
+            closedWith(connected, attachment, reader, code)
+    }
+
+// The message written as a frame within the write deadline; a write that
+// fails or does not end in time closes the connection.
+fn written(connected : Connected,
+           attachment : Attachment,
+           reader : Optional(Process),
+           message : WebSocket.Message) : Unit receiving ShellMsg =
+    match write(connected, message) {
+        Right(Unit) -> serving(connected, attachment, reader)
+      | Left(_) -> closed(connected, attachment, reader)
+    }
+
+fn write(connected : Connected, message : WebSocket.Message) : Either(Io.Error, Unit) =
+    Tcp.write(connected.socket, WebSocket.encode(message), connected.timeouts.write)
+
+//
+// The close
+//
+
+// The close with the code: a close of the code and no reason written, and
+// the connection closed.
+fn closedWith(connected : Connected,
+              attachment : Attachment,
+              reader : Optional(Process),
+              code : Int) : Unit receiving ShellMsg = {
+    let _ = write(connected, WebSocket.Close(code = Some(code), reason = ""));
+    closed(connected, attachment, reader)
+}
+
+// The connection closed: the reader ended and waited for where it lives,
+// the socket closed, which sends what it holds, and the attached session
+// told the shell is detached.
+fn closed(connected : Connected,
+          attachment : Attachment,
+          reader : Optional(Process)) : Unit receiving ShellMsg = {
+    match reader {
+        Some(process) -> {
+            Process.kill(process);
+            readerEnded()
+        }
+      | None ->
+            Unit
+    };
+    Tcp.close(connected.socket);
+    match attachment {
+        AttachedTo(session) -> send(session, Session.Detach(connected.told))
+      | Unattached or Attaching(_) -> Unit
+    }
+}
+
+fn readerEnded() : Unit receiving ShellMsg =
+    receive {
+        ReaderEnded(_) -> Unit
+    }
+
+//
+// Tests
+//
+
+// What a test's process takes: the end of the process that serves the
+// shell.
+type Seen = Ended(Down)
+
+// The shell's configuration of the tests, with the most sessions at once,
+// the lifetime, the warning and the message limit given.
+fn configured(mostAtOnce : Int, lifetime : Int, warning : Int, messageLimit : Int) : Config.Shell =
+    Config.Shell(path = "/shell",
+                 origins = ["http://localhost"],
+                 command = ["cat"],
+                 =mostAtOnce,
+                 starts = Config.Starts(count = 10, within = 60000),
+                 =lifetime,
+                 =warning,
+                 =messageLimit,
+                 hangup = 1000)
+
+fn deadlines(idle : Int) : Config.Timeouts =
+    Config.Timeouts(head = 5000, =idle, write = 5000, file = 5000)
+
+// A cookie of the shell's form, which the tests' clients may carry.
+let cookie : String = "0123456789abcdef0123456789abcdef"
+
+// An upgrade request of the shell's, with the key and the headers given
+// after the ones it needs.
+fn upgrade(key : String, headers : List(Http.Header)) : Http.Request =
+    Http.Request(method = "GET",
+                 target = "/shell",
+                 version = Http.Version(major = 1, minor = 1),
+                 headers = [header("Host", "localhost"),
+                            header("Upgrade", "websocket"),
+                            header("Connection", "Upgrade"),
+                            header("Sec-WebSocket-Version", "13"),
+                            header("Origin", "http://localhost"),
+                            header("Sec-WebSocket-Key", key)]
+                     <> headers)
+
+// RFC 6455's key of §4.2.2.
+let sampleKey : String = "dGhlIHNhbXBsZSBub25jZQ=="
+
+// The request with its headers of the name dropped and the headers given
+// added.
+fn without(request : Http.Request, name : String, added : List(Http.Header)) : Http.Request =
+    Http.Request(..request,
+                 headers = List.filter(request.headers,
+                                       fn(header) =
+                                           String.toLower(header.name) != String.toLower(name))
+                     <> added)
+
+// The handshake's refusal as a test compares it: its status and headers, or
+// `accepted`.
+fn refused(request : Http.Request) : String =
+    match handshake(configured(1, 60000, 30000, 1024), request) {
+        Left(Refusal(=status, =headers)) -> Int.toString(status) <> " " <> Io.show(headers)
+      | Right(_) -> "accepted"
+    }
+
+// design §11: the handshake's refusals, each in its order: a method other
+// than GET with 405 and Allow, though the rest is wrong too; a version
+// other than 1.1, an Upgrade that lists no websocket, a Connection that
+// lists no Upgrade and a version that is not one 13 with 426, Upgrade and
+// Sec-WebSocket-Version, though the Origin is missing too; no Origin, two,
+// or one not listed as written with 403, though the key is missing too; and
+// no key, two, and one of 15 bytes with 400.
+let refusesUpgrades = Test.Case(name = "refuses an upgrade it does not take", run = fn() = {
+    let good = upgrade(sampleKey, []);
+    let upgradeHeaders =
+        Io.show([header("Upgrade", "websocket"), header("Sec-WebSocket-Version", "13")]);
+    let noOrigin = without(without(good, "Origin", []), "Sec-WebSocket-Key", []);
+    Test.equal([refused(Http.Request(..without(good, "Upgrade", []), method = "POST")),
+                refused(Http.Request(..without(good, "Origin", []),
+                                     version = Http.Version(major = 1, minor = 0))),
+                refused(without(without(good, "Upgrade", []), "Origin", [])),
+                refused(without(good, "Upgrade", [header("Upgrade", "h2c")])),
+                refused(without(good, "Connection", [header("Connection", "keep-alive")])),
+                refused(without(good,
+                                "Sec-WebSocket-Version",
+                                [header("Sec-WebSocket-Version", "8")])),
+                refused(without(good,
+                                "Sec-WebSocket-Version",
+                                [header("Sec-WebSocket-Version", "13"),
+                                 header("Sec-WebSocket-Version", "13")])),
+                refused(noOrigin),
+                refused(without(good,
+                                "Origin",
+                                [header("Origin", "http://localhost"),
+                                 header("Origin", "http://localhost")])),
+                refused(without(good, "Origin", [header("Origin", "http://LOCALHOST")])),
+                refused(without(good, "Sec-WebSocket-Key", [])),
+                refused(without(good,
+                                "Sec-WebSocket-Key",
+                                [header("Sec-WebSocket-Key", sampleKey),
+                                 header("Sec-WebSocket-Key", sampleKey)])),
+                refused(without(good,
+                                "Sec-WebSocket-Key",
+                                [header("Sec-WebSocket-Key",
+                                        Base64.encode(Crypto.randomBytes(15)))]))],
+               ["405 [Header(name = \"Allow\", value = \"GET\")]",
+                "426 " <> upgradeHeaders,
+                "426 " <> upgradeHeaders,
+                "426 " <> upgradeHeaders,
+                "426 " <> upgradeHeaders,
+                "426 " <> upgradeHeaders,
+                "426 " <> upgradeHeaders,
+                "403 []",
+                "403 []",
+                "403 []",
+                "400 []",
+                "400 []",
+                "400 []"])
+})
+
+// design §11: an upgrade taken: the 101 with Upgrade, Connection and
+// Sec-WebSocket-Accept, RFC 6455's key's, its Upgrade and Connection read
+// in any case among other tokens; where the request carried no cookie of
+// the shell's, one carried of another form among them, a cookie of 32
+// lower-case hexadecimal digits drawn and set for the shell's path alone,
+// and where it carried one, that cookie and no Set-Cookie.
+let acceptsUpgrades = Test.Case(name = "accepts an upgrade and sets its cookie", run = fn() = {
+    let shell = configured(1, 60000, 30000, 1024);
+    let accepted = fn(request) = match handshake(shell, request) {
+        Right(Accepted(=response, =cookie)) -> Some(#(response, cookie))
+      | Left(_) -> None
+    };
+    let drawn =
+        accepted(without(without(upgrade(sampleKey, [header("Cookie", "theme=dark; shell=ABCDEF")]),
+                                 "Upgrade",
+                                 [header("Upgrade", "WebSocket")]),
+                         "Connection",
+                         [header("Connection", "keep-alive, upgrade")]));
+    let kept = accepted(upgrade(sampleKey, [header("Cookie", "theme=dark;shell=" <> cookie)]));
+    let first =
+        [header("Upgrade", "websocket"),
+         header("Connection", "Upgrade"),
+         header("Sec-WebSocket-Accept", "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=")];
+    let drawnSeen =
+        Optional.map(drawn,
+                     fn(#(response, drawnCookie)) =
+                         #(response.status,
+                           response.headers
+                               == first
+                                   <> [header("Set-Cookie",
+                                              "shell="
+                                                  <> drawnCookie
+                                                  <> "; Path=/shell; Secure; HttpOnly; SameSite=Strict")],
+                           isCookie(drawnCookie)));
+    Test.equal(#(drawnSeen, kept),
+               #(Some(#(101, true, true)),
+                 Some(#(Http.Response(version = Http.Version(major = 1, minor = 1),
+                                      status = 101,
+                                      headers = first),
+                        cookie))))
+})
+
+// A client of a shell: its socket, the decoder of the server's frames, and
+// the messages decoded and not yet taken.
+type Client =
+    Client(socket : Address(Tcp.SocketMsg),
+           decoder : WebSocket.Decoder,
+           pending : List(WebSocket.Message))
+
+// A stand-in for the connection: the request read, its upgrade taken and
+// the 101 written, and then the shell served with the bytes after the
+// head.
+fn upgrading(socket : Address(Tcp.SocketMsg),
+             sessions : Sessions.Sessions,
+             timeouts : Config.Timeouts) : Unit receiving ShellMsg =
+    match Http.readRequest(socket, <<>>, Http.Limits(line = 1024, headers = 4096), 5000) {
+        Right(#(request, rest)) ->
+            match handshake(sessions.shell, request) {
+                Right(Accepted(=response, cookie = carried)) ->
+                    match Tcp.write(socket, Http.render(response, <<>>), 5000) {
+                        Right(Unit) -> serve(socket, rest, sessions, carried, "127.0.0.1", timeouts)
+                      | Left(_) -> Tcp.close(socket)
+                    }
+              | Left(_) ->
+                    Tcp.close(socket)
+            }
+      | Left(_) ->
+            Tcp.close(socket)
+    }
+
+// A client's socket to a shell served in a process of its own, which the
+// test's process monitors, its upgrade written with the request's headers
+// beyond the needed ones and the bytes after its head given, and the 101
+// read: the client, with the messages after the 101 decoded.
+fn opened(sessions : Sessions.Sessions,
+          timeouts : Config.Timeouts,
+          headers : List(Http.Header),
+          beyond : Bytes) : Either(String, Client) receiving Seen =
+    Either.mapLeft({
+                       let listening <- Tcp.listen("127.0.0.1", 0);
+                       let port <- Tcp.port(listening);
+                       let socket <- Tcp.connect("127.0.0.1", port, 5000);
+                       let accepted <- Tcp.accept(listening, 5000);
+                       Tcp.closeListener(listening);
+                       let server =
+                           spawnMonitored(fn() = upgrading(accepted, sessions, timeouts), Ended);
+                       Tcp.give(accepted, Process.fromAddress(server));
+                       let request =
+                           Http.renderRequest(upgrade(Base64.encode(Crypto.randomBytes(16)),
+                                                      headers),
+                                              <<>>);
+                       let _ <- Tcp.write(socket, request <> beyond, 5000);
+                       let #(response, rest) <-
+                           Either.mapLeft(Http.readResponse(socket,
+                                                            <<>>,
+                                                            Http.Limits(line = 1024,
+                                                                        headers = 4096),
+                                                            5000),
+                                          fn(_) = Io.Invalid);
+                       let decoded <-
+                           Either.mapLeft(WebSocket.decode(WebSocket.decoder(WebSocket.FromServer,
+                                                                             1048576),
+                                                           rest),
+                                          fn(_) = Io.Invalid);
+                       let #(messages, decoder) = decoded;
+                       if response.status == 101 then
+                           Right(Client(=socket, =decoder, pending = messages))
+                       else
+                           Left(Io.Other("answered " <> Int.toString(response.status)))
+                   },
+                   Io.show)
+
+// A frame the client writes, masked with a key of its own.
+fn masked(message : WebSocket.Message) : Bytes =
+    Optional.withDefault(WebSocket.encodeMasked(message, Crypto.randomBytes(4)), <<>>)
+
+fn sent(client : Client, message : WebSocket.Message) : Client = {
+    let _ = Tcp.write(client.socket, masked(message), 5000);
+    client
+}
+
+// The next message the client is sent, as a test compares it, `closed` where
+// the connection closed and `refused` where the frames are not the server's;
+// and the client after it.
+fn nextMessage(client : Client) : #(String, Client) =
+    match client.pending {
+        message :: rest ->
+            #(shown(message), Client(..client, pending = rest))
+      | [] ->
+            match Tcp.read(client.socket, 5000) {
+                Right(bytes) ->
+                    match WebSocket.decode(client.decoder, bytes) {
+                        Right(#(messages, decoder)) ->
+                            nextMessage(Client(..client, =decoder, pending = messages))
+                      | Left(error) ->
+                            #("refused " <> Io.show(error), client)
+                    }
+              | Left(Io.Closed) ->
+                    #("closed", client)
+              | Left(error) ->
+                    #(Io.show(error), client)
+            }
+    }
+
+fn shown(message : WebSocket.Message) : String =
+    match message {
+        WebSocket.Binary(bytes) ->
+            "Binary(" <> Optional.withDefault(String.fromUtf8(bytes), "?") <> ")"
+      | WebSocket.Pong(bytes) ->
+            "Pong(" <> Optional.withDefault(String.fromUtf8(bytes), "?") <> ")"
+      | WebSocket.Close(code = Some(code)) ->
+            "Close(" <> Int.toString(code) <> ")"
+      | other ->
+            Io.show(other)
+    }
+
+// The binary messages the client is sent, as text, until they hold the
+// text; and the client after them.
+fn typed(client : Client, text : String, acc : String) : #(String, Client) =
+    if String.contains(acc, text) then
+        #(acc, client)
+    else match nextMessage(client) {
+        #(message, next) when String.startsWith(message, "Binary(") ->
+            typed(next,
+                  text,
+                  acc <> String.replace(String.replace(message, "Binary(", ""), ")", ""))
+      | #(message, next) ->
+            #(acc <> " then " <> message, next)
+    }
+
+// The client's next messages, the count of them.
+fn messages(client : Client, count : Int) : List(String) =
+    if count == 0 then
+        []
+    else {
+        let #(message, next) = nextMessage(client);
+        message :: messages(next, count - 1)
+    }
+
+// The end of the process that served the shell, within 5000 milliseconds.
+fn ended() : String receiving Seen =
+    receive {
+        Ended(down) -> Io.show(down.reason)
+      | after 5000 -> "no end"
+    }
+
+fn stopped(sessions : Sessions.Sessions) : Bool =
+    Address.call(sessions.address, Sessions.Stop, 5000) == Some(Unit)
+
+fn page(value : String) : WebSocket.Message =
+    WebSocket.Text(value)
+
+// design §11: the reader decodes the bytes after the head first: a ping
+// carried with the upgrade is answered with its pong, and a ping read after
+// it too; a pong is dropped; and the client's close is answered with a
+// close of its code, after which the connection closes and the shell
+// returns.
+let answersPingsAndCloses = Test.Case(name = "answers a ping and a close", run = fn() = {
+    let sessions = Sessions.start(configured(1, 60000, 30000, 1024), deadlines(60000));
+    let result = {
+        let client <-
+            opened(sessions,
+                   deadlines(60000),
+                   [],
+                   masked(WebSocket.Ping(String.toUtf8("carried"))));
+        let _ = sent(client, WebSocket.Pong(String.toUtf8("dropped")));
+        let _ = sent(client, WebSocket.Ping(String.toUtf8("read")));
+        let _ = sent(client, WebSocket.Close(code = Some(1000), reason = "done"));
+        Right(#(messages(client, 4), ended()))
+    };
+    Test.equal(#(result, stopped(sessions)),
+               #(Right(#(["Pong(carried)", "Pong(read)", "Close(1000)", "closed"], "Returned")),
+                 true))
+})
+
+// design §11: a text that is none of the page's messages closes with 1008,
+// one that is not JSON, one of another member, a resize out of its range,
+// and an extend that is not true among them; a message past the limit
+// closes with 1009, and a frame the RFC forbids, unmasked, with 1002.
+let closesOnBadMessages = Test.Case(name = "closes on a message it does not take", run = fn() = {
+    let sessions = Sessions.start(configured(1, 60000, 30000, 32), deadlines(60000));
+    let closing = fn(frame) = {
+        let client <- opened(sessions, deadlines(60000), [], frame);
+        Right(#(messages(client, 2), ended()))
+    };
+    let closed = ["Close(1008)", "closed"];
+    Test.equal(#([closing(masked(page("{"))),
+                  closing(masked(page("{\"size\": [24, 80]}"))),
+                  closing(masked(page("{\"resize\": [0, 80]}"))),
+                  closing(masked(page("{\"resize\": [24, 65536]}"))),
+                  closing(masked(page("{\"extend\": false}"))),
+                  closing(masked(page("{\"extend\": true, \"stop\": true}"))),
+                  closing(masked(WebSocket.Binary(Bytes.repeat(<<0>>, 33)))),
+                  closing(WebSocket.encode(WebSocket.Ping(<<>>)))],
+                 stopped(sessions)),
+               #([Right(#(closed, "Returned")),
+                  Right(#(closed, "Returned")),
+                  Right(#(closed, "Returned")),
+                  Right(#(closed, "Returned")),
+                  Right(#(closed, "Returned")),
+                  Right(#(closed, "Returned")),
+                  Right(#(["Close(1009)", "closed"], "Returned")),
+                  Right(#(["Close(1002)", "closed"], "Returned"))],
+                 true))
+})
+
+// design §11: a round of the idle deadline that reads nothing closes a
+// shell no session is attached to, without a frame.
+let closesIdle = Test.Case(name = "closes an unattached shell at the idle deadline", run = fn() = {
+    let sessions = Sessions.start(configured(1, 60000, 30000, 1024), deadlines(200));
+    let result = {
+        let client <- opened(sessions, deadlines(200), [], <<>>);
+        Right(#(messages(client, 1), ended()))
+    };
+    Test.equal(#(result, stopped(sessions)), #(Right(#(["closed"], "Returned")), true))
+})
+
+// design §11, §12: through the sessions with `cat`: the first resize
+// attaches the shell, keys written with it, while the attach is under way,
+// are held and told once it is attached, and they come back as binary
+// messages, the terminal's echo and cat's line; a second client with the
+// cookie takes
+// the session over, the first closed with 4002, and is written what
+// follows; its stop closes it with 4004; at the cap a resize of another
+// cookie is told Unavailable and closes with 4003.
+let carriesASession = Test.Case(name = "carries a session through the sessions", run = fn() = {
+    let sessions = Sessions.start(configured(1, 60000, 30000, 1024), deadlines(60000));
+    let carried = [header("Cookie", "shell=" <> cookie)];
+    let result = {
+        let first <-
+            opened(sessions,
+                   deadlines(60000),
+                   carried,
+                   masked(page("{\"resize\": [24, 80]}"))
+                       <> masked(WebSocket.Binary(String.toUtf8("hello\n"))));
+        let #(echoed, first) = typed(first, "hello\r\nhello\r\n", "");
+        let second <- opened(sessions, deadlines(60000), carried, <<>>);
+        let _ = sent(second, page("{\"resize\": [30, 100]}"));
+        let takenOver = messages(first, 2);
+        let firstEnd = ended();
+        let _ = sent(second, WebSocket.Binary(String.toUtf8("again\n")));
+        let #(again, second) = typed(second, "again\r\nagain\r\n", "");
+        let other <- opened(sessions, deadlines(60000), [], <<>>);
+        let _ = sent(other, page("{\"resize\": [24, 80]}"));
+        let unavailable = messages(other, 2);
+        let otherEnd = ended();
+        let _ = sent(second, page("{\"stop\": true}"));
+        let stop = messages(second, 2);
+        Right(#(echoed, takenOver, firstEnd, again, unavailable, otherEnd, stop, ended()))
+    };
+    Test.equal(#(result, stopped(sessions)),
+               #(Right(#("hello\r\nhello\r\n",
+                         ["Close(4002)", "closed"],
+                         "Returned",
+                         "again\r\nagain\r\n",
+                         ["Close(4003)", "closed"],
+                         "Returned",
+                         ["Close(4004)", "closed"],
+                         "Returned")),
+                 true))
+})
+
+// design §11, §12: the session's warning is written as the text
+// `{"warning": seconds}`, read through Json, and its expiry closes the
+// shell with 4001; the shell, attached, is not closed by the rounds of the
+// idle deadline that pass meanwhile.
+let warnsAndExpires = Test.Case(name = "writes the warning and closes at the expiry", run = fn() = {
+    let sessions = Sessions.start(configured(1, 600, 500, 1024), deadlines(200));
+    let result = {
+        let client <- opened(sessions, deadlines(200), [], <<>>);
+        let _ = sent(client, page("{\"resize\": [24, 80]}"));
+        let #(warning, client) = nextMessage(client);
+        Right(#(warning, messages(client, 2), ended()))
+    };
+    let expected =
+        Io.show(WebSocket.Text(Json.format(Json.Object(Map.fromList([#("warning",
+                                                                       Json.Integer(0))])))));
+    Test.equal(#(result, stopped(sessions)),
+               #(Right(#(expected, ["Close(4001)", "closed"], "Returned")), true))
+})

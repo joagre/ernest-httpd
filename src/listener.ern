@@ -13,8 +13,9 @@
 ///
 /// Told to `Stop`, the listener ends the acceptor, closes the listening
 /// socket, ends each connection that waits for a request, lets each that
-/// serves one write its response and then ends it, and returns once every
-/// connection has ended.
+/// serves one write its response and then ends it, tells each that has
+/// become a shell to close with 1001, as a session tells its shell, and
+/// returns once every connection has ended.
 
 //
 // Types
@@ -43,9 +44,13 @@ type Listening =
               told : Address(Connection.Told),
               acceptor : Address(AcceptorMsg))
 
-// A connection open: its remote address, and whether it serves a request,
-// having told RequestRead and not yet ResponseWritten.
-type Open = Open(remote : String, serving : Bool)
+// A connection open: its remote address, and what it does by what it told.
+type Open = Open(remote : String, doing : Doing)
+
+// What a connection does: it waits for a request, it serves one, having
+// told RequestRead and not yet ResponseWritten, or it is a shell, having
+// told Upgraded with its address.
+type Doing = AwaitingRequest | ServingRequest | ServingShell(Address(Shell.ShellMsg))
 
 // Whether the listener has asked its acceptor for a connection: asked and
 // not yet answered, an alarm set to ask again after a failed accept, or
@@ -152,7 +157,7 @@ fn admitted(listening : Listening,
                     spawnMonitored(fn() = Connection.serve(socket, server, told), ConnectionEnded);
                 let process = Process.fromAddress(connection);
                 Tcp.give(socket, process);
-                Map.put(connections, process, Open(remote = endpoint.host, serving = false))
+                Map.put(connections, process, Open(remote = endpoint.host, doing = AwaitingRequest))
             } else {
                 Tcp.close(socket);
                 connections
@@ -171,12 +176,13 @@ fn count(connections : Map(Process, Open), remote : String) : Int =
 // What a connection told, recorded where it is open; what one that has
 // ended told, which may come after its end, is dropped.
 fn recorded(connections : Map(Process, Open), told : Connection.Told) : Map(Process, Open) = {
-    let #(process, serving) = match told {
-        Connection.RequestRead(process) -> #(process, true)
-      | Connection.ResponseWritten(process) -> #(process, false)
+    let #(process, doing) = match told {
+        Connection.RequestRead(process) -> #(process, ServingRequest)
+      | Connection.ResponseWritten(process) -> #(process, AwaitingRequest)
+      | Connection.Upgraded(shell) -> #(Process.fromAddress(shell), ServingShell(shell))
     };
     match Map.get(connections, process) {
-        Some(open) -> Map.put(connections, process, Open(..open, =serving))
+        Some(open) -> Map.put(connections, process, Open(..open, =doing))
       | None -> connections
     }
 }
@@ -186,18 +192,27 @@ fn recorded(connections : Map(Process, Open), told : Connection.Told) : Map(Proc
 //
 
 // The end: the acceptor ended and waited for, and the socket closed; then
-// what the connections told taken, each not serving a request ended, and
-// each that tells ResponseWritten after, until every connection has ended.
+// what the connections told taken, each waiting for a request ended, each
+// shell told to close with 1001, and each that tells ResponseWritten after
+// ended and each that tells Upgraded after told to close, until every
+// connection has ended.
 fn ending(listening : Listening, connections : Map(Process, Open)) : Unit receiving ListenerMsg = {
     Process.kill(Process.fromAddress(listening.acceptor));
     let open = acceptorEnded(connections);
     Tcp.closeListener(listening.socket);
     let current = taken(open);
-    Map.forEach(current,
-                fn(process, connection) =
-                    if connection.serving then Unit else Process.kill(process));
+    Map.forEach(current, fn(process, connection) = match connection.doing {
+        AwaitingRequest -> Process.kill(process)
+      | ServingRequest -> Unit
+      | ServingShell(shell) -> closingShell(shell)
+    });
     closing(current)
 }
+
+// A shell told to close with 1001, as a session tells its shell at the
+// end; one that has closed already takes nothing (report §6.2).
+fn closingShell(shell : Address(Shell.ShellMsg)) : Unit =
+    send(shell, Shell.Told(Session.Ended(1001)))
 
 // The wait for the acceptor's end, what comes meanwhile taken.
 fn acceptorEnded(connections : Map(Process, Open)) : Map(Process, Open) receiving ListenerMsg =
@@ -220,6 +235,10 @@ fn closing(connections : Map(Process, Open)) : Unit receiving ListenerMsg =
         Told(Connection.ResponseWritten(process)) -> {
             Process.kill(process);
             closing(connections)
+        }
+      | Told(Connection.Upgraded(shell) as told) -> {
+            closingShell(shell);
+            closing(recorded(connections, told))
         }
       | message ->
             closing(ended(connections, message))
@@ -246,12 +265,15 @@ fn ended(connections : Map(Process, Open), message : ListenerMsg) : Map(Process,
 //
 
 // What a test's process takes: the entries the connections tell the log,
-// the listener's end, the stand-ins for connections a test's listener
-// spawned, and their ends.
+// the listener's end, the stand-ins for connections and for a shell a
+// test's listener spawned, what the shell's stand-in is told, and their
+// ends.
 type Seen =
     Logged(AccessLog.LogMsg)
   | Ended(Down)
   | Spawned(idle : Process, serving : Process)
+  | ShellSpawned(Address(Shell.ShellMsg))
+  | ShellTold(Session.Told)
   | Watched(Down)
 
 // The scratch directory the tests serve their site from.
@@ -297,7 +319,8 @@ fn listening(idle : Int,
         Connection.Server(=config,
                           site = Static.site(config.root, config.contentTypes),
                           challenge = None,
-                          log = adapted(self(), Logged));
+                          log = adapted(self(), Logged),
+                          sessions = None);
     Either.mapLeft({
                        let socket <- Tcp.listen("127.0.0.1", 0);
                        let port <- Tcp.port(socket);
@@ -466,7 +489,8 @@ let endsWithItsAcceptor = Test.Case(name = "ends when its acceptor ends", run = 
             Connection.Server(=config,
                               site = Static.site(config.root, config.contentTypes),
                               challenge = None,
-                              log = adapted(self(), Logged));
+                              log = adapted(self(), Logged),
+                              sessions = None);
         let _ = spawnMonitored(fn() = serve(socket, server), Ended);
         // the acceptor, spawned in serve, waits in its accept, which the
         // socket has taken, before the close
@@ -507,10 +531,10 @@ fn endingWithStandIns(me : Address(Seen),
     let serving = Process.fromAddress(spawnMonitored(standing, ConnectionEnded));
     let listener = self();
     let acceptor = spawnMonitored(fn() = accepting(socket, listener, 60000), AcceptorEnded);
-    let open = Open(remote = "192.0.2.7", serving = false);
+    let open = Open(remote = "192.0.2.7", doing = AwaitingRequest);
     send(me, Spawned(=idle, =serving));
     ending(Listening(=socket, =server, told = adapted(listener, Told), =acceptor),
-           Map.fromList([#(idle, open), #(serving, Open(..open, serving = true))]))
+           Map.fromList([#(idle, open), #(serving, Open(..open, doing = ServingRequest))]))
 }
 
 // design §7: at the end, a connection that serves a request, by what it
@@ -527,7 +551,8 @@ let endsServingLast =
                 Connection.Server(=config,
                                   site = Static.site(config.root, config.contentTypes),
                                   challenge = None,
-                                  log = adapted(me, Logged));
+                                  log = adapted(me, Logged),
+                                  sessions = None);
             let listener = spawnMonitored(fn() = endingWithStandIns(me, socket, server), Ended);
             receive {
                 Spawned(=idle, =serving) -> {
@@ -555,3 +580,73 @@ let endsServingLast =
         };
         Test.equal(result, Right(#("Killed", true, "Killed", "Returned")))
     })
+
+// A stand-in for a shell, which tells the test's process what it is told
+// and then waits until it is released, as a shell does while it closes.
+fn shellStandIn(test : Address(Seen)) : Unit receiving Shell.ShellMsg =
+    receive {
+        Shell.Told(told) -> {
+            send(test, ShellTold(told));
+            receive {
+                Shell.Closed -> Unit
+            }
+        }
+    }
+
+// A listener at its end with an acceptor asked for nothing and a stand-in
+// for a connection that has told Upgraded, which it tells the test's
+// process of.
+fn endingWithAShell(me : Address(Seen),
+                    socket : Address(Tcp.ListenerMsg),
+                    server : Connection.Server) : Unit receiving ListenerMsg = {
+    let shell = spawnMonitored(fn() = shellStandIn(me), ConnectionEnded);
+    let listener = self();
+    let acceptor = spawnMonitored(fn() = accepting(socket, listener, 60000), AcceptorEnded);
+    send(me, ShellSpawned(shell));
+    ending(Listening(=socket, =server, told = adapted(listener, Told), =acceptor),
+           Map.fromList([#(Process.fromAddress(shell),
+                           Open(remote = "192.0.2.7", doing = ServingShell(shell)))]))
+}
+
+// design §7: at the end a connection that told Upgraded, a shell, is not
+// ended but told to close with 1001, `Told(Session.Ended(1001))`, as a
+// session tells its shell, and the listener returns once it has ended.
+let endsAShell = Test.Case(name = "closes a shell at its end", run = fn() = {
+    let me = self();
+    let result = {
+        let _ <- Either.mapLeft(prepared(), Io.show);
+        let config <- Either.mapLeft(Config.parse(configuration(5000, 4, 4)), Config.reason);
+        let socket <- Either.mapLeft(Tcp.listen("127.0.0.1", 0), Io.show);
+        let server =
+            Connection.Server(=config,
+                              site = Static.site(config.root, config.contentTypes),
+                              challenge = None,
+                              log = adapted(me, Logged),
+                              sessions = None);
+        let listener = spawnMonitored(fn() = endingWithAShell(me, socket, server), Ended);
+        receive {
+            ShellSpawned(shell) -> {
+                monitor(Process.fromAddress(shell), Watched);
+                let told = receive {
+                    ShellTold(Session.Ended(code)) -> "Ended(" <> Int.toString(code) <> ")"
+                  | ShellTold(_) -> "told another"
+                  | after 5000 -> "told nothing"
+                };
+                let listenerWaits = Process.status(Process.fromAddress(listener)) != None;
+                send(shell, Shell.Closed);
+                let shellEnd = receive {
+                    Watched(down) -> Io.show(down.reason)
+                  | after 5000 -> "the shell lives"
+                };
+                let end = receive {
+                    Ended(down) -> Io.show(down.reason)
+                  | after 5000 -> "no end"
+                };
+                Right(#(told, listenerWaits, shellEnd, end))
+            }
+          | after 5000 ->
+                Left("no shell")
+        }
+    };
+    Test.equal(result, Right(#("Ended(1001)", true, "Returned", "Returned")))
+})

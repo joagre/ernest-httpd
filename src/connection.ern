@@ -5,10 +5,15 @@
 /// idle deadline, reads its head within the head deadline, refuses what the
 /// server does not serve, a version, a host, a body, and answers the rest as
 /// its host decides, `Hosts.answer`, from the static site where the host is
-/// served. Every response carries `Date` and the configuration's headers,
-/// and is written within the write deadline; the connection is kept for the
-/// next request, the bytes after the head carried over, or closed, as
-/// HTTP/1.1 and HTTP/1.0 have it.
+/// served, or by the shell where the server has sessions and the target's
+/// path is the shell's. Every response carries `Date` and the
+/// configuration's headers, and is written within the write deadline; the
+/// connection is kept for the next request, the bytes after the head
+/// carried over, or closed, as HTTP/1.1 and HTTP/1.0 have it.
+///
+/// A request on the shell's path is answered as `Shell.handshake` says: a
+/// refusal closes the connection, and after the 101 the connection is the
+/// shell's, `Shell.serve`, until it closes.
 ///
 /// On a socket a TLS listener accepted, the first read runs the handshake,
 /// within the idle deadline, and a handshake that fails closes the
@@ -17,7 +22,8 @@
 /// Each response written is told to the access log as an entry, and the
 /// listener is told when a head is read and when its response is written,
 /// so that the program's end ends an idle connection and not one serving a
-/// request.
+/// request; after a 101 it is told that the connection is a shell, which
+/// its end closes with 1001.
 
 //
 // Types
@@ -25,17 +31,23 @@
 
 /// What every connection of a listener shares: the configuration, the site
 /// its requests are served from, the challenge site on the redirect
-/// listener and `None` on another (design §9), and the access log's
-/// address.
+/// listener and `None` on another (design §9), the access log's address,
+/// and the sessions where the configuration has a shell (design §12).
 export type Server =
     Server(config : Config.Config,
            site : Static.Site,
            challenge : Optional(Static.Site),
-           log : Address(AccessLog.LogMsg))
+           log : Address(AccessLog.LogMsg),
+           sessions : Optional(Sessions.Sessions))
 
-/// What a connection tells its listener, with its own process: a request's
-/// head read, and its response written and told to the log (design §7).
-export type Told = RequestRead(Process) | ResponseWritten(Process)
+/// What a connection tells its listener: a request's head read, and its
+/// response written and told to the log, with its own process; and, after
+/// a 101, that it is a shell, with its own address, by which the
+/// listener's end closes it (design §7).
+export type Told =
+    RequestRead(Process)
+  | ResponseWritten(Process)
+  | Upgraded(Address(Shell.ShellMsg))
 
 // A connection as it serves: its socket, the server, its listener's address
 // and its remote address.
@@ -46,8 +58,12 @@ type Connection =
                remote : String)
 
 // What a connection does after a response: it reads the next request with
-// the bytes after the head carried, or it closes.
-type Next = ReadNext(Bytes) | Close
+// the bytes after the head carried, it closes, or after a 101 it is the
+// shell's, with the bytes after the head, the sessions and its cookie.
+type Next =
+    ReadNext(Bytes)
+  | Close
+  | Upgrade(carried : Bytes, sessions : Sessions.Sessions, cookie : String)
 
 //
 // Serving
@@ -59,8 +75,11 @@ type Next = ReadNext(Bytes) | Close
 /// The connection closes without a response where the client sends nothing
 /// within the idle deadline or closes, and after a response that refuses a
 /// head or a request, after a 1.1 request that asks it to close, and after
-/// a 1.0 request that does not ask it to keep alive.
-export fn serve(socket : Address(Tcp.SocketMsg), server : Server, listener : Address(Told)) : Unit =
+/// a 1.0 request that does not ask it to keep alive; after a 101 it closes
+/// when its shell does.
+export fn serve(socket : Address(Tcp.SocketMsg),
+                server : Server,
+                listener : Address(Told)) : Unit receiving Shell.ShellMsg =
     match Tcp.remote(socket) {
         Right(endpoint) ->
             nextRequest(Connection(=socket, =server, =listener, remote = endpoint.host), <<>>)
@@ -70,7 +89,7 @@ export fn serve(socket : Address(Tcp.SocketMsg), server : Server, listener : Add
 
 // The next request: its first bytes waited for within the idle deadline
 // where none were carried, and then its head.
-fn nextRequest(connection : Connection, carried : Bytes) : Unit =
+fn nextRequest(connection : Connection, carried : Bytes) : Unit receiving Shell.ShellMsg =
     if Bytes.isEmpty(carried) then
         match Tcp.read(connection.socket, connection.server.config.timeouts.idle) {
             Right(bytes) -> head(connection, bytes)
@@ -81,7 +100,7 @@ fn nextRequest(connection : Connection, carried : Bytes) : Unit =
 
 // The head read within the head deadline and the request answered, or the
 // head refused, or the connection closed where the client went away.
-fn head(connection : Connection, carried : Bytes) : Unit = {
+fn head(connection : Connection, carried : Bytes) : Unit receiving Shell.ShellMsg = {
     let config = connection.server.config;
     let limits = Http.Limits(line = config.limits.requestLine, headers = config.limits.headers);
     match Http.readRequest(connection.socket, carried, limits, config.timeouts.head) {
@@ -104,7 +123,7 @@ fn head(connection : Connection, carried : Bytes) : Unit = {
 
 // A head refused before it was read whole: the error's response, and the
 // connection closed.
-fn unread(connection : Connection, status : Int) : Unit = {
+fn unread(connection : Connection, status : Int) : Unit receiving Shell.ShellMsg = {
     let config = connection.server.config;
     responded(connection,
               None,
@@ -112,38 +131,87 @@ fn unread(connection : Connection, status : Int) : Unit = {
               Close)
 }
 
-// The request refused, or answered as its host decides and served from the
-// site where its host is served.
-fn answered(connection : Connection, request : Http.Request, rest : Bytes) : Unit = {
+// The request refused, or answered as its host decides, and where its
+// host is served, by the shell on the shell's path where the server has
+// sessions and otherwise from the site.
+fn answered(connection : Connection,
+            request : Http.Request,
+            rest : Bytes) : Unit receiving Shell.ShellMsg = {
     let server = connection.server;
     let ms = server.config.timeouts.file;
+    let next = if closes(request) then Close else ReadNext(rest);
     match refusal(request) {
         Some(status) ->
             responded(connection,
                       Some(request),
                       headed(request, Static.error(server.site, status, ms)),
                       Close)
-      | None -> {
-            let response = match Hosts.answer(server.config, server.challenge, request, ms) {
-                Hosts.Served -> Static.serve(server.site, request, ms)
-              | Hosts.Answered(response) -> response
-            };
-            responded(connection,
-                      Some(request),
-                      response,
-                      if closes(request) then Close else ReadNext(rest))
-        }
+      | None ->
+            match Hosts.answer(server.config, server.challenge, request, ms) {
+                Hosts.Served ->
+                    match shellOf(server, request) {
+                        Some(sessions) ->
+                            upgraded(connection, request, rest, sessions)
+                      | None ->
+                            responded(connection,
+                                      Some(request),
+                                      Static.serve(server.site, request, ms),
+                                      next)
+                    }
+              | Hosts.Answered(response) ->
+                    responded(connection, Some(request), response, next)
+            }
     }
 }
 
+// The sessions where the server has them and the target's path as written,
+// up to its first `?`, is the shell's path; None otherwise.
+fn shellOf(server : Server, request : Http.Request) : Optional(Sessions.Sessions) =
+    match #(server.sessions, Static.pathAndQuery(request.target)) {
+        #(Some(sessions), Some(target)) ->
+            if pathOf(target) == sessions.shell.path then Some(sessions) else None
+      | _ ->
+            None
+    }
+
+// A target's path and query up to its first `?`.
+fn pathOf(target : String) : String =
+    match String.splitOnce(target, "?") {
+        Some(#(path, _)) -> path
+      | None -> target
+    }
+
+// A request on the shell's path answered as Shell.handshake says: a refusal
+// with the error's response of its status and the refusal's headers added,
+// closing the connection, or the 101, after which the connection is the
+// shell's.
+fn upgraded(connection : Connection,
+            request : Http.Request,
+            rest : Bytes,
+            sessions : Sessions.Sessions) : Unit receiving Shell.ShellMsg =
+    match Shell.handshake(sessions.shell, request) {
+        Left(Shell.Refusal(=status, =headers)) -> {
+            let ms = connection.server.config.timeouts.file;
+            let #(response, body) = Static.error(connection.server.site, status, ms);
+            let refused = Http.Response(..response, headers = response.headers <> headers);
+            responded(connection, Some(request), headed(request, #(refused, body)), Close)
+        }
+      | Right(Shell.Accepted(=response, =cookie)) ->
+            responded(connection,
+                      Some(request),
+                      #(response, <<>>),
+                      Upgrade(carried = rest, =sessions, =cookie))
+    }
+
 // The response written with the headers every response carries, and
-// `Connection: close` or, for a 1.0 request kept, `keep-alive`, told to the
-// log and then to the listener, and what follows it done; a write that
-// fails or does not end in time closes the connection, told to neither.
+// `Connection: close` or, for a 1.0 request kept, `keep-alive`, and for a
+// 101 its own `Connection` alone, told to the log and then to the
+// listener, a 101 as Upgraded, and what follows it done; a write that fails
+// or does not end in time closes the connection, told to neither.
 fn responded(connection : Connection,
              request : Optional(Http.Request),
              #(response, body) : #(Http.Response, Bytes),
-             next : Next) : Unit = {
+             next : Next) : Unit receiving Shell.ShellMsg = {
     let config = connection.server.config;
     let time = Clock.now();
     let persistence = match #(next, request) {
@@ -151,7 +219,7 @@ fn responded(connection : Connection,
             [header("Connection", "close")]
       | #(ReadNext(_), Some(read)) when read.version.minor == 0 ->
             [header("Connection", "keep-alive")]
-      | #(ReadNext(_), _) ->
+      | #(ReadNext(_), _) or #(Upgrade(), _) ->
             []
     };
     let headers =
@@ -165,10 +233,25 @@ fn responded(connection : Connection,
                                  request = Optional.map(request, requestLine),
                                  status = response.status,
                                  size = Bytes.size(body)));
-            send(connection.listener, ResponseWritten(Process.current()));
             match next {
-                ReadNext(rest) -> nextRequest(connection, rest)
-              | Close -> Tcp.close(connection.socket)
+                ReadNext(rest) -> {
+                    send(connection.listener, ResponseWritten(Process.current()));
+                    nextRequest(connection, rest)
+                }
+              | Close -> {
+                    send(connection.listener, ResponseWritten(Process.current()));
+                    Tcp.close(connection.socket)
+                }
+              | Upgrade(=carried, =sessions, =cookie) -> {
+                    send(connection.listener, Upgraded(self()));
+                    // the shell closes the socket when it returns
+                    Shell.serve(connection.socket,
+                                carried,
+                                sessions,
+                                cookie,
+                                connection.remote,
+                                config.timeouts)
+                }
             }
         }
       | Left(_) ->
@@ -304,6 +387,12 @@ fn configuration(idle : Int, head : Int) : String =
 // is told its end.
 fn connected(idle : Int, head : Int) : Either(String, Address(Tcp.SocketMsg)) receiving Seen = {
     let server <- served(idle, head);
+    connectedTo(server)
+}
+
+// A client's socket to a connection of the server served in a process of
+// its own.
+fn connectedTo(server : Server) : Either(String, Address(Tcp.SocketMsg)) receiving Seen =
     Either.mapLeft({
                        let listening <- Tcp.listen("127.0.0.1", 0);
                        let port <- Tcp.port(listening);
@@ -314,19 +403,25 @@ fn connected(idle : Int, head : Int) : Either(String, Address(Tcp.SocketMsg)) re
                        Right(client)
                    },
                    Io.show)
-}
 
 // The server of the scratch site, with the deadlines given, on a listener
 // that is not the redirect listener; the test's process is its log.
-fn served(idle : Int, head : Int) : Either(String, Server) receiving Seen = {
+fn served(idle : Int, head : Int) : Either(String, Server) receiving Seen =
+    serverOf(configuration(idle, head))
+
+// The server of the configuration's text, with the sessions started where
+// it has a shell; the test's process is its log.
+fn serverOf(text : String) : Either(String, Server) receiving Seen = {
     let _ <-
         Either.mapLeft(prepared(),
                        fn(error) = "cannot prepare " <> scratch <> ": " <> Io.show(error));
-    let config <- Either.mapLeft(Config.parse(configuration(idle, head)), Config.reason);
+    let config <- Either.mapLeft(Config.parse(text), Config.reason);
     Right(Server(=config,
                  site = Static.site(config.root, config.contentTypes),
                  challenge = None,
-                 log = adapted(self(), Logged)))
+                 log = adapted(self(), Logged),
+                 sessions = Optional.map(config.shell,
+                                         fn(shell) = Sessions.start(shell, config.timeouts))))
 }
 
 // The socket given to a connection served in a process of its own, whose
@@ -519,6 +614,8 @@ fn told(count : Int) : #(List(String), List(String)) receiving Seen = {
                 taken(count, entries, heard <> ["RequestRead"])
           | Heard(ResponseWritten(_)) ->
                 taken(count - 1, entries, heard <> ["ResponseWritten"])
+          | Heard(Upgraded(_)) ->
+                taken(count - 1, entries, heard <> ["Upgraded"])
           | after 5000 ->
                 #(entries, heard <> ["no more"])
         };
@@ -768,4 +865,161 @@ let answersByHost = Test.Case(name = "answers a request as its host decides", ru
                        ["127.0.0.1 GET /a.txt HTTP/1.1 421 24",
                         "127.0.0.1 GET /a.txt HTTP/1.1 301 0",
                         "127.0.0.1 GET /a.txt HTTP/1.1 200 5"])))
+})
+
+// The tests' configuration with a shell on the path `/shell`, whose command
+// is `cat`.
+let withShell : String =
+    String.replace(configuration(5000, 5000),
+                   "/access.log\"}\n",
+                   "/access.log\",\n"
+                       <> " \"shell\": {\"path\": \"/shell\", \"origins\": [\"http://localhost\"],\n"
+                       <> "           \"command\": [\"cat\"], \"most-at-once\": 2,\n"
+                       <> "           \"starts\": {\"count\": 10, \"within\": 60000},\n"
+                       <> "           \"lifetime\": 60000, \"warning\": 30000,\n"
+                       <> "           \"message-limit\": 1024, \"hangup\": 1000}}\n")
+
+// The messages a client of a shell is sent, the bytes carried first, until
+// they are the count, as a test compares them.
+fn framed(client : Address(Tcp.SocketMsg),
+          decoder : WebSocket.Decoder,
+          carried : Bytes,
+          count : Int) : List(String) =
+    if count == 0 then
+        []
+    else match WebSocket.decode(decoder, carried) {
+        Right(#([], rest)) ->
+            match Tcp.read(client, 5000) {
+                Right(bytes) -> framed(client, rest, bytes, count)
+              | Left(error) -> [Io.show(error)]
+            }
+      | Right(#(messages, rest)) -> {
+            let shown = List.map(List.take(messages, count), fn(message) = match message {
+                WebSocket.Pong(bytes) ->
+                    "Pong(" <> Optional.withDefault(String.fromUtf8(bytes), "?") <> ")"
+              | WebSocket.Close(code = Some(code)) ->
+                    "Close(" <> Int.toString(code) <> ")"
+              | other ->
+                    Io.show(other)
+            });
+            shown <> framed(client, rest, <<>>, count - List.size(shown))
+        }
+      | Left(error) ->
+            [Io.show(error)]
+    }
+
+// A frame a client writes, masked with a key of its own.
+fn masked(message : WebSocket.Message) : Bytes =
+    Optional.withDefault(WebSocket.encodeMasked(message, Crypto.randomBytes(4)), <<>>)
+
+// design §6, §11: a request on the shell's path where the server has
+// sessions is answered as Shell.handshake says. A refusal is the error's
+// response with the refusal's headers added, closing the connection, a
+// HEAD's without its body. The 101 is written as any response, Date and the
+// configuration's headers first, but with no Connection of the
+// connection's own beside its `Connection: Upgrade`, told to the log with
+// the size 0 and to the listener as Upgraded; the path is matched without
+// its query,
+// and the connection is then the shell's, the bytes after the head read
+// first: a ping written with the upgrade is answered, and the client's
+// close closes the connection, which returns. A server without sessions
+// serves the path from the site.
+let upgrades = Test.Case(name = "upgrades a request on the shell's path", run = fn() = {
+    let origin = header("Origin", "http://localhost");
+    let result = {
+        let server <- serverOf(withShell);
+        let refusedClient <- connectedTo(server);
+        let refusedAnswers <-
+            exchanged(refusedClient, [request("GET", "/shell", 1, [host, origin])]);
+        let refusedEnd = next(refusedClient);
+        let #(refusedEntries, _) = told(1);
+        let headClient <- connectedTo(server);
+        let headAnswers <- exchanged(headClient, [request("HEAD", "/shell", 1, [host])]);
+        let #(headEntries, _) = told(1);
+        let client <- connectedTo(server);
+        let key = Base64.encode(Crypto.randomBytes(16));
+        let upgrade =
+            request("GET",
+                    "/shell?page=1",
+                    1,
+                    [host,
+                     header("Upgrade", "websocket"),
+                     header("Connection", "Upgrade"),
+                     header("Sec-WebSocket-Version", "13"),
+                     origin,
+                     header("Sec-WebSocket-Key", key),
+                     header("Cookie", "shell=0123456789abcdef0123456789abcdef")]);
+        let bytes =
+            Http.renderRequest(upgrade, <<>>) <> masked(WebSocket.Ping(String.toUtf8("carried")));
+        let _ <- Either.mapLeft(Tcp.write(client, bytes, 5000), Io.show);
+        let #(response, rest) <-
+            Either.mapLeft(Http.readResponse(client,
+                                             <<>>,
+                                             Http.Limits(line = 1024, headers = 4096),
+                                             5000),
+                           Io.show);
+        let decoder = WebSocket.decoder(WebSocket.FromServer, 4096);
+        let pong = framed(client, decoder, rest, 1);
+        let _ <-
+            Either.mapLeft(Tcp.write(client,
+                                     masked(WebSocket.Close(code = Some(1000), reason = "")),
+                                     5000),
+                           Io.show);
+        let close = framed(client, decoder, <<>>, 1);
+        let upgradeEnd = next(client);
+        let upgradeTold = told(1);
+        let end = ended();
+        let stopped = match server.sessions {
+            Some(sessions) -> Address.call(sessions.address, Sessions.Stop, 5000) == Some(Unit)
+          | None -> false
+        };
+        Right(#(refusedAnswers,
+                refusedEnd,
+                refusedEntries,
+                headAnswers,
+                headEntries,
+                #(response.status,
+                  List.map(response.headers,
+                           fn(header) =
+                               if header.name == "Sec-WebSocket-Accept"
+                                   && header.value == WebSocket.accept(key) then
+                                   Http.Header(..header, value = "the key's")
+                               else
+                                   dated(header))),
+                pong,
+                close,
+                upgradeEnd,
+                upgradeTold,
+                end,
+                stopped))
+    };
+    let upgradeRequired = "426 Upgrade Required\n";
+    let notAllowed = "405 Method Not Allowed\n";
+    Test.equal(#(result, once([request("GET", "/shell", 1, [host, closing])])),
+               #(Right(#([plain(426,
+                                [header("Upgrade", "websocket"),
+                                 header("Sec-WebSocket-Version", "13"),
+                                 closing,
+                                 length(upgradeRequired)])],
+                         "closed",
+                         ["127.0.0.1 GET /shell HTTP/1.1 426 21"],
+                         [Answer(..plain(405,
+                                         [header("Allow", "GET"), length(notAllowed), closing]),
+                                 body = Some(""))],
+                         ["127.0.0.1 HEAD /shell HTTP/1.1 405 0"],
+                         #(101,
+                           first
+                               <> [header("Upgrade", "websocket"),
+                                   header("Connection", "Upgrade"),
+                                   header("Sec-WebSocket-Accept", "the key's")]),
+                         ["Pong(carried)"],
+                         ["Close(1000)"],
+                         "closed",
+                         #(["127.0.0.1 GET /shell?page=1 HTTP/1.1 101 0"],
+                           ["RequestRead", "Upgraded"]),
+                         "Returned, told nothing",
+                         true)),
+                 Right(#([plain(404, [closing, length("404 Not Found\n")])],
+                         "closed",
+                         ["127.0.0.1 GET /shell HTTP/1.1 404 14"]))))
 })

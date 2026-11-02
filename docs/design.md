@@ -12,11 +12,15 @@ The program's processes, each with what it owns; a process is spawned by the one
 
 **The entry process** runs `ErnestHttpd.main`. It takes one argument, the configuration's path, and refuses another count with the line `usage: ernest_httpd config.json` on standard error and the status 2. It reads the configuration within 5000 milliseconds, `Config.read`, §4, and refuses it with the path, `: ` and `Config.reason` on standard error and the status 1.
 
-It then makes the site, §5, starts the access log, §8, and for each listener of the configuration, in its order, listens, `Tcp.listen` for a `plain` or a `redirect` listener and `Tcp.listenTls` with its certificate and its key for a `tls` one, prints a line of `listening on `, the address, `:` and the port it got, `Tcp.port`, on standard output, and spawns the listener process, §7, monitored, with the server its connections share, §6: the configuration, the site, the access log's address and, for a `redirect` listener, its challenge site, §9. A listen or a port that fails is said on standard error with the address, `:`, the port, `: ` and the error as `Io.show` writes it, and ends the program with the status 1. It then subscribes to the program's end, `Os.termination`, and waits.
+It then makes the site, §5, starts the access log, §8, and the sessions where the configuration has a `shell`, §12, and for each listener of the configuration, in its order, listens, `Tcp.listen` for a `plain` or a `redirect` listener and `Tcp.listenTls` with its certificate and its key for a `tls` one, prints a line of `listening on `, the address, `:` and the port it got, `Tcp.port`, on standard output, and spawns the listener process, §7, monitored, with the server its connections share, §6: the configuration, the site, the access log's address, the sessions where there are any and, for a `redirect` listener, its challenge site, §9.
 
-**The end.** Told of the program's end, the entry process tells each listener process to stop, `Listener.Stop`, waits for each to end, has the access log write what it holds, `AccessLog.Flush`, and answers the end's reply. A listener process that ends before the end was told is a failure of the program: the entry process stops the others and has the log write what it holds, as at the end, and then says `a listener ended: ` and the reason as `Io.show` writes it on standard error and ends the program with the status 1.
+A listen or a port that fails is said on standard error with the address, `:`, the port, `: ` and the error as `Io.show` writes it, and ends the program with the status 1. It then subscribes to the program's end, `Os.termination`, and waits.
+
+**The end.** Told of the program's end, the entry process stops the sessions where it started them, `Sessions.Stop`, which closes every attached shell with 1001 and ends every session, and waits for its reply; then tells each listener process to stop, `Listener.Stop`, which closes every shell left with 1001, waits for each to end, has the access log write what it holds, `AccessLog.Flush`, and answers the end's reply. A listener process that ends before the end was told is a failure of the program: the entry process stops the others and has the log write what it holds, as at the end, and then says `a listener ended: ` and the reason as `Io.show` writes it on standard error and ends the program with the status 1.
 
 **A listener** is one process for each listener of the configuration, §7, with an acceptor process of its own; the listener owns the count of its connections and closes the listening socket at the end, the entry process opened and owns the socket, and the acceptor alone calls `Tcp.accept` on it. **A connection** is one process for each socket a listener accepted, §6, which owns the socket. **The access log** is one process, §8, which owns the lines waiting to be written.
+
+**The sessions** are one process, §12, where the configuration has a `shell`, which owns the sessions by their cookies, their count and the visitors' starts. **A session** is one process for each cookie whose program runs, §12, spawned by the sessions, which owns the program under its terminal, `Os.startTerminal`, its deadline and the shell attached to it, and reads the terminal through a reader process of its own, which alone calls `Os.read`. **A shell** is a connection's process after an upgrade, §11, which owns the socket and writes it, and reads it through a reader process of its own, which alone calls `Tcp.read`. A reader is ended, `Process.kill`, before what it reads is closed.
 
 ```
 type ErnestHttpd.MainMsg = Terminated(Reply(Unit)) | ListenerEnded(Down)
@@ -35,6 +39,10 @@ Each module has one job, which its doc block states.
 | `Hosts` | `src/hosts.ern` | a request's host and what it decides before the site: the canonical host served, a redirect host and the redirect listener answered 301, a host that is neither 421, and the ACME challenge served, §9 |
 | `Listener` | `src/listener.ern` | the connections of one listening socket: accepted within the caps, each in a process of its own, and closed in order at the end, §7 |
 | `AccessLog` | `src/access_log.ern` | the access log: each response a line of Common Log Format, appended by the file's path in batches, §8 |
+| `WebSocket` | `src/web_socket.ern` | RFC 6455's frames and its accept value: messages decoded from bytes and encoded to frames, knowing no socket, §10 |
+| `Shell` | `src/shell.ern` | a shell's life: the upgrade's handshake, and after the 101 the socket read through its reader, the session attached at the page's first resize, and the terminal's bytes and the messages carried both ways, §11 |
+| `Sessions` | `src/sessions.ern` | the sessions by cookie: a shell's attach passed to its session or a session started within the caps, and every session ended at the stop, §12 |
+| `Session` | `src/session.ern` | one session: its program under a terminal, read through its reader while a shell is attached, its deadline, and its end with a close code, §12 |
 
 ## 4. The configuration
 
@@ -51,7 +59,7 @@ type Timeouts = Timeouts(head : Int, idle : Int, write : Int, file : Int) // mil
 type Limits = Limits(requestLine : Int, headers : Int, connections : Int,
   connectionsPerAddress : Int) // bytes, bytes, counts
 type Shell = Shell(path : String, origins : List(String), command : List(String),
-  mostAtOnce : Int, starts : Starts, lifetime : Int, warning : Int, messageLimit : Int)
+  mostAtOnce : Int, starts : Starts, lifetime : Int, warning : Int, messageLimit : Int, hangup : Int)
 type Starts = Starts(count : Int, within : Int) // within in milliseconds
 type Error = Unreadable(Io.Error) | NotJson(Json.Error) | Invalid(field : String, rule : String)
 Config.read : (Path, Int) -> Either(Error, Config) // the file read within the milliseconds, each rule checked
@@ -88,6 +96,7 @@ A string of the file, a member's name among them, breaks `holds no control chara
 | `shell.most-at-once` | an integer, a count | `is above 0` |
 | `shell.starts.count`, `shell.starts.within` | integers, a count and milliseconds | each `is above 0` |
 | `shell.lifetime`, `shell.warning`, `shell.message-limit` | integers, milliseconds, milliseconds and bytes | each `is above 0`, and the warning `is below the lifetime` |
+| `shell.hangup` | an integer, milliseconds: what a program has to exit after its terminal is hung up | `is above 0` |
 
 A field that breaks a rule is answered as `Invalid`, its `field` the field's name from the file's top, `listeners[0].port`, and its `rule` the rule's text as the table writes it. An object's members of no field are answered before its fields, the first by its name's code points, a listener's after its kind; then the fields are checked in the table's order, a row's rules in the order it writes them, an array's elements in theirs and an object of strings' members by their names' code points, each name before its value, each string's control characters before its rule, and the first rule broken is answered. `read` checks the rules of the file system's after every other, in the table's order.
 
@@ -144,16 +153,19 @@ The path is then split at `/` into segments: an empty segment and `.` are droppe
 
 ```
 type Server = Server(config : Config.Config, site : Static.Site, challenge : Optional(Static.Site),
-  log : Address(AccessLog.LogMsg)) // the challenge site on a redirect listener, §9, None on another
-type Told = RequestRead(Process) | ResponseWritten(Process) // what a connection tells its listener, §7
-Connection.serve : (Address(Tcp.SocketMsg), Server, Address(Told)) -> Unit
+  log : Address(AccessLog.LogMsg), sessions : Optional(Sessions.Sessions))
+  // the challenge site on a redirect listener, §9, None on another; the sessions where the configuration has a shell, §12
+type Told = RequestRead(Process) | ResponseWritten(Process) | Upgraded(Address(Shell.ShellMsg)) // what a connection tells its listener, §7
+Connection.serve : (Address(Tcp.SocketMsg), Server, Address(Told)) -> Unit receiving Shell.ShellMsg // the shell's mailbox, §11, run in the connection's process
 ```
 
 **Reading.** Where no bytes were carried past the last head, the connection waits for the next request's first bytes within the idle deadline, `timeouts.idle`, and closes the connection without a response, and without a line, where none come, the client closes or the read fails. It then reads the head, `Http.readRequest` with the bytes carried and the limits `limits.request-line` and `limits.headers`, within the head deadline, `timeouts.head`. A head that does not end in time answers 408; a `Malformed` head 400, `LineTooLong` 414 and `HeadersTooLarge` 431; a client that closes before the head ends, or a read that fails otherwise, ends the connection without a response and without a line. Each response of this paragraph closes the connection.
 
-**The request.** In this order: a version other than 1.0 and 1.1 answers 505; a 1.1 request without `Host`, and a request with two `Host` headers, answers 400; a request with `Transfer-Encoding` answers 413; one with `Content-Length` whose values are not one decimal number, each value digits alone and every value the same number, answers 400, above 0 answers 413, and 0 has no body. Each of these closes the connection, its body dropped for a `HEAD` as `Static.withoutBody` drops it, §5. Any other request is answered as its host decides, `Hosts.answer`, §9, and served by `Static.serve` where that is `Served`, each read of the file system within `timeouts.file`.
+**The request.** In this order: a version other than 1.0 and 1.1 answers 505; a 1.1 request without `Host`, and a request with two `Host` headers, answers 400; a request with `Transfer-Encoding` answers 413; one with `Content-Length` whose values are not one decimal number, each value digits alone and every value the same number, answers 400, above 0 answers 413, and 0 has no body. Each of these closes the connection, its body dropped for a `HEAD` as `Static.withoutBody` drops it, §5. Any other request is answered as its host decides, `Hosts.answer`, §9, and where that is `Served`: by the shell, §11, where the server has sessions and the target's path as written, `Static.pathAndQuery` up to its first `?`, is `shell.path`; else by `Static.serve`, each read of the file system within `timeouts.file`.
 
-**The response.** Every response carries `Date`, the time it is written as RFC 9110's date, then the configuration's `headers`, then its own, and `Connection: close` where the connection closes after it, or `Connection: keep-alive` where a 1.0 request's connection is kept. It is written with `Http.render` within the write deadline, `timeouts.write`; a write that fails or does not end in time closes the connection, and is told neither to the log nor to the listener. The connection closes after a response of the two paragraphs above, after a 1.1 request whose `Connection` headers list `close`, and after a 1.0 request whose `Connection` headers do not list `keep-alive`, the headers' values parted at commas, trimmed and compared in any case; otherwise it reads the next request with the bytes after the head carried.
+**The upgrade.** A request of the shell's is answered as `Shell.handshake` says: a refusal with `Static.error` of its status and the refusal's headers added, closing the connection; the 101 written as any response, told to the log with the size 0 and to the listener as `Upgraded` with the shell's address, after which the connection runs `Shell.serve` with the bytes after the head and the cookie, and closes when it returns.
+
+**The response.** Every response carries `Date`, the time it is written as RFC 9110's date, then the configuration's `headers`, then its own, and `Connection: close` where the connection closes after it, or `Connection: keep-alive` where a 1.0 request's connection is kept; a 101 carries its own `Connection: Upgrade` and none of these. It is written with `Http.render` within the write deadline, `timeouts.write`; a write that fails or does not end in time closes the connection, and is told neither to the log nor to the listener. The connection closes after a response of the two paragraphs above, after a 1.1 request whose `Connection` headers list `close`, and after a 1.0 request whose `Connection` headers do not list `keep-alive`, the headers' values parted at commas, trimmed and compared in any case; otherwise it reads the next request with the bytes after the head carried.
 
 **The line.** Each response written is told to the access log, §8, as an entry: the remote address, the time of its `Date`, the request line as the client wrote it, its method, target and version, `HTTP/1.1`, parted by spaces, or none where no head was read, the status, and the size of the body written, 0 for a `HEAD` and a 304.
 
@@ -174,7 +186,7 @@ Listener.serve : (Address(Tcp.ListenerMsg), Connection.Server) -> Unit receiving
 
 An accepted socket whose remote address, `Tcp.remote`'s host, has `limits.connections-per-address` connections open, or whose remote address the host cannot tell, is closed at once, without a response; any other is given to a connection process spawned and monitored for it, which runs `Connection.serve` with the listener's address adapted to `Told`. An accept that fails is said on standard error as a line of `cannot accept: ` and the error as `Io.show` writes it, and the listener asks again after an idle deadline, by an alarm, `Retry`. An acceptor that ends before the stop ends the listener, which closes the socket and returns.
 
-**The end.** Told to stop, `Stop`, the listener ends the acceptor, `Process.kill`, waits for its `AcceptorEnded`, and closes the socket, `Tcp.closeListener`; a socket the acceptor accepted and had not yet given ends with the acceptor, and one it gave that the listener had not yet placed is closed at once. It then ends the process of each connection that is not serving a request, by what it was told, `Process.kill`, ends each that tells `ResponseWritten` after, and returns once every connection has ended.
+**The end.** Told to stop, `Stop`, the listener ends the acceptor, `Process.kill`, waits for its `AcceptorEnded`, and closes the socket, `Tcp.closeListener`; a socket the acceptor accepted and had not yet given ends with the acceptor, and one it gave that the listener had not yet placed is closed at once. It then ends the process of each connection that is not serving a request, by what it was told, `Process.kill`, tells each that told `Upgraded` to close with 1001, `Told(Session.Ended(1001))`, as a session tells its shell, ends each that tells `ResponseWritten` after, and returns once every connection has ended.
 
 ## 8. The access log
 
@@ -207,6 +219,87 @@ Hosts.answer : (Config.Config, Optional(Static.Site), Http.Request, Int) -> Answ
 
 **The 301.** Its `Location` is `https://`, the canonical host as the configuration writes it, and the target's path and query as written; it has no body. A target of another form answers 400 instead, as §5 answers it. The 421 is `Static.error`'s. A `HEAD`'s response is the `GET`'s with its body dropped, as `Static.withoutBody` makes it; the connection is kept or closed after any response of this section as §6 has it for a served request.
 
+## 10. The WebSocket
+
+`WebSocket` is RFC 6455's framing and its handshake's accept value, written as a library of Ernest's is, E.0, over `Crypto.sha1`, `Base64.encode`, `String.fromUtf8` and the bit syntax, its doc examples the RFC's own vectors. It knows no socket: it takes bytes and answers messages, and takes a message and answers a frame.
+
+```
+type Message = Text(String) | Binary(Bytes) | Ping(Bytes) | Pong(Bytes) | Close(code : Optional(Int), reason : String)
+type Role = FromClient | FromServer
+type Error = ProtocolError | TooBig | NotUtf8
+abstract type Decoder // the frames one role sends, with a frame or a message under way
+WebSocket.accept : (String) -> String // Sec-WebSocket-Accept for a Sec-WebSocket-Key: the SHA-1 of the key and 258EAFA5-E914-47DA-95CA-C5AB0DC85B11, in base64
+WebSocket.decoder : (Role, Int) -> Decoder // the role's frames, a message of at most the bytes
+WebSocket.decode : (Decoder, Bytes) -> Either(Error, #(List(Message), Decoder)) // the messages the bytes complete, in order, and the decoder holding the rest
+WebSocket.closeCode : (Error) -> Int // 1002 for ProtocolError, 1009 for TooBig, 1007 for NotUtf8
+WebSocket.encode : (Message) -> Bytes // one frame, unmasked, as a server sends
+WebSocket.encodeMasked : (Message, Bytes) -> Optional(Bytes) // one frame masked with the four-byte key, as a client sends; None for a key of another size
+```
+
+**Decoding.** A decoder of `FromClient` takes masked frames alone, and one of `FromServer` unmasked frames alone; a payload's length is read in each of the RFC's three forms. A `Text` or a `Binary` is its fragments joined, answered at its final frame; a `Ping`, a `Pong` and a `Close` are answered in their place, between two fragments among them. A `Close`'s code is its payload's first two bytes and its reason the rest, `None` and `""` where the payload is empty.
+
+`decode` answers `ProtocolError` for a frame the RFC forbids: masked or unmasked for the wrong role, a reserved bit set, a reserved opcode, a control frame fragmented or with a payload past 125 bytes, a length not in its shortest form or with its top bit set, a continuation with no message under way, a `Text` or a `Binary` frame inside one, or a `Close` whose payload is one byte or whose code is not 1000 to 1003, 1007 to 1014 or 3000 to 4999; `TooBig` for a message whose fragments together pass the limit, at the fragment that passes it; and `NotUtf8` for a `Text`, or a `Close`'s reason, that is not UTF-8.
+
+An error is answered at the bytes that show it, a header's before its payload comes, and the messages the same bytes completed before it go with it; a frame after a `Close` is decoded as any. A decoder that answered an error is not used again.
+
+**Encoding.** `encode` writes one frame, its payload's length in the shortest of the three forms; a `Close` with no code carries no payload, and with a code the code and the reason. A message is written as given, a control message past 125 bytes among them, which a decoder refuses; a close code outside 0 to 65535 faults. `encodeMasked` writes the same frame masked with the key.
+
+## 11. The shell
+
+`Shell.handshake(shell, request)` answers whether a request on the shell's path is an upgrade the server takes: the 101 response with the connection's cookie, or the refusal. `Shell.serve(socket, carried, sessions, cookie, remote, timeouts)` is the shell's life after the 101, run in the process that owns the socket: the socket read through a reader process, the session attached at the page's first resize, and the terminal's bytes and the messages carried both ways until the connection closes; then it returns, the socket closed. `carried` is the bytes after the head, `remote` the remote address.
+
+```
+type Refusal = Refusal(status : Int, headers : List(Http.Header))
+type Accepted = Accepted(response : Http.Response, cookie : String)
+type ShellMsg = Received(WebSocket.Message) | Failed(WebSocket.Error) | Idle | Closed | ReaderEnded(Down)
+  | Told(Session.Told) | SessionEnded(Down)
+Shell.handshake : (Config.Shell, Http.Request) -> Either(Refusal, Accepted)
+Shell.serve : (Address(Tcp.SocketMsg), Bytes, Sessions.Sessions, String, String, Config.Timeouts) -> Unit receiving ShellMsg
+```
+
+**The handshake.** In this order: a method other than `GET` is refused 405 with `Allow: GET`; a version other than 1.1, a request whose `Upgrade` values do not list `websocket` or whose `Connection` values do not list `Upgrade`, the values parted at commas, trimmed and compared in any case, or whose `Sec-WebSocket-Version` is not one header `13`, is refused 426 with `Upgrade: websocket` and `Sec-WebSocket-Version: 13`; a request whose `Origin` is not one header among `shell.origins` as written is refused 403; one without one `Sec-WebSocket-Key` whose value is 16 bytes in base64 is refused 400. The rest is accepted: the 101 carries `Upgrade: websocket`, `Connection: Upgrade`, `Sec-WebSocket-Accept`, `WebSocket.accept` of the key, and, where the request carried no cookie, `Set-Cookie` of `shell=`, the cookie, `; Path=`, `shell.path`, and `; Secure; HttpOnly; SameSite=Strict`.
+
+**The cookie.** The request's cookie is the value of the first member `shell` of its `Cookie` headers, their pairs parted at `;` and trimmed, whose value is 32 lower-case hexadecimal digits; a request without one is given 16 bytes of `Crypto.randomBytes` in lower-case hexadecimal.
+
+**The reader.** The shell spawns the reader, monitored, which reads the socket in rounds of the idle deadline, `Tcp.read` within `timeouts.idle`, `carried` first, decodes what it reads with `WebSocket.decoder(FromClient, shell.message-limit)`, and tells the shell each message, `Received`, a round that read nothing, `Idle`, an error, `Failed`, and the connection's close or a read that fails otherwise, `Closed`; it reads on after a message and after `Idle`, and returns after the other two. The shell waits on its mailbox alone and writes the socket itself, each frame `WebSocket.encode`, within the write deadline, `timeouts.write`; a write that fails or does not end in time closes the connection.
+
+**The messages.** A `Text` is one JSON object, read through `Json`: `{"resize": [rows, columns]}`, integers from 1 to 65535, attaches the shell where no session is, `Sessions.Attach` with the cookie, the remote address, the size and the shell's address, §12, and otherwise tells its session `Resize`; `{"extend": true}` tells the session `Extend`, and `{"stop": true}` tells it `Stop`; a `Text` that is none of these closes with 1008. A `Binary` is keys, told to the session as `Keys`.
+
+What is meant for the session while the attach is under way, a resize, keys, extend or stop, is held in order and sent once `Attached` comes; before the first resize, keys, extend and stop are dropped. A `Ping` is answered with a `Pong` of its payload, a `Pong` is dropped, and a `Close` is answered with a `Close` of its code and closes the connection. `Failed` answers a `Close` of `WebSocket.closeCode` and closes; `Closed` closes; `Idle` closes without a frame where no session is attached, and is otherwise dropped.
+
+**The session's messages.** A message of `Session.Told`: `Attached` with the session's address attaches the shell, which monitors the session; `Unavailable` closes with 4003; `Output` is written as a `Binary`; `Warning` as the `Text` `Json.format` writes of `{"warning": seconds}`; `Ended` with a code closes with the code; a session that ends otherwise, `SessionEnded`, closes with 1011.
+
+**The close.** The shell closes with a code by writing a `Close` of the code and no reason, and closing; it closes by ending the reader, `Process.kill`, waiting for `ReaderEnded`, closing the socket, `Tcp.close`, which sends what the socket holds, and telling its session `Detach` with its address where one is attached; then it returns.
+
+## 12. The sessions
+
+`Sessions.start(shell, timeouts)` starts the sessions' process and answers it with the shell's configuration as `Sessions`; the process holds the sessions by their cookies, their count and the starts by remote address. `Session.serve(shell, timeouts, size, sessions)` is one session's life, run in a process the sessions spawn, `sessions` the address its end's beginning is told to: its program started under a terminal of the size, read through a reader process while a shell is attached, its deadline kept, and its end with a close code, after which it returns.
+
+```
+type Sessions.Sessions = Sessions(shell : Config.Shell, address : Address(SessionsMsg))
+type Sessions.SessionsMsg = Attach(cookie : String, remote : String, size : Terminal.Size, shell : Address(Session.Told))
+  | SessionEnding(Session.Ending) | SessionEnded(Down) | Stop(Reply(Unit))
+Sessions.start : (Config.Shell, Config.Timeouts) -> Sessions
+type Session.Told = Attached(Address(SessionMsg)) | Unavailable | Output(Bytes) | Warning(Int) | Ended(Int) // what a shell is told, the seconds left in a Warning and a close code in an Ended
+type Session.SessionMsg = Attach(Address(Told)) | Detach(Address(Told)) | ShellEnded(Down) | Keys(Bytes)
+  | Resize(Terminal.Size) | Extend | Stop | End(Int) | Answered(Either(Io.Error, Os.Output)) | ReaderEnded(Down) | Alarm(Int)
+type Session.ReaderMsg = Read
+type Session.Ending = Ending(Process) // what a session tells the sessions as its end begins
+Session.serve : (Config.Shell, Config.Timeouts, Terminal.Size, Address(Ending)) -> Unit receiving SessionMsg
+```
+
+**An attach.** `Attach` whose cookie names a live session is passed to it, `Session.Attach` with the shell's address. Otherwise a session is started for the cookie where fewer than `shell.most-at-once` live and the remote address has fewer than `shell.starts.count` starts within the last `shell.starts.within` milliseconds, the start then counted and the starts older than the window dropped; else the shell is told `Unavailable`. A session is spawned, monitored, with `Session.serve` of the size, and told `Attach`; one whose end has begun, `SessionEnding`, is dropped by its cookie and counted among the live until it ends, `SessionEnded`, so that an attach under its cookie starts a new session. Each start counted drops every remote address's starts older than the window. After `Stop` the sessions live on, telling each attach `Unavailable` and answering a second `Stop` at once.
+
+**The stop.** `Stop` tells each session `End` with 1001, waits for each to end, and answers the reply.
+
+**The program.** The session starts `shell.command` under a terminal of the size, `Os.startTerminal`, the first word the program and the rest its arguments, and spawns the reader, monitored. A start that fails is said on standard error as a line of `cannot start `, the program, `: ` and the error as `Io.show` writes it, and the session ends with 4003 at its attach. The reader reads the terminal once for each `Read` the session sends, `Os.read` within `timeouts.idle`, and tells the session what it answered, `Answered`. The session sends `Read` when a shell attaches and again after each answer while one is attached, so that a detached session reads no further and its program waits on its output; the output of a read answered while none was attached is held, one piece, and written to the next shell attached.
+
+**The deadline.** The session keeps the time of the last key or `Extend`, its start at first, and one alarm at a time: set for the warning's time, `shell.lifetime - shell.warning` after that time, and once warned, for the end's time, `shell.lifetime` after it. An alarm that fires at the warning's time tells the attached shell `Warning` with the seconds left, `shell.warning / 1000`; one that fires at the end's time ends the session with 4001; one that fires before its time, the time having moved, is set again for the warning's time.
+
+**The messages.** `Attach` tells a shell attached before `Ended` with 4002, attaches the new one, monitored, tells it `Attached`, and writes it the output held; `Detach` from the attached shell, or its end, `ShellEnded`, detaches it. `Keys` are written to the program, `Os.write` within the write deadline, and move the time, as `Extend` does; a write that fails is dropped, its `Exited` being read. `Resize` resizes the terminal, `Os.resize`. `Answered` of `Stdout` is written to the attached shell as `Output`; of `Exited`, and `Stop`, end the session with 4004; of a `Left`, nothing, the next `Read` sent as above. `End` with a code ends it with the code; a reader that ends before the end, `ReaderEnded`, ends it with 1011, the program killed at once; an `Attach` that reaches a session in its end is told `Ended` with the end's code.
+
+**The end.** The session ends with a code: it tells the sessions `Ending` and the attached shell `Ended` with the code; where the program has not exited it hangs the terminal up, `Os.closeInput`, and reads on through the reader until `Exited` comes or `shell.hangup` milliseconds pass; it then ends the reader, `Process.kill`, waits for `ReaderEnded`, and kills the program, `Process.kill`, where it has not exited; then it returns.
+
 ## Glossary
 
 The names that recur across modules, one for each concept, in every module. A name the report states takes the report's; the names of the glossary of Ernest's `guide/style.md` hold here too.
@@ -219,7 +312,7 @@ The names that recur across modules, one for each concept, in every module. A na
 - **target**: a request's target as the client wrote it, `Http.Request`'s; its **path** is the target's path, decoded and split into **segments**, §5.
 - **response**: an `Http.Response` with its body beside it, `#(Http.Response, Bytes)`, as `Static.serve` answers it and `Http.render` takes it, §5. Not `reply`, which is the prelude's.
 - **table**: the content types by extension, the built-in table extended by the configuration's, §5. Not `mimeTypes`.
-- **server**: what every connection of a listener shares, `Connection.Server`: the configuration, the site, the redirect listener's challenge site and the access log's address, §6.
+- **server**: what every connection of a listener shares, `Connection.Server`: the configuration, the site, the redirect listener's challenge site, the access log's address and the sessions, §6.
 - **connection**: a socket a listener accepted and the process that serves it, §6, §7. Not `client`, `handler`.
 - **listener**: a listening socket of the configuration and the process that accepts on it, §7. Not `acceptor`.
 - **deadline**: a time of the configuration's a wait is bounded by, the idle, head, write and file deadlines, `timeouts`, §4, §6. Not `timeout`, which is the library's `Io.Timeout`.
@@ -227,3 +320,11 @@ The names that recur across modules, one for each concept, in every module. A na
 - **entry**: what a connection tells the access log of one response, `AccessLog.Entry`, written as a line, §8.
 - **host**: a request's host, its `Host` header's value or an absolute-form target's authority, its port dropped, §9; the **canonical host** is the configuration's `canonical-host`, served, and a **redirect host** one of its `redirect-hosts`, answered 301. Not `domain`, `vhost`.
 - **challenge**: the ACME challenge's files, served from the redirect listener's challenge site, `Static.Site` of its directory's `.well-known/acme-challenge`, §9. Not `webroot`.
+- **message**: what one side of a WebSocket sends whole, `WebSocket.Message`, a text or a binary message, a ping, a pong or a close, decoded from its frames, §10. Not `frame`, which is the wire's.
+- **shell**: a connection after its upgrade on the shell's path, `shell.path`, and its process, §11; `shell` is the configuration's object for it, §4. Not `terminal`, `socket`.
+- **session**: the process that owns one visitor's program under a terminal, by the visitor's cookie, §12; **the sessions** is the process that holds them. Not `container`, which is the command's.
+- **cookie**: the value of the `shell` cookie that names a visitor's session, 32 hexadecimal digits, §11. Not `token`, `id`.
+- **program**: the command a session runs under its terminal, `shell.command`, §12. Not `child`, `container`.
+- **reader**: a process that alone calls the read of a socket or a terminal and tells its owner what it read, §11, §12.
+- **attached**: the shell a session writes its program's output to, one at a time, §12.
+- **close code**: the code a shell closes with, RFC 6455's or the program's own, 4001 expired, 4002 taken over, 4003 unavailable and 4004 stopped, §11, §12.

@@ -3,20 +3,24 @@
 ///
 /// `main` takes the configuration's path, the one argument, and reads the
 /// file; a file that breaks a rule is refused with the field named, before
-/// anything listens. It then starts the access log and, for each listener
-/// of the configuration, listens, over TLS with the certificate and the key
-/// for a `tls` listener, says the port it got, and spawns the listener's
-/// process, whose connections share the configuration, the site, the
-/// access log and, for the `redirect` listener, the ACME challenge's site.
-/// At the program's end, a termination signal, it tells each listener to
-/// stop, waits for each to end its connections in order, has the access
-/// log write what it holds, and lets the end go on.
+/// anything listens. It then starts the access log and, where the
+/// configuration has a `shell`, the sessions, and for each listener of the
+/// configuration listens, over TLS with the certificate and the key for a
+/// `tls` listener, says the port it got, and spawns the listener's process,
+/// whose connections share the configuration, the site, the access log,
+/// the sessions where there are any and, for the `redirect` listener, the
+/// ACME challenge's site. At the program's end, a termination signal, it
+/// stops the sessions first, which closes every shell with 1001 and ends
+/// every session, and waits for them; then it tells each listener to stop,
+/// waits for each to end its connections in order, has the access log
+/// write what it holds, and lets the end go on.
 ///
 /// The exit statuses are 2 for a command line of another count of
 /// arguments, 1 for a configuration refused and a listen that fails, and
 /// the signal's at the end. A listener's process that ends before the end
-/// is a failure: the entry process stops the others, says so on standard
-/// error, and exits with the status 1.
+/// is a failure: the entry process stops the sessions and the other
+/// listeners, as at the end, says so on standard error, and exits with the
+/// status 1.
 ///
 /// ## Examples
 ///
@@ -63,19 +67,32 @@ fn refused(path : String, reason : String) : Unit = {
     Os.exit(1)
 }
 
-// The site made, the access log started and each listener serving with
-// its server, and then the wait for the program's end.
+// The site made, the access log started, the sessions started where the
+// configuration has a shell, and each listener serving with its server,
+// and then the wait for the program's end.
 fn serving(config : Config.Config) : Unit receiving MainMsg = {
     let site = Static.site(config.root, config.contentTypes);
     let log = AccessLog.start(config.accessLog, config.timeouts.file);
+    let sessions = Optional.map(config.shell, fn(shell) = Sessions.start(shell, config.timeouts));
     let listeners = List.map(config.listeners, fn(listener) = {
         let server =
-            Connection.Server(=config, =site, challenge = challenge(config, listener), =log);
+            Connection.Server(=config,
+                              =site,
+                              challenge = challenge(config, listener),
+                              =log,
+                              =sessions);
         listening(listener, server)
     });
     Os.termination(Terminated);
-    waiting(listeners, log)
+    waiting(Started(=listeners, =log, =sessions))
 }
+
+// What the entry process started and stops at the end: the listeners, the
+// access log, and the sessions where there are any.
+type Started =
+    Started(listeners : List(Address(Listener.ListenerMsg)),
+            log : Address(AccessLog.LogMsg),
+            sessions : Optional(Sessions.Sessions))
 
 // The challenge site of a redirect listener: its directory's
 // .well-known/acme-challenge, with the configuration's content types
@@ -127,31 +144,33 @@ fn listened(listener : Config.Listener) : Either(Io.Error, Address(Tcp.ListenerM
 
 // The wait for the program's end, which is taken in order before its
 // reply is answered. A listener that ends before is a failure of the
-// program: the others are stopped and the log written as at the end, the
-// listener's reason said on standard error, and the program ends with the
-// status 1.
-fn waiting(listeners : List(Address(Listener.ListenerMsg)),
-           log : Address(AccessLog.LogMsg)) : Unit receiving MainMsg =
+// program: the sessions and the others are stopped and the log written as
+// at the end, the listener's reason said on standard error, and the program
+// ends with the status 1.
+fn waiting(started : Started) : Unit receiving MainMsg =
     receive {
         Terminated(reply) -> {
-            stopped(listeners, List.size(listeners), log);
+            stopped(started, List.size(started.listeners));
             answer(reply, Unit)
         }
       | ListenerEnded(down) -> {
-            stopped(listeners, List.size(listeners) - 1, log);
+            stopped(started, List.size(started.listeners) - 1);
             Io.printlnError("a listener ended: " <> Io.show(down.reason));
             Os.exit(1)
         }
     }
 
-// Each listener told to stop, the count of them that live waited for to
-// end, and the access log flushed.
-fn stopped(listeners : List(Address(Listener.ListenerMsg)),
-           count : Int,
-           log : Address(AccessLog.LogMsg)) : Unit receiving MainMsg = {
-    List.forEach(listeners, fn(listener) = send(listener, Listener.Stop));
+// The sessions stopped where there are any, and waited for; then each
+// listener told to stop, the count of them that live waited for to end,
+// and the access log flushed.
+fn stopped(started : Started, count : Int) : Unit receiving MainMsg = {
+    match started.sessions {
+        Some(sessions) -> Address.callForever(sessions.address, Sessions.Stop)
+      | None -> Unit
+    };
+    List.forEach(started.listeners, fn(listener) = send(listener, Listener.Stop));
     ended(count);
-    Address.callForever(log, AccessLog.Flush)
+    Address.callForever(started.log, AccessLog.Flush)
 }
 
 // Each of the count of listeners waited for to end.
@@ -428,24 +447,136 @@ fn logged(text : String) : #(List(String), Bool) = {
       List.all(lines, fn(line) = String.startsWith(line, "127.0.0.1 - - [")))
 }
 
-// design §1, §2, §3, §9: the program, its modules together, says the port
-// each of its listeners listens on, a plain, a tls and a redirect
+// The configuration of the listeners given with a shell on the path
+// `/shell`, whose command is `cat`.
+fn withShell(listeners : String) : String =
+    String.replace(configuration(listeners),
+                   "/access.log\"}\n",
+                   "/access.log\",\n"
+                       <> " \"shell\": {\"path\": \"/shell\", \"origins\": [\"http://localhost\"],\n"
+                       <> "           \"command\": [\"cat\"], \"most-at-once\": 2,\n"
+                       <> "           \"starts\": {\"count\": 10, \"within\": 60000},\n"
+                       <> "           \"lifetime\": 60000, \"warning\": 30000,\n"
+                       <> "           \"message-limit\": 1024, \"hangup\": 1000}}\n")
+
+// A frame a client writes, masked with a key of its own.
+fn masked(message : WebSocket.Message) : Bytes =
+    Optional.withDefault(WebSocket.encodeMasked(message, Crypto.randomBytes(4)), <<>>)
+
+// A shell's client on the port, its upgrade written without a cookie: the
+// 101 and the bytes after its head, and the socket.
+fn upgraded(port : Int) : Either(Io.Error, #(Http.Response, Bytes, Address(Tcp.SocketMsg))) = {
+    let socket <- Tcp.connect("127.0.0.1", port, 5000);
+    let request =
+        Http.Request(method = "GET",
+                     target = "/shell",
+                     version = Http.Version(major = 1, minor = 1),
+                     headers = [Http.Header(name = "Host", value = "localhost"),
+                                Http.Header(name = "Upgrade", value = "websocket"),
+                                Http.Header(name = "Connection", value = "Upgrade"),
+                                Http.Header(name = "Sec-WebSocket-Version", value = "13"),
+                                Http.Header(name = "Origin", value = "http://localhost"),
+                                Http.Header(name = "Sec-WebSocket-Key",
+                                            value = Base64.encode(Crypto.randomBytes(16)))]);
+    let _ <- Tcp.write(socket, Http.renderRequest(request, <<>>), 5000);
+    let #(response, rest) <-
+        Either.mapLeft(Http.readResponse(socket,
+                                         <<>>,
+                                         Http.Limits(line = 1024, headers = 4096),
+                                         5000),
+                       fn(_) = Io.Invalid);
+    Right(#(response, rest, socket))
+}
+
+// A shell's client on the port, upgraded, the terminal resized and a line
+// typed, and the binary messages read until they hold the line twice, the
+// terminal's echo and cat's: the 101's status, whether it set a cookie, the
+// text read, and the socket and its decoder, to be read at the end.
+fn shellClient(port : Int) : Either(Io.Error,
+                                    #(Int,
+                                      Bool,
+                                      String,
+                                      Address(Tcp.SocketMsg),
+                                      WebSocket.Decoder)) = {
+    let #(response, rest, socket) <- upgraded(port);
+    let typed =
+        masked(WebSocket.Text("{\"resize\": [24, 80]}"))
+            <> masked(WebSocket.Binary(String.toUtf8("hello\n")));
+    let _ <- Tcp.write(socket, typed, 5000);
+    let #(text, decoder) <-
+        echoed(socket,
+               WebSocket.decoder(WebSocket.FromServer, 65536),
+               rest,
+               "",
+               "hello\r\nhello\r\n");
+    Right(#(response.status,
+            Http.header(response.headers, "Set-Cookie") != None,
+            text,
+            socket,
+            decoder))
+}
+
+// The binary messages the socket carries, the bytes carried first, as text
+// until it holds the line; and the decoder after them.
+fn echoed(socket : Address(Tcp.SocketMsg),
+          decoder : WebSocket.Decoder,
+          carried : Bytes,
+          acc : String,
+          line : String) : Either(Io.Error, #(String, WebSocket.Decoder)) =
+    if String.contains(acc, line) then
+        Right(#(acc, decoder))
+    else {
+        let #(messages, rest) <-
+            Either.mapLeft(WebSocket.decode(decoder, carried), fn(_) = Io.Invalid);
+        let text = List.foldLeft(messages, acc, fn(sofar, message) = match message {
+            WebSocket.Binary(bytes) -> sofar <> Optional.withDefault(String.fromUtf8(bytes), "?")
+          | other -> sofar <> Io.show(other)
+        });
+        if String.contains(text, line) then
+            Right(#(text, rest))
+        else {
+            let bytes <- Tcp.read(socket, 5000);
+            echoed(socket, rest, bytes, text, line)
+        }
+    }
+
+// The next message the shell's socket carries, and what the socket answers
+// after it.
+fn closing(socket : Address(Tcp.SocketMsg), decoder : WebSocket.Decoder) : String =
+    match Tcp.read(socket, 5000) {
+        Right(bytes) ->
+            match WebSocket.decode(decoder, bytes) {
+                Right(#([WebSocket.Close(code = Some(code))], _)) ->
+                    "Close(" <> Int.toString(code) <> "), " <> next(socket)
+              | other ->
+                    Io.show(other)
+            }
+      | Left(error) ->
+            Io.show(error)
+    }
+
+// design §1, §2, §3, §9, §11, §12: the program, its modules together, says
+// the port each of its listeners listens on, a plain, a tls and a redirect
 // listener; serves a request for a file from the site over HTTP/1.1, plain
 // and over TLS, answers a host that is neither with 421, redirects to the
 // canonical host and serves the ACME challenge on the redirect listener,
-// and tells each response to the access log; at the termination signal it
-// stops its listeners at once, the connections kept alive ended though the
-// idle deadline is a minute, writes the log and ends by the signal, after
-// which nothing is taken on the ports.
+// upgrades a request on the shell's path, setting its cookie, and carries
+// the keys typed to `cat` under a terminal and its output back, and tells
+// each response to the access log; at the termination signal it stops the
+// sessions first, which closes the attached shell with 1001, then its
+// listeners at once, which close the shell no session is attached to with
+// 1001 and end the connections kept alive though the idle deadline is a
+// minute, writes the log and ends by the signal, after which nothing is
+// taken on the ports.
 let servesAndEnds = Test.Case(name = "serves the site and ends in order", run = fn() = {
     let result = {
         let path <-
             written("serving.json",
-                    configuration(plain(0)
-                                      <> ", "
-                                      <> tls("certificate.pem", "key.pem")
-                                      <> ", "
-                                      <> redirect));
+                    withShell(plain(0)
+                                  <> ", "
+                                  <> tls("certificate.pem", "key.pem")
+                                  <> ", "
+                                  <> redirect));
         let _ <- match Fs.remove(Path(scratch <> "/access.log"), 5000) {
             Right(Unit) or Left(Io.NotFound) -> Right(Unit)
           | Left(error) -> Left(error)
@@ -466,11 +597,15 @@ let servesAndEnds = Test.Case(name = "serves the site and ends in order", run = 
           | _ -> #(0, 0, 0)
         };
         let #(answers, sockets) <- answered(plainPort, tlsPort, redirectPort);
+        let #(upgradeStatus, cookieSet, typed, shellSocket, decoder) <- shellClient(plainPort);
+        let #(_, _, unattached) <- upgraded(plainPort);
         let start = Clock.monotonic();
         let _ <-
             Os.run(Os.Command(program = "kill", arguments = ["-TERM", pid], input = <<>>), 5000);
         let status <- exited(program);
         let took = Clock.monotonic() - start;
+        let shellEnd = closing(shellSocket, decoder);
+        let unattachedEnd = closing(unattached, WebSocket.decoder(WebSocket.FromServer, 65536));
         let kept = List.map(sockets, next);
         let later = List.map([plainPort, tlsPort, redirectPort], connecting);
         let text <- Fs.read(Path(scratch <> "/access.log"), 5000);
@@ -478,6 +613,7 @@ let servesAndEnds = Test.Case(name = "serves the site and ends in order", run = 
                     == List.map([plainPort, tlsPort, redirectPort],
                                 fn(port) = "listening on 127.0.0.1:" <> Int.toString(port)),
                 answers,
+                #(upgradeStatus, cookieSet, typed, shellEnd, unattachedEnd),
                 status,
                 took < 3000,
                 kept,
@@ -491,6 +627,11 @@ let servesAndEnds = Test.Case(name = "serves the site and ends in order", run = 
                         "200 alpha",
                         "301 https://localhost/docs?page=2",
                         "200 token-1.key"],
+                       #(101,
+                         true,
+                         "hello\r\nhello\r\n",
+                         "Close(1001), closed",
+                         "Close(1001), closed"),
                        143,
                        true,
                        ["closed", "closed", "closed"],
@@ -499,6 +640,8 @@ let servesAndEnds = Test.Case(name = "serves the site and ends in order", run = 
                                "\"GET /a.txt HTTP/1.1\" 200 5",
                                "\"GET /a.txt HTTP/1.1\" 200 5",
                                "\"GET /a.txt HTTP/1.1\" 421 24",
-                               "\"GET /docs?page=2 HTTP/1.1\" 301 0"],
+                               "\"GET /docs?page=2 HTTP/1.1\" 301 0",
+                               "\"GET /shell HTTP/1.1\" 101 0",
+                               "\"GET /shell HTTP/1.1\" 101 0"],
                               true)))))
 })

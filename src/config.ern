@@ -66,7 +66,8 @@ export type Limits =
 
 /// The shell: the WebSocket's path, the origins allowed, the command a
 /// session runs, how many at once, each visitor's starts, a session's
-/// lifetime and its warning in milliseconds, and the most bytes of a message.
+/// lifetime and its warning in milliseconds, the most bytes of a message,
+/// and the milliseconds a program has to exit after its terminal is hung up.
 export type Shell =
     Shell(path : String,
           origins : List(String),
@@ -75,7 +76,8 @@ export type Shell =
           starts : Starts,
           lifetime : Int,
           warning : Int,
-          messageLimit : Int)
+          messageLimit : Int,
+          hangup : Int)
 
 /// How many starts a visitor may make within the milliseconds.
 export type Starts = Starts(count : Int, within : Int)
@@ -296,7 +298,8 @@ fn shell(top : Map(String, Json.Value)) : Either(Error, Optional(Shell)) =
                          "starts",
                          "lifetime",
                          "warning",
-                         "message-limit"]);
+                         "message-limit",
+                         "hangup"]);
             let path <- string(object, "shell", "path");
             let _ <- if beginsWith(path, '/') then
                 Right(Unit)
@@ -314,6 +317,7 @@ fn shell(top : Map(String, Json.Value)) : Either(Error, Optional(Shell)) =
                 Right(Unit)
             else
                 Left(Invalid(field = "shell.warning", rule = "is below the lifetime"));
+            let hangup <- positive(object, "shell", "hangup");
             Right(Some(Shell(=path,
                              =origins,
                              =command,
@@ -321,7 +325,8 @@ fn shell(top : Map(String, Json.Value)) : Either(Error, Optional(Shell)) =
                              =starts,
                              =lifetime,
                              =warning,
-                             =messageLimit)))
+                             =messageLimit,
+                             =hangup)))
         }
     }
 
@@ -573,7 +578,7 @@ let example : String =
                        <> "    \"most-at-once\": 10,\n"
                        <> "    \"starts\": { \"count\": 10, \"within\": 3600000 },\n"
                        <> "    \"lifetime\": 300000, \"warning\": 60000,\n"
-                       <> "    \"message-limit\": 65536\n"
+                       <> "    \"message-limit\": 65536, \"hangup\": 5000\n"
                        <> "  }\n")
 
 // The example with one member's text replaced.
@@ -626,7 +631,8 @@ let readsTheExample =
                                     starts = Starts(count = 10, within = 3600000),
                                     lifetime = 300000,
                                     warning = 60000,
-                                    messageLimit = 65536))))
+                                    messageLimit = 65536,
+                                    hangup = 5000))))
       | Left(error) ->
             Test.Failed(reason(error))
     })
@@ -692,7 +698,8 @@ let refusesTypes =
 // and an empty array, an empty redirect host and one that is the canonical
 // host, its port dropped and in any case, a control character, a content
 // type's dot, a header's token and a header the server writes itself, in
-// any case, the shell's path and its warning.
+// any case, the shell's path, its warning, and its hangup, a value and
+// one that is absent.
 let refusesValues =
     Test.Case(name = "refuses a value that breaks a rule",
               run = fn() =
@@ -722,7 +729,9 @@ let refusesValues =
                               broken(edited("\"X-Content-Type-Options\"", "\"date\"")),
                               broken(edited("\"X-Content-Type-Options\"", "\"Transfer-ENCODING\"")),
                               broken(edited("\"path\": \"/shell/session\"", "\"path\": \"shell\"")),
-                              broken(edited("\"warning\": 60000", "\"warning\": 300000"))],
+                              broken(edited("\"warning\": 60000", "\"warning\": 300000")),
+                              broken(edited("\"hangup\": 5000", "\"hangup\": 0")),
+                              broken(edited(", \"hangup\": 5000", ""))],
                              [Some(#("listeners[2].kind", "is one of plain, tls and redirect")),
                               Some(#("listeners[2].port", "is 0 to 65535")),
                               Some(#("listeners[2].port", "is 0 to 65535")),
@@ -746,13 +755,15 @@ let refusesValues =
                               Some(#("headers.Transfer-ENCODING",
                                      "is none of Content-Length, Date, Connection and Transfer-Encoding")),
                               Some(#("shell.path", "begins with /")),
-                              Some(#("shell.warning", "is below the lifetime"))]))
+                              Some(#("shell.warning", "is below the lifetime")),
+                              Some(#("shell.hangup", "is above 0")),
+                              Some(#("shell.hangup", "is required"))]))
 
 // design §4: the fields are checked in the table's order, a row's rules in
 // theirs: a bad port before a bad root, a listener before the next, an
 // empty canonical host before a redirect host, a redirect host's
-// emptiness before its being the canonical host, and the warning below
-// the lifetime after the message limit's.
+// emptiness before its being the canonical host, the warning below the
+// lifetime after the message limit's, and the hangup after the warning.
 let checksInOrder =
     Test.Case(name = "answers the first rule broken",
               run = fn() =
@@ -771,12 +782,17 @@ let checksInOrder =
                               broken(String.replace(edited("\"warning\": 60000",
                                                            "\"warning\": 300000"),
                                                     "\"message-limit\": 65536",
-                                                    "\"message-limit\": 0"))],
+                                                    "\"message-limit\": 0")),
+                              broken(String.replace(edited("\"warning\": 60000",
+                                                           "\"warning\": 300000"),
+                                                    "\"hangup\": 5000",
+                                                    "\"hangup\": 0"))],
                              [Some(#("listeners[0].port", "is 0 to 65535")),
                               Some(#("listeners[0].port", "is 0 to 65535")),
                               Some(#("canonical-host", "is not empty")),
                               Some(#("redirect-hosts[0]", "is not empty")),
-                              Some(#("shell.message-limit", "is above 0"))]))
+                              Some(#("shell.message-limit", "is above 0")),
+                              Some(#("shell.warning", "is below the lifetime"))]))
 
 // design §9: a host's port is a `:` and digits alone at its end, none among
 // them, after the last `]` where it holds one: dropped where it is, and
