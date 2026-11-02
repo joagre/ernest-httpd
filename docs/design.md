@@ -46,7 +46,7 @@ Each module has one job, which its doc block states.
 
 ## 4. The configuration
 
-The configuration is one JSON file, RFC 8259, read through `Json` at the program's start into the record `Config`, and read no more while the program runs: a change of the file is a restart. `Config.read(path, ms)` reads the file and answers the record, or the first rule the file breaks; `Config.parse(text)` reads the text alone and checks no rule of the file system's.
+The configuration is one JSON file, RFC 8259, read through `Json` at the program's start into the record `Config`, and read no more while the program runs: a change of the file is a restart. `Config.read(path, ms)` reads the file and answers the record, or the first rule the file breaks; `Config.parse(text)` reads the text alone and checks no rule of the file system's. A relative path the file names, the root's, a listener's or the log's, names a file under the program's working directory, as Appendix E.14 reads one.
 
 ```
 type Config = Config(listeners : List(Listener), root : Path, canonicalHost : String,

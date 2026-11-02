@@ -1,30 +1,42 @@
-# The program's build and tests: one Makefile, the same targets in every
-# application begun from ernest-template. The four variables an application
-# edits stand first; the rest is the same everywhere.
+# The program's build and tests: one Makefile, the targets of every
+# application begun from ernest-template and one of this program's own, make
+# xterm, for its example site. The variables an application edits stand
+# first.
 #
 #   make          builds: the floor checked, lib/ filled, each dependency and
 #                 then the program compiled
 #   make test     the layout, the tests of every module, the documents and
 #                 the design's citations, test/ where it exists, and each
-#                 program of examples/ where it exists, built and run
-#   make run      runs the program through its launcher
+#                 program of examples/ where there is one, built and run
+#   make run      runs the example site through the launcher, or the
+#                 configuration CONFIG names, CONFIG=path make run
 #   make lib      fills lib/: each dependency fetched and unpacked where it is
 #                 not there, and each Erlang application under erl/ built by
 #                 its own make and linked
+#   make xterm    fills the example site's xterm/: each archive XTERM names
+#                 fetched and unpacked where its script is not there
 #   make doc      the documentation of every module, as CommonMark under build/
 #   make man      the pages copied into docs/man/, which a library's release
 #                 commits, its index the directory's README
 #   make format   lays every module out
 #   make release  the archive, build/NAME-VERSION.tar.gz, tests first
-#   make clean    removes what the build and make lib wrote
+#   make clean    removes what the build, make lib and make xterm wrote
 
 NAME        = ernest_httpd
 ERN_VERSION = 0.9
 DEPS        =
 ERL_DEPS    =
+# The example site's terminal, xterm.js and its fit addon, each by the URL
+# of its npm archive, pinned, as DEPS names a dependency; make xterm copies
+# what the shell page loads into examples/site/root/xterm/, which git
+# ignores.
+XTERM       = https://registry.npmjs.org/@xterm/xterm/-/xterm-5.5.0.tgz \
+              https://registry.npmjs.org/@xterm/addon-fit/-/addon-fit-0.10.0.tgz
 # What each program of examples/ writes, named by make test: the suffix of
 # the one path it is given.
 EXAMPLE_SUFFIX =
+# The configuration make run serves.
+CONFIG     ?= examples/site/config.json
 
 # The ern on PATH, or ERN=path/to/ern.
 ERN        ?= ern
@@ -39,8 +51,10 @@ LOAD_PATH     = $(addprefix --load-path ,$(shell ls -d lib/*/build 2>/dev/null))
 RUN_LOAD_PATH = $(LOAD_PATH) --libs-dir lib
 DEP_DIRS      = $(addprefix lib/,$(notdir $(basename $(basename $(DEPS)))))
 VERSION       = $(shell cat VERSION)
+# The programs of examples/; a site under it is data, and is not built.
+EXAMPLES      = $(wildcard examples/*.ern)
 
-.PHONY: all version lib build test run doc man format release clean
+.PHONY: all version lib xterm build test run doc man format release clean
 
 all: version lib build
 
@@ -71,6 +85,29 @@ lib:
 	    done; \
 	done
 
+# Each archive of XTERM, where its package's script is not in the site's
+# xterm/, fetched and unpacked under build/, and its license, as
+# NAME.js.LICENSE.txt, its stylesheets, css/*.css, and last its script,
+# lib/NAME.js, copied there; NAME is the archive's name without its version.
+# The unpacked archive is then removed, so that make man finds none of its
+# pages.
+xterm:
+	@mkdir -p examples/site/root/xterm
+	@for url in $(XTERM); do \
+	    archive=$$(basename $$url .tgz); \
+	    name=$${archive%-*}; \
+	    test -f examples/site/root/xterm/$$name.js && continue; \
+	    dir=build/$$archive; \
+	    rm -rf $$dir && mkdir -p $$dir && \
+	    echo "fetching $$url" && curl -fsSL "$$url" | tar -xzf - -C $$dir || exit 1; \
+	    cp $$dir/package/LICENSE examples/site/root/xterm/$$name.js.LICENSE.txt || exit 1; \
+	    for file in $$dir/package/css/*.css $$dir/package/lib/$$name.js; do \
+	        test -f $$file || continue; \
+	        cp $$file examples/site/root/xterm/ || exit 1; \
+	    done; \
+	    rm -rf $$dir; \
+	done
+
 # Each dependency is built by this ern from its source, in the order DEPS
 # lists them, a dependency before what needs it; then the program.
 build:
@@ -81,7 +118,7 @@ build:
 	$(ERN) build --source-root src --build-root build $(LOAD_PATH) src
 
 test: all
-	$(ERN) format --check src tools $(wildcard test) $(wildcard examples)
+	$(ERN) format --check src tools $(wildcard test) $(if $(EXAMPLES),examples)
 	$(ERN) test $(RUN_LOAD_PATH) build
 	$(ERN) build --source-root tools --build-root tools/build tools
 	$(ERN) test tools/build
@@ -91,7 +128,7 @@ test: all
 	        $(LOAD_PATH) test && \
 	    $(ERN) test --load-path build $(RUN_LOAD_PATH) test/build; \
 	fi
-	@if test -d examples; then \
+	@if test -n "$(EXAMPLES)"; then \
 	    $(ERN) build --source-root examples --build-root examples/build --load-path build \
 	        $(LOAD_PATH) examples && \
 	    mkdir -p build/examples && \
@@ -103,9 +140,12 @@ test: all
 	    done; \
 	fi
 
-run: all
+# The directory of the example site's access log is made first, since the
+# configuration's access-log stands in a directory that exists.
+run: all xterm
 	@test -x bin/$(NAME) || { echo "$(NAME) is a library: nothing to run"; exit 1; }
-	bin/$(NAME)
+	@mkdir -p build/examples/site
+	bin/$(NAME) $(CONFIG)
 
 doc: all
 	$(ERN) doc --source-root src --build-root build $(LOAD_PATH) src
@@ -120,7 +160,7 @@ man: doc
 	@cp build/index.md docs/man/README.md
 
 format:
-	$(ERN) format src tools $(wildcard test) $(wildcard examples)
+	$(ERN) format src tools $(wildcard test) $(if $(EXAMPLES),examples)
 
 # The archive unpacks to NAME-VERSION/: the launcher where there is one, the
 # source and the compiled modules, lib/ with each link copied through, the
@@ -144,4 +184,4 @@ release: test
 	rm -rf build/$(NAME)-$(VERSION)
 
 clean:
-	rm -rf build tools/build test/build examples/build lib
+	rm -rf build tools/build test/build examples/build lib examples/site/root/xterm

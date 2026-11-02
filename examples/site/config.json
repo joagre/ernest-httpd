@@ -1,0 +1,30 @@
+{
+  "listeners": [
+    { "kind": "plain", "address": "127.0.0.1", "port": 8080 },
+    { "kind": "redirect", "address": "127.0.0.1", "port": 8081,
+      "acme-challenge": "examples/site/acme" }
+  ],
+  "root": "examples/site/root",
+  "canonical-host": "localhost",
+  "redirect-hosts": ["www.localhost"],
+  "timeouts": { "head": 10000, "idle": 60000, "write": 30000, "file": 5000 },
+  "limits": {
+    "request-line": 8192, "headers": 16384,
+    "connections": 1024, "connections-per-address": 32
+  },
+  "content-types": {},
+  "headers": {
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'"
+  },
+  "access-log": "build/examples/site/access.log",
+  "shell": {
+    "path": "/shell/session",
+    "origins": ["http://localhost:8080"],
+    "command": ["ern", "shell"],
+    "most-at-once": 4,
+    "starts": { "count": 10, "within": 3600000 },
+    "lifetime": 180000, "warning": 60000,
+    "message-limit": 65536, "hangup": 2000
+  }
+}

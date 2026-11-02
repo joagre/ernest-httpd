@@ -8,6 +8,9 @@ examples/build/
 # What make lib fills: each dependency unpacked, each Erlang application linked
 lib/
 
+# What make xterm fills: the example site's terminal, fetched
+examples/site/root/xterm/
+
 # A node's configuration directory holds a private key
 .ernest/
 

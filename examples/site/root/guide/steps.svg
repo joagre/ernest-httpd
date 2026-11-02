@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 100" width="480" height="100"
+     role="img" aria-labelledby="title">
+  <title id="title">Three steps: make run, the site in a browser, and its shell</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7"
+            orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8a3b12"/>
+    </marker>
+  </defs>
+  <rect width="480" height="100" rx="8" fill="#f3efe6"/>
+  <g fill="#ffffff" stroke="#8a3b12" stroke-width="2">
+    <rect x="16" y="30" width="112" height="40" rx="6"/>
+    <rect x="164" y="30" width="152" height="40" rx="6"/>
+    <rect x="352" y="30" width="112" height="40" rx="6"/>
+  </g>
+  <g stroke="#8a3b12" stroke-width="2" marker-end="url(#arrow)">
+    <path d="M128 50 L162 50"/>
+    <path d="M316 50 L350 50"/>
+  </g>
+  <g font-family="ui-monospace, monospace" font-size="13" fill="#1d1f21" text-anchor="middle">
+    <text x="72" y="55">make run</text>
+    <text x="240" y="55">localhost:8080</text>
+    <text x="408" y="55">shell.html</text>
+  </g>
+</svg>

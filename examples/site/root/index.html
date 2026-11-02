@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Example site</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+<nav>
+<a href="./" aria-current="page">Home</a>
+<a href="about.html">About</a>
+<a href="guide/">Guide</a>
+<a href="shell.html">Shell</a>
+</nav>
+</header>
+<main>
+<h1>An example site</h1>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod
+tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
+quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo
+consequat.</p>
+<figure>
+<img src="images/listeners.svg" width="480" height="180"
+     alt="A browser reaching the plain listener on port 8080 and the redirect listener on port 8081">
+<figcaption>The two listeners: the plain one serves the pages and the shell,
+the redirect one answers 301 and the challenge.</figcaption>
+</figure>
+<p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore
+eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt
+in culpa qui officia deserunt mollit anim id est laborum. Read <a
+href="about.html">about</a> the site, follow the <a href="guide/">guide</a>, or
+open the <a href="shell.html">shell</a>.</p>
+<figure>
+<img src="images/processes.svg" width="480" height="230"
+     alt="The entry process above two listeners, the sessions and the access log; a connection under each listener, and a session with its program under the sessions">
+<figcaption>The server's processes: a listener for each listening socket, a
+connection for each socket accepted, and a session for each visitor, with its
+program.</figcaption>
+</figure>
+<p>Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium
+doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore
+veritatis et quasi architecto beatae vitae dicta sunt explicabo.</p>
+</main>
+<footer>
+<p>Served by ernest-httpd from its example site.</p>
+</footer>
+</body>
+</html>

@@ -1,0 +1,115 @@
+/* The example site's one stylesheet, which every page loads; the terminal's
+   own is xterm/xterm.css. */
+
+:root {
+    --text: #1d1f21;
+    --muted: #5b6168;
+    --background: #fbfaf7;
+    --accent: #8a3b12;
+    --rule: #e2ded6;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --text: #e6e3dc;
+        --muted: #a5a199;
+        --background: #17181a;
+        --accent: #f0a26a;
+        --rule: #33353a;
+    }
+}
+
+body {
+    margin: 0;
+    background: var(--background);
+    color: var(--text);
+    font: 17px/1.6 Georgia, "Times New Roman", serif;
+}
+
+header, main, footer {
+    max-width: 44rem;
+    margin: 0 auto;
+    padding: 0 1rem;
+}
+
+header {
+    border-bottom: 1px solid var(--rule);
+}
+
+nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+    padding: 1rem 0;
+    font-family: system-ui, sans-serif;
+}
+
+nav a {
+    color: var(--text);
+    text-decoration: none;
+}
+
+nav a:hover, nav a[aria-current] {
+    color: var(--accent);
+}
+
+a {
+    color: var(--accent);
+}
+
+h1, h2 {
+    font-weight: normal;
+    line-height: 1.2;
+}
+
+figure {
+    margin: 2rem 0;
+}
+
+figure img {
+    width: 100%;
+    height: auto;
+}
+
+figcaption, footer {
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+footer {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+}
+
+/* The shell page: its controls, its status line and the terminal, which the
+   fit addon sizes to the box it stands in. */
+
+main.shell {
+    max-width: 64rem;
+}
+
+.controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1rem 0;
+    font-family: system-ui, sans-serif;
+}
+
+#status {
+    color: var(--muted);
+}
+
+/* No display of its own, which would override its hidden attribute. */
+#warning {
+    font-family: system-ui, sans-serif;
+}
+
+#terminal {
+    height: 60vh;
+    min-height: 18rem;
+    padding: 0.5rem;
+    border-radius: 4px;
+    background: #000;
+}

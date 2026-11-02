@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guide · Example site</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header>
+<nav>
+<a href="../">Home</a>
+<a href="../about.html">About</a>
+<a href="./" aria-current="page">Guide</a>
+<a href="../shell.html">Shell</a>
+</nav>
+</header>
+<main>
+<h1>The guide</h1>
+<p>Temporibus autem quibusdam et aut officiis debitis aut rerum necessitatibus
+saepe eveniet ut et voluptates repudiandae sint et molestiae non recusandae.
+Itaque earum rerum hic tenetur a sapiente delectus.</p>
+<!-- steps.svg is named from this page's own directory: at /guide, without
+     the slash the 301 adds, it would be /steps.svg, which is not there. -->
+<figure>
+<img src="steps.svg" width="480" height="100"
+     alt="make run, then http://localhost:8080 in a browser, then the shell page">
+<figcaption>Three steps: run the example, open it, and open its shell.</figcaption>
+</figure>
+<p>Nam libero tempore, cum soluta nobis est eligendi optio cumque nihil impedit
+quo minus id quod maxime placeat facere possimus. Back to the <a
+href="../">home page</a>, or on to the <a href="../shell.html">shell</a>.</p>
+</main>
+<footer>
+<p>Served by ernest-httpd from its example site.</p>
+</footer>
+</body>
+</html>

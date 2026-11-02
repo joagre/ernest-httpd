@@ -373,11 +373,10 @@ fn exited(program : Address(Os.ProgramMsg)) : Either(Io.Error, Int) =
     }
 
 // The response to a GET of the target naming the host, written to the
-// socket: its status, and its Location where it has one or else its body
-// as text.
-fn got(socket : Address(Tcp.SocketMsg),
-       target : String,
-       host : String) : Either(Io.Error, String) = {
+// socket, and its body.
+fn fetched(socket : Address(Tcp.SocketMsg),
+           target : String,
+           host : String) : Either(Io.Error, #(Http.Response, Bytes)) = {
     let request =
         Http.Request(method = "GET",
                      =target,
@@ -388,8 +387,18 @@ fn got(socket : Address(Tcp.SocketMsg),
     let #(response, rest) <-
         Either.mapLeft(Http.readResponse(socket, <<>>, limits, 5000), fn(_) = Io.Invalid);
     let #(body, _) <-
-        Either.mapLeft(Http.readResponseBody(socket, rest, response, 4096, 5000),
+        Either.mapLeft(Http.readResponseBody(socket, rest, response, 65536, 5000),
                        fn(_) = Io.Invalid);
+    Right(#(response, body))
+}
+
+// The response to a GET of the target naming the host, written to the
+// socket: its status, and its Location where it has one or else its body
+// as text.
+fn got(socket : Address(Tcp.SocketMsg),
+       target : String,
+       host : String) : Either(Io.Error, String) = {
+    let #(response, body) <- fetched(socket, target, host);
     let text =
         Http.header(response.headers, "Location")
             |> Optional.withDefault(Optional.withDefault(String.fromUtf8(body), "?"));
@@ -463,19 +472,22 @@ fn withShell(listeners : String) : String =
 fn masked(message : WebSocket.Message) : Bytes =
     Optional.withDefault(WebSocket.encodeMasked(message, Crypto.randomBytes(4)), <<>>)
 
-// A shell's client on the port, its upgrade written without a cookie: the
-// 101 and the bytes after its head, and the socket.
-fn upgraded(port : Int) : Either(Io.Error, #(Http.Response, Bytes, Address(Tcp.SocketMsg))) = {
+// A shell's client on the port, its upgrade of the target from the origin
+// written without a cookie: the response and the bytes after its head, and
+// the socket.
+fn upgraded(port : Int,
+            target : String,
+            origin : String) : Either(Io.Error, #(Http.Response, Bytes, Address(Tcp.SocketMsg))) = {
     let socket <- Tcp.connect("127.0.0.1", port, 5000);
     let request =
         Http.Request(method = "GET",
-                     target = "/shell",
+                     =target,
                      version = Http.Version(major = 1, minor = 1),
                      headers = [Http.Header(name = "Host", value = "localhost"),
                                 Http.Header(name = "Upgrade", value = "websocket"),
                                 Http.Header(name = "Connection", value = "Upgrade"),
                                 Http.Header(name = "Sec-WebSocket-Version", value = "13"),
-                                Http.Header(name = "Origin", value = "http://localhost"),
+                                Http.Header(name = "Origin", value = origin),
                                 Http.Header(name = "Sec-WebSocket-Key",
                                             value = Base64.encode(Crypto.randomBytes(16)))]);
     let _ <- Tcp.write(socket, Http.renderRequest(request, <<>>), 5000);
@@ -498,7 +510,7 @@ fn shellClient(port : Int) : Either(Io.Error,
                                       String,
                                       Address(Tcp.SocketMsg),
                                       WebSocket.Decoder)) = {
-    let #(response, rest, socket) <- upgraded(port);
+    let #(response, rest, socket) <- upgraded(port, "/shell", "http://localhost");
     let typed =
         masked(WebSocket.Text("{\"resize\": [24, 80]}"))
             <> masked(WebSocket.Binary(String.toUtf8("hello\n")));
@@ -598,7 +610,7 @@ let servesAndEnds = Test.Case(name = "serves the site and ends in order", run = 
         };
         let #(answers, sockets) <- answered(plainPort, tlsPort, redirectPort);
         let #(upgradeStatus, cookieSet, typed, shellSocket, decoder) <- shellClient(plainPort);
-        let #(_, _, unattached) <- upgraded(plainPort);
+        let #(_, _, unattached) <- upgraded(plainPort, "/shell", "http://localhost");
         let start = Clock.monotonic();
         let _ <-
             Os.run(Os.Command(program = "kill", arguments = ["-TERM", pid], input = <<>>), 5000);
@@ -644,4 +656,119 @@ let servesAndEnds = Test.Case(name = "serves the site and ends in order", run = 
                                "\"GET /shell HTTP/1.1\" 101 0",
                                "\"GET /shell HTTP/1.1\" 101 0"],
                               true)))))
+})
+
+// A configuration's text with each listener's port 0, and nothing else
+// changed.
+fn portsZeroed(text : String) : String =
+    String.split(text, "\"port\": ")
+        |> List.indexed
+        |> List.map(fn(#(index, piece)) = if index == 0 then piece else "0" <> afterDigits(piece))
+        |> String.join("\"port\": ")
+
+// The text after the digits it begins with.
+fn afterDigits(text : String) : String = {
+    let #(_, rest) = List.span(String.toList(text), Char.isDigit);
+    String.fromList(rest)
+}
+
+// A file of the example site, examples/site/, by its path under it.
+fn example(path : String) : Either(Io.Error, Bytes) =
+    Fs.read(Path("examples/site/" <> path), 5000)
+
+// A response as the example's test compares it: its status, its Location
+// where it has one or else its Content-Type, and its body.
+fn described(socket : Address(Tcp.SocketMsg),
+             target : String,
+             host : String) : Either(Io.Error, #(Int, String, Bytes)) = {
+    let #(response, body) <- fetched(socket, target, host);
+    let shown = match Http.header(response.headers, "Location") {
+        Some(location) -> location
+      | None -> Optional.withDefault(Http.header(response.headers, "Content-Type"), "")
+    };
+    Right(#(response.status, shown, body))
+}
+
+// design §4, §5, §9, §11: the example site, examples/site/, served from its
+// own configuration, whose relative paths, the root's, the challenge's and
+// the access log's, name files under the checkout, the program's working
+// directory, with its listeners' ports made 0 and nothing else changed, so
+// that a rule the configuration breaks fails the test: on the plain
+// listener its pages, stylesheet and image with their types, the guide's
+// directory answered 301 with its slash and then served as its index, a
+// path that leads nowhere answered with the root's 404.html, and a host
+// that is neither answered 421; on the redirect listener the challenge's
+// file and a page redirected to the canonical host; and the shell's
+// handshake from the configured origin answered 101, its shell closed with
+// 1001 at the end.
+let servesTheExample = Test.Case(name = "serves the example site", run = fn() = {
+    let challengeTarget = "/.well-known/acme-challenge/LoqXcYV8q5ONbJQxbmR7SCTNo3tiAXDfowyjxAjEuX0";
+    let result = {
+        // the access log's directory, as make run makes it, and the rule the
+        // configuration breaks named where it breaks one
+        let _ <- Fs.makeDir(Path("build/examples/site"), 5000);
+        let _ <-
+            Either.mapLeft(Config.read(Path("examples/site/config.json"), 5000),
+                           fn(error) = Io.Other(Config.reason(error)));
+        let text <- example("config.json");
+        let path <-
+            written("example.json", portsZeroed(Optional.withDefault(String.fromUtf8(text), "")));
+        // the shell's process number is the server's, as in servesAndEnds
+        let program <-
+            Os.start(Os.Command(program = "sh",
+                                arguments = ["-c", "echo $$; exec bin/ernest_httpd \"$0\"", path],
+                                input = <<>>));
+        let out <- lines(program, "", 3);
+        let #(pid, listening) = match String.lines(out) {
+            first :: rest -> #(first, rest)
+          | [] -> #("", [])
+        };
+        let #(plainPort, redirectPort) = match ports(listening) {
+            [one, two] -> #(one, two)
+          | _ -> #(0, 0)
+        };
+        let site <- Tcp.connect("127.0.0.1", plainPort, 5000);
+        let served <-
+            List.tryMap([#("/", "localhost"),
+                         #("/style.css", "localhost"),
+                         #("/images/processes.svg", "localhost"),
+                         #("/guide", "localhost"),
+                         #("/guide/", "localhost"),
+                         #("/nothing", "localhost"),
+                         #("/", "elsewhere")],
+                        fn(#(target, host)) = described(site, target, host));
+        let redirect <- Tcp.connect("127.0.0.1", redirectPort, 5000);
+        let redirected <-
+            List.tryMap([challengeTarget, "/about.html"],
+                        fn(target) = described(redirect, target, "localhost"));
+        let #(response, _, shell) <- upgraded(plainPort, "/shell/session", "http://localhost:8080");
+        let _ <-
+            Os.run(Os.Command(program = "kill", arguments = ["-TERM", pid], input = <<>>), 5000);
+        let status <- exited(program);
+        let shellEnd = closing(shell, WebSocket.decoder(WebSocket.FromServer, 65536));
+        let index <- example("root/index.html");
+        let style <- example("root/style.css");
+        let image <- example("root/images/processes.svg");
+        let guide <- example("root/guide/index.html");
+        let notFound <- example("root/404.html");
+        let challenge <- example("acme" <> challengeTarget);
+        let html = "text/html; charset=utf-8";
+        Right(#(#(served <> redirected, response.status, shellEnd, status),
+                #([#(200, html, index),
+                   #(200, "text/css; charset=utf-8", style),
+                   #(200, "image/svg+xml", image),
+                   #(301, "/guide/", <<>>),
+                   #(200, html, guide),
+                   #(404, html, notFound),
+                   #(421, "text/plain; charset=utf-8", String.toUtf8("421 Misdirected Request\n")),
+                   #(200, "application/octet-stream", challenge),
+                   #(301, "https://localhost/about.html", <<>>)],
+                  101,
+                  "Close(1001), closed",
+                  143)))
+    };
+    match result {
+        Right(#(outcome, wanted)) -> Test.equal(outcome, wanted)
+      | Left(error) -> Test.Failed(Io.show(error))
+    }
 })

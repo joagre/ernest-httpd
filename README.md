@@ -11,20 +11,24 @@ It needs [Ernest](https://github.com/joagre/ernest) on your `PATH`, the floor th
 ```
 make            builds: lib/ filled, each dependency and then the program compiled
 make test       the layout, every module's tests, the documents and the design's citations,
-                listing without failing any paragraph past about a hundred words,
-                test/ and examples/ where they exist
-make run        runs the program through its launcher, bin/ernest_httpd
+                failing any paragraph past 150 words, test/ where it exists, and each
+                Ernest program of examples/
+make run        runs the example site through the launcher, bin/ernest_httpd, on
+                examples/site/config.json; CONFIG=path make run serves another configuration
+make xterm      fetches xterm.js and its fit addon into the example site, once
 make release    the archive, build/ernest_httpd-VERSION.tar.gz
 make man        a library's manual pages into docs/man/, committed with its release
 ```
 
 `make lib` fills `lib/` with each dependency `DEPS` names by the URL of its release archive, fetched and unpacked once, and each Erlang application `ERL_DEPS` names, a git submodule under `erl/` built by its own `make` and linked.
 
-Everything the program loads beyond the standard library and Ernest's own libraries stands under `lib/`: a dependency's `build`, on the load path by `--load-path`, and an Erlang application's `ebin`, on it by `--libs-dir lib`. A repository with an `erl/` is cloned with `--recursive`. `make doc` writes each module's documentation under `build/`, `make format` lays the modules out, and `make clean` removes what the build and `make lib` wrote.
+Everything the program loads beyond the standard library and Ernest's own libraries stands under `lib/`: a dependency's `build`, on the load path by `--load-path`, and an Erlang application's `ebin`, on it by `--libs-dir lib`. A repository with an `erl/` is cloned with `--recursive`. `make doc` writes each module's documentation under `build/`, `make format` lays the modules out, and `make clean` removes what the build, `make lib` and `make xterm` wrote.
 
 ## Running
 
 `bin/<name> [--config-dir dir] [argument]...` runs the program from the checkout and from an unpacked release alike, with everything under `lib/` on the load path. `--config-dir dir` makes the run a node, as *Running Ernest*, the deployment guide of the installation, says; everything else goes to the program.
+
+`make run` serves the example site under `examples/site/`, its pages and its shell, on localhost; [`examples/README.md`](examples/README.md) says what it shows and how to try it.
 
 ## The documents
 
@@ -33,6 +37,7 @@ Everything the program loads beyond the standard library and Ernest's own librar
 - [`docs/log.md`](docs/log.md): the dated rationale, never normative.
 - [`docs/release.md`](docs/release.md): what a release runs to be ready.
 - `docs/proposals/`: what is designed, a directory for each proposal, from the first one on.
+- [`examples/README.md`](examples/README.md): the example site, what it shows and how it is run.
 - `language_feedback.md`, from its first line: what writing Ernest felt against the principles, carried to Ernest by copy.
 - [`CLAUDE.md`](CLAUDE.md): the working rules.
 

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 180" width="480" height="180"
+     role="img" aria-labelledby="title">
+  <title id="title">A browser and the example's two listeners</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7"
+            orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8a3b12"/>
+    </marker>
+  </defs>
+  <rect width="480" height="180" rx="8" fill="#f3efe6"/>
+  <g fill="#ffffff" stroke="#8a3b12" stroke-width="2">
+    <rect x="24" y="66" width="104" height="48" rx="6"/>
+    <rect x="232" y="24" width="224" height="56" rx="6"/>
+    <rect x="232" y="100" width="224" height="56" rx="6"/>
+  </g>
+  <g stroke="#8a3b12" stroke-width="2" fill="none" marker-end="url(#arrow)">
+    <path d="M128 82 L230 54"/>
+    <path d="M128 98 L230 126"/>
+  </g>
+  <g font-family="system-ui, sans-serif" text-anchor="middle">
+    <text x="76" y="95" font-size="15" fill="#1d1f21">browser</text>
+    <text x="344" y="48" font-size="15" fill="#1d1f21">plain, port 8080</text>
+    <text x="344" y="68" font-size="12" fill="#5b6168">the pages and the shell</text>
+    <text x="344" y="124" font-size="15" fill="#1d1f21">redirect, port 8081</text>
+    <text x="344" y="144" font-size="12" fill="#5b6168">301 to https, and the challenge</text>
+  </g>
+</svg>
