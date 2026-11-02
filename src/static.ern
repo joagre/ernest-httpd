@@ -138,7 +138,7 @@ fn get(site : Site, request : Http.Request, ms : Int) : #(Http.Response, Bytes) 
                         #(response(301, [header("Location", location(written))]), <<>>)
               | Right(Fs.Entry(kind = Fs.File) as entry) when !asksDirectory ->
                     file(site, request, entry, ms)
-              | Right(_) or Left(Io.NotFound) ->
+              | Right(_) or Left(Io.NotFound) or Left(Io.Invalid) ->
                     error(site, 404, ms)
               | Left(cause) ->
                     refused(path, cause)
@@ -158,7 +158,7 @@ fn location(written : String) : String = {
 fn index(site : Site, request : Http.Request, path : Path, ms : Int) : #(Http.Response, Bytes) =
     match Fs.stat(path, ms) {
         Right(Fs.Entry(kind = Fs.File) as entry) -> file(site, request, entry, ms)
-      | Right(_) or Left(Io.NotFound) -> error(site, 404, ms)
+      | Right(_) or Left(Io.NotFound) or Left(Io.Invalid) -> error(site, 404, ms)
       | Left(cause) -> refused(path, cause)
     }
 
@@ -398,7 +398,11 @@ fn prepared() : Either(Io.Error, Unit) = {
     let _ <- written("site/.hidden", "hidden");
     let _ <- written("site/docs/index.html", "docs");
     let _ <- written("site/404.html", "<p>none</p>");
-    written("bare/a.txt", "alpha")
+    let _ <- written("bare/a.txt", "alpha");
+    match Fs.makeSymlink(Path(scratch <> "/bare/loop"), Path("loop"), 5000) {
+        Right(Unit) or Left(Io.Exists) -> Right(Unit)
+      | Left(error) -> Left(error)
+    }
 }
 
 let withPage : Site = site(Path(scratch <> "/site"), Map.empty)
@@ -485,16 +489,22 @@ let servesDirectories =
                           getting(withPage, "/a.txt/", notFoundPage)]))
 
 // design §5: a path that leads nowhere is answered with the root's
-// 404.html where there is one, and plain text where there is none; a
-// segment that begins with a combining mark is a name under the root, the
-// `/` before it splitting the path though a string holds the two as one
-// grapheme.
+// 404.html where there is one, and plain text where there is none: a name
+// that is not there, a path through a regular file, a loop of links, and a
+// name longer than the host holds; a segment that begins with a combining
+// mark is a name under the root, the `/` before it splitting the path
+// though a string holds the two as one grapheme.
 let answersNotFound =
     Test.Case(name = "answers a path that leads nowhere",
               run = fn() =
                   served([getting(withPage, "/missing.txt", notFoundPage),
                           getting(bare, "/missing.txt", plainError(404)),
                           getting(withPage, "/empty/", notFoundPage),
+                          getting(withPage, "/index.html/x", notFoundPage),
+                          getting(bare, "/a.txt/b/c.txt", plainError(404)),
+                          getting(bare, "/loop", plainError(404)),
+                          getting(bare, "/loop/a.txt", plainError(404)),
+                          getting(bare, "/" <> String.repeat("a", 300), plainError(404)),
                           getting(bare, "/%CC%81/a.txt", plainError(404)),
                           getting(bare, "/\u{301}/a.txt", plainError(404))]))
 
