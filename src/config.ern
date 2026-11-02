@@ -1,0 +1,814 @@
+/// The configuration: one JSON file read into one record, and every rule
+/// it checks, so that a bad file is refused at the start with its field
+/// named (design §4).
+///
+/// A program reads the file once, at its start, with `read`, and keeps the
+/// record; a change of the file is a restart. `parse` reads a text alone
+/// and checks no rule of the file system's, for a test or a tool.
+///
+/// An error is a value: what kept the file from being read, a text that is
+/// not JSON, or the first field that breaks a rule, named from the file's
+/// top, `listeners[0].port`. `reason` writes it for the operator, to stand
+/// after the file's path.
+///
+/// ## Examples
+///
+/// A field that breaks a rule, and the rule it breaks:
+///
+/// ```ernest
+/// Config.parse("{}")
+/// // => Left(Invalid(field = "listeners", rule = "is required"))
+/// ```
+///
+/// What the operator reads:
+///
+/// ```ernest
+/// Config.reason(Config.Invalid(field = "listeners[0].port", rule = "is 0 to 65535"))
+/// // => "listeners[0].port is 0 to 65535"
+/// ```
+
+//
+// Types
+//
+
+/// The configuration, as the file's fields have it (design §4).
+export type Config =
+    Config(listeners : List(Listener),
+           root : Path,
+           canonicalHost : String,
+           redirectHosts : List(String),
+           timeouts : Timeouts,
+           limits : Limits,
+           contentTypes : Map(String, String),
+           headers : List(Http.Header),
+           accessLog : Path,
+           shell : Optional(Shell))
+
+/// A listener: its kind, the address it binds and its port.
+export type Listener = Listener(kind : Kind, address : String, port : Int)
+
+/// A listener's kind: plain HTTP, TLS with the certificate's and the key's
+/// files, or the redirect listener with the ACME challenge's directory.
+export type Kind = Plain | Tls(certificate : Path, key : Path) | Redirect(acmeChallenge : Path)
+
+/// The deadlines, in milliseconds: for a request's head, for an idle
+/// connection, and for a write.
+export type Timeouts = Timeouts(head : Int, idle : Int, write : Int)
+
+/// The limits: the most bytes of a request line and of the headers
+/// together, and the most connections open in all and from one address.
+export type Limits =
+    Limits(requestLine : Int, headers : Int, connections : Int, connectionsPerAddress : Int)
+
+/// The shell: the WebSocket's path, the origins allowed, the command a
+/// session runs, how many at once, each visitor's starts, a session's
+/// lifetime and its warning in milliseconds, and the most bytes of a message.
+export type Shell =
+    Shell(path : String,
+          origins : List(String),
+          command : List(String),
+          mostAtOnce : Int,
+          starts : Starts,
+          lifetime : Int,
+          warning : Int,
+          messageLimit : Int)
+
+/// How many starts a visitor may make within the milliseconds.
+export type Starts = Starts(count : Int, within : Int)
+
+/// Why there is no configuration: the file cannot be read, its text is not
+/// JSON, or a field breaks a rule, the field named from the file's top and
+/// the rule as design §4's table writes it.
+export type Error =
+    Unreadable(Io.Error)
+  | NotJson(Json.Error)
+  | Invalid(field : String, rule : String)
+
+//
+// Reading
+//
+
+/// The file read within `ms` milliseconds and every rule checked, those of
+/// the file system's after the rest: the record, or the first error.
+export fn read(path : Path, ms : Int) : Either(Error, Config) = {
+    let bytes <- Either.mapLeft(Fs.read(path, ms), Unreadable);
+    let text <- Either.fromOptional(String.fromUtf8(bytes), Unreadable(Io.NotUtf8(bytes)));
+    let config <- parse(text);
+    let _ <- files(config, ms);
+    Right(config)
+}
+
+/// The text read and every rule checked but the file system's: the record,
+/// or the first error.
+export fn parse(text : String) : Either(Error, Config) = {
+    let value <- Either.mapLeft(Json.parse(text), NotJson);
+    let top <- object("the configuration", value);
+    let _ <- members(top, "", "the configuration", fields);
+    let listeners <- elements(top, "", "listeners", listener);
+    let _ <- notEmpty("listeners", listeners);
+    let root <- path(top, "", "root");
+    let canonicalHost <- string(top, "", "canonical-host");
+    let _ <- notEmpty("canonical-host", String.toList(canonicalHost));
+    let redirectHosts <- elements(top, "", "redirect-hosts", nonEmptyString);
+    let timeouts <- timeouts(top);
+    let limits <- limits(top);
+    let contentTypes <- contentTypes(top);
+    let headers <- headers(top);
+    let accessLog <- path(top, "", "access-log");
+    let shell <- shell(top);
+    Right(Config(=listeners,
+                 =root,
+                 =canonicalHost,
+                 =redirectHosts,
+                 =timeouts,
+                 =limits,
+                 =contentTypes,
+                 =headers,
+                 =accessLog,
+                 =shell))
+}
+
+/// The error in prose, after which the operator reads the file's path:
+/// `cannot read the file: ` and the error, `is not JSON: ` and the error,
+/// or the field, a space and the rule.
+export fn reason(error : Error) : String =
+    match error {
+        Unreadable(cause) -> "cannot read the file: " <> Io.show(cause)
+      | NotJson(cause) -> "is not JSON: " <> Io.show(cause)
+      | Invalid(=field, =rule) -> field <> " " <> rule
+    }
+
+// The fields of the configuration's top, in the table's order.
+let fields : List(String) =
+    ["listeners",
+     "root",
+     "canonical-host",
+     "redirect-hosts",
+     "timeouts",
+     "limits",
+     "content-types",
+     "headers",
+     "access-log",
+     "shell"]
+
+fn listener(field : String, value : Json.Value) : Either(Error, Listener) = {
+    let object <- object(field, value);
+    let kindName <- string(object, field, "kind");
+    let #(name, own) <- match kindName {
+        "plain" ->
+            Right(#("a plain listener", []))
+      | "tls" ->
+            Right(#("a tls listener", ["certificate", "key"]))
+      | "redirect" ->
+            Right(#("a redirect listener", ["acme-challenge"]))
+      | _ ->
+            Left(Invalid(field = member(field, "kind"), rule = "is one of plain, tls and redirect"))
+    };
+    let _ <- members(object, field, name, ["kind", "address", "port"] <> own);
+    let address <- string(object, field, "address");
+    let _ <- notEmpty(member(field, "address"), String.toList(address));
+    let port <- integer(object, field, "port");
+    let _ <- if port >= 0 && port <= 65535 then
+        Right(Unit)
+    else
+        Left(Invalid(field = member(field, "port"), rule = "is 0 to 65535"));
+    let kind <- match kindName {
+        "tls" -> {
+            let certificate <- path(object, field, "certificate");
+            let key <- path(object, field, "key");
+            Right(Tls(=certificate, =key))
+        }
+      | "redirect" -> {
+            let acmeChallenge <- path(object, field, "acme-challenge");
+            Right(Redirect(=acmeChallenge))
+        }
+      | _ ->
+            Right(Plain)
+    };
+    Right(Listener(=kind, =address, =port))
+}
+
+fn timeouts(top : Map(String, Json.Value)) : Either(Error, Timeouts) = {
+    let object <- objectField(top, "", "timeouts");
+    let _ <- members(object, "timeouts", "timeouts", ["head", "idle", "write"]);
+    let head <- positive(object, "timeouts", "head");
+    let idle <- positive(object, "timeouts", "idle");
+    let write <- positive(object, "timeouts", "write");
+    Right(Timeouts(=head, =idle, =write))
+}
+
+fn limits(top : Map(String, Json.Value)) : Either(Error, Limits) = {
+    let object <- objectField(top, "", "limits");
+    let _ <-
+        members(object,
+                "limits",
+                "limits",
+                ["request-line", "headers", "connections", "connections-per-address"]);
+    let requestLine <- positive(object, "limits", "request-line");
+    let headers <- positive(object, "limits", "headers");
+    let connections <- positive(object, "limits", "connections");
+    let connectionsPerAddress <- positive(object, "limits", "connections-per-address");
+    Right(Limits(=requestLine, =headers, =connections, =connectionsPerAddress))
+}
+
+fn contentTypes(top : Map(String, Json.Value)) : Either(Error, Map(String, String)) = {
+    let pairs <- strings(top, "content-types", fn(field, name, value) = {
+        let _ <- if beginsWith(name, '.') then
+            Right(Unit)
+        else
+            Left(Invalid(=field, rule = "begins with a dot"));
+        let text <- stringValue(field, value);
+        let _ <- notEmpty(field, String.toList(text));
+        Right(#(name, text))
+    });
+    Right(Map.fromList(pairs))
+}
+
+fn headers(top : Map(String, Json.Value)) : Either(Error, List(Http.Header)) =
+    strings(top, "headers", fn(field, name, value) = {
+        let _ <- if !String.isEmpty(name) && List.all(String.toList(name), isTokenChar) then
+            Right(Unit)
+        else
+            Left(Invalid(=field, rule = "is a token"));
+        let text <- stringValue(field, value);
+        Right(Http.Header(=name, value = text))
+    })
+
+// A character of a token, RFC 9110's: a letter, a digit, or one of
+// !#$%&'*+-.^_`|~.
+fn isTokenChar(char : Char) : Bool =
+    Char.isAlpha(char) && Char.toCodePoint(char) < 128
+        || Char.isAsciiDigit(char)
+        || List.contains(String.toList("!#$%&'*+-.^_`|~"), char)
+
+fn shell(top : Map(String, Json.Value)) : Either(Error, Optional(Shell)) =
+    match Map.get(top, "shell") {
+        None ->
+            Right(None)
+      | Some(value) -> {
+            let object <- object("shell", value);
+            let _ <-
+                members(object,
+                        "shell",
+                        "shell",
+                        ["path",
+                         "origins",
+                         "command",
+                         "most-at-once",
+                         "starts",
+                         "lifetime",
+                         "warning",
+                         "message-limit"]);
+            let path <- string(object, "shell", "path");
+            let _ <- if beginsWith(path, '/') then
+                Right(Unit)
+            else
+                Left(Invalid(field = "shell.path", rule = "begins with /"));
+            let origins <- elements(object, "shell", "origins", nonEmptyString);
+            let command <- elements(object, "shell", "command", stringValue);
+            let _ <- notEmpty("shell.command", command);
+            let mostAtOnce <- positive(object, "shell", "most-at-once");
+            let starts <- starts(object);
+            let lifetime <- positive(object, "shell", "lifetime");
+            let warning <- positive(object, "shell", "warning");
+            let messageLimit <- positive(object, "shell", "message-limit");
+            let _ <- if warning < lifetime then
+                Right(Unit)
+            else
+                Left(Invalid(field = "shell.warning", rule = "is below the lifetime"));
+            Right(Some(Shell(=path,
+                             =origins,
+                             =command,
+                             =mostAtOnce,
+                             =starts,
+                             =lifetime,
+                             =warning,
+                             =messageLimit)))
+        }
+    }
+
+fn starts(shell : Map(String, Json.Value)) : Either(Error, Starts) = {
+    let object <- objectField(shell, "shell", "starts");
+    let _ <- members(object, "shell.starts", "shell.starts", ["count", "within"]);
+    let count <- positive(object, "shell.starts", "count");
+    let within <- positive(object, "shell.starts", "within");
+    Right(Starts(=count, =within))
+}
+
+//
+// The rules of the file system's
+//
+
+// The rules of the file system's, in the table's order: each listener's
+// files, the root, and the access log's directory.
+fn files(config : Config, ms : Int) : Either(Error, Unit) = {
+    let _ <- List.tryFold(List.indexed(config.listeners), Unit, fn(_, #(index, listener)) = {
+        let field = element("listeners", index);
+        match listener.kind {
+            Plain ->
+                Right(Unit)
+          | Tls(=certificate, =key) -> {
+                let _ <- regularFile(member(field, "certificate"), certificate, ms);
+                let entry <- regularFile(member(field, "key"), key, ms);
+                if entry.user == Os.user && Int.bitAnd(entry.mode, 0o077) == 0 then
+                    Right(Unit)
+                else
+                    Left(Invalid(field = member(field, "key"),
+                                 rule = "is readable by the program's user alone"))
+            }
+          | Redirect(=acmeChallenge) ->
+                directory(member(field, "acme-challenge"), acmeChallenge, ms)
+        }
+    });
+    let _ <- directory("root", config.root, ms);
+    let parent = Optional.withDefault(Path.parent(config.accessLog), Path("."));
+    match Fs.stat(parent, ms) {
+        Right(Fs.Entry(kind = Fs.Directory)) -> Right(Unit)
+      | _ -> Left(Invalid(field = "access-log", rule = "stands in a directory that exists"))
+    }
+}
+
+fn regularFile(field : String, path : Path, ms : Int) : Either(Error, Fs.Entry) =
+    match Fs.stat(path, ms) {
+        Right(Fs.Entry(kind = Fs.File) as entry) -> Right(entry)
+      | _ -> Left(Invalid(=field, rule = "names a regular file"))
+    }
+
+fn directory(field : String, path : Path, ms : Int) : Either(Error, Unit) =
+    match Fs.stat(path, ms) {
+        Right(Fs.Entry(kind = Fs.Directory)) -> Right(Unit)
+      | _ -> Left(Invalid(=field, rule = "names a directory"))
+    }
+
+//
+// The fields
+//
+
+// The field's name from the file's top: the prefix, a dot and the name, or
+// the name alone at the top.
+fn member(prefix : String, name : String) : String =
+    if String.isEmpty(prefix) then name else prefix <> "." <> name
+
+// An array's element named from the file's top, `listeners[0]`.
+fn element(field : String, index : Int) : String =
+    field <> "[" <> Int.toString(index) <> "]"
+
+// The object's members of no field, the first in the order of their
+// names' code points, as the rule `is no field of` the object's name.
+fn members(object : Map(String, Json.Value),
+           prefix : String,
+           name : String,
+           known : List(String)) : Either(Error, Unit) =
+    match List.filter(List.sort(Map.keys(object)), fn(key) = !List.contains(known, key)) {
+        [] -> Right(Unit)
+      | key :: _ -> Left(Invalid(field = member(prefix, key), rule = "is no field of " <> name))
+    }
+
+// The field's value, which is required.
+fn required(object : Map(String, Json.Value),
+            prefix : String,
+            name : String) : Either(Error, Json.Value) =
+    Either.fromOptional(Map.get(object, name),
+                        Invalid(field = member(prefix, name), rule = "is required"))
+
+fn object(field : String, value : Json.Value) : Either(Error, Map(String, Json.Value)) =
+    match value {
+        Json.Object(members) -> Right(members)
+      | _ -> Left(Invalid(=field, rule = "is an object"))
+    }
+
+fn objectField(object : Map(String, Json.Value),
+               prefix : String,
+               name : String) : Either(Error, Map(String, Json.Value)) = {
+    let value <- required(object, prefix, name);
+    Config.object(member(prefix, name), value)
+}
+
+// A string of the file, which holds no control character.
+fn stringValue(field : String, value : Json.Value) : Either(Error, String) =
+    match value {
+        Json.Text(text) ->
+            if List.any(String.toList(text), isControl) then
+                Left(Invalid(=field, rule = "holds no control character"))
+            else
+                Right(text)
+      | _ ->
+            Left(Invalid(=field, rule = "is a string"))
+    }
+
+// Whether the text's first code point is the character, a combining mark
+// after it or not, as a path and an extension are read (report Appendix
+// E.14).
+fn beginsWith(text : String, char : Char) : Bool =
+    match String.toList(text) {
+        first :: _ -> first == char
+      | [] -> false
+    }
+
+fn isControl(char : Char) : Bool = {
+    let codePoint = Char.toCodePoint(char);
+    codePoint < 32 || codePoint == 127
+}
+
+fn nonEmptyString(field : String, value : Json.Value) : Either(Error, String) = {
+    let text <- stringValue(field, value);
+    let _ <- notEmpty(field, String.toList(text));
+    Right(text)
+}
+
+fn string(object : Map(String, Json.Value),
+          prefix : String,
+          name : String) : Either(Error, String) = {
+    let value <- required(object, prefix, name);
+    stringValue(member(prefix, name), value)
+}
+
+fn path(object : Map(String, Json.Value), prefix : String, name : String) : Either(Error, Path) = {
+    let text <- string(object, prefix, name);
+    Right(Path(text))
+}
+
+fn integer(object : Map(String, Json.Value),
+           prefix : String,
+           name : String) : Either(Error, Int) = {
+    let value <- required(object, prefix, name);
+    match value {
+        Json.Integer(int) -> Right(int)
+      | _ -> Left(Invalid(field = member(prefix, name), rule = "is an integer"))
+    }
+}
+
+// An integer above 0.
+fn positive(object : Map(String, Json.Value),
+            prefix : String,
+            name : String) : Either(Error, Int) = {
+    let int <- integer(object, prefix, name);
+    if int > 0 then Right(int) else Left(Invalid(field = member(prefix, name), rule = "is above 0"))
+}
+
+fn notEmpty(field : String, list : List(a)) : Either(Error, Unit) =
+    if List.isEmpty(list) then Left(Invalid(=field, rule = "is not empty")) else Right(Unit)
+
+// An array's elements, each read by `read` under its element's name.
+fn elements(object : Map(String, Json.Value),
+            prefix : String,
+            name : String,
+            read : (String, Json.Value) -> Either(Error, a)) : Either(Error, List(a)) = {
+    let field = member(prefix, name);
+    let value <- required(object, prefix, name);
+    match value {
+        Json.Array(values) ->
+            List.tryMap(List.indexed(values),
+                        fn(#(index, item)) = read(element(field, index), item))
+      | _ ->
+            Left(Invalid(=field, rule = "is an array"))
+    }
+}
+
+// An object of strings at the top, its members read by `step` in the order
+// of their names' code points, each name's control characters checked
+// first; `step` checks the name's rule, then the value's.
+fn strings(top : Map(String, Json.Value),
+           name : String,
+           step : (String, String, Json.Value) -> Either(Error, a)) : Either(Error, List(a)) = {
+    let members <- objectField(top, "", name);
+    List.tryMap(List.sortBy(Map.toList(members), fn(#(key, _)) = key), fn(#(key, value)) = {
+        let field = member(name, key);
+        let _ <- if List.any(String.toList(key), isControl) then
+            Left(Invalid(=field, rule = "holds no control character"))
+        else
+            Right(Unit);
+        step(field, key, value)
+    })
+}
+
+//
+// Tests
+//
+
+// The proposal's exhaustive example, with the configured content types,
+// the headers and the shell; `withoutShell` is the example with its shell
+// left out.
+let withoutShell : String =
+    "{\n"
+        <> "  \"listeners\": [\n"
+        <> "    { \"kind\": \"tls\", \"address\": \"0.0.0.0\", \"port\": 443,\n"
+        <> "      \"certificate\": \"/etc/ernest-httpd/fullchain.pem\",\n"
+        <> "      \"key\": \"/etc/ernest-httpd/privkey.pem\" },\n"
+        <> "    { \"kind\": \"redirect\", \"address\": \"::\", \"port\": 80,\n"
+        <> "      \"acme-challenge\": \"/srv/ernest-httpd/acme\" },\n"
+        <> "    { \"kind\": \"plain\", \"address\": \"127.0.0.1\", \"port\": 8080 }\n"
+        <> "  ],\n"
+        <> "  \"root\": \"/srv/ernest-lang.org/site\",\n"
+        <> "  \"canonical-host\": \"ernest-lang.org\",\n"
+        <> "  \"redirect-hosts\": [\"www.ernest-lang.org\", \"ernest-lang.se\"],\n"
+        <> "  \"timeouts\": { \"head\": 10000, \"idle\": 60000, \"write\": 30000 },\n"
+        <> "  \"limits\": { \"request-line\": 8192, \"headers\": 16384,\n"
+        <> "               \"connections\": 1024, \"connections-per-address\": 32 },\n"
+        <> "  \"content-types\": { \".wasm\": \"application/wasm\" },\n"
+        <> "  \"headers\": { \"X-Content-Type-Options\": \"nosniff\",\n"
+        <> "               \"Strict-Transport-Security\": \"max-age=31536000\" },\n"
+        <> "  \"access-log\": \"/var/log/ernest-httpd/access.log\"\n"
+        <> "}\n"
+
+let example : String =
+    String.replace(withoutShell,
+                   "\"/var/log/ernest-httpd/access.log\"\n",
+                   "\"/var/log/ernest-httpd/access.log\",\n"
+                       <> "  \"shell\": {\n"
+                       <> "    \"path\": \"/shell/session\",\n"
+                       <> "    \"origins\": [\"https://ernest-lang.org\"],\n"
+                       <> "    \"command\": [\"podman\", \"run\", \"-it\", \"--rm\", \"ernest-shell\"],\n"
+                       <> "    \"most-at-once\": 10,\n"
+                       <> "    \"starts\": { \"count\": 10, \"within\": 3600000 },\n"
+                       <> "    \"lifetime\": 300000, \"warning\": 60000,\n"
+                       <> "    \"message-limit\": 65536\n"
+                       <> "  }\n")
+
+// The example with one member's text replaced.
+fn edited(old : String, new : String) : String =
+    String.replace(example, old, new)
+
+// The first field that breaks a rule, and the rule.
+fn broken(text : String) : Optional(#(String, String)) =
+    match parse(text) {
+        Left(Invalid(=field, =rule)) -> Some(#(field, rule))
+      | _ -> None
+    }
+
+// design §4: the exhaustive example is read into the record, its headers
+// in the order of their names and its content types a map.
+let readsTheExample =
+    Test.Case(name = "reads the example into the record", run = fn() = match parse(example) {
+        Right(config) ->
+            Test.equal(#(List.map(config.listeners, fn(listener) = listener.port),
+                         List.get(config.listeners, 0),
+                         config.root,
+                         config.redirectHosts,
+                         config.timeouts,
+                         config.limits,
+                         Map.toList(config.contentTypes),
+                         config.headers,
+                         config.accessLog,
+                         config.shell),
+                       #([443, 80, 8080],
+                         Some(Listener(kind = Tls(certificate = Path("/etc/ernest-httpd/fullchain.pem"),
+                                                  key = Path("/etc/ernest-httpd/privkey.pem")),
+                                       address = "0.0.0.0",
+                                       port = 443)),
+                         Path("/srv/ernest-lang.org/site"),
+                         ["www.ernest-lang.org", "ernest-lang.se"],
+                         Timeouts(head = 10000, idle = 60000, write = 30000),
+                         Limits(requestLine = 8192,
+                                headers = 16384,
+                                connections = 1024,
+                                connectionsPerAddress = 32),
+                         [#(".wasm", "application/wasm")],
+                         [Http.Header(name = "Strict-Transport-Security",
+                                      value = "max-age=31536000"),
+                          Http.Header(name = "X-Content-Type-Options", value = "nosniff")],
+                         Path("/var/log/ernest-httpd/access.log"),
+                         Some(Shell(path = "/shell/session",
+                                    origins = ["https://ernest-lang.org"],
+                                    command = ["podman", "run", "-it", "--rm", "ernest-shell"],
+                                    mostAtOnce = 10,
+                                    starts = Starts(count = 10, within = 3600000),
+                                    lifetime = 300000,
+                                    warning = 60000,
+                                    messageLimit = 65536))))
+      | Left(error) ->
+            Test.Failed(reason(error))
+    })
+
+// design §4: a shell that is absent is None, and the rest stands.
+let readsNoShell =
+    Test.Case(name = "reads a configuration without a shell",
+              run = fn() =
+                  Test.equal(Either.map(parse(withoutShell), fn(config) = config.shell),
+                             Right(None)))
+
+// design §4: a text that is not JSON, and one that is no object.
+let refusesNoJson =
+    Test.Case(name = "refuses a text that is not JSON",
+              run = fn() =
+                  Test.equal(#(parse("{"), broken("[]")),
+                             #(Left(NotJson(Json.UnexpectedEnd)),
+                               Some(#("the configuration", "is an object")))))
+
+// design §4: a member of no field is answered before the fields, the
+// configuration's and a listener's by its kind, the first by its name's
+// code points, and an absent field is required.
+let refusesMembers =
+    Test.Case(name = "refuses a member of no field",
+              run = fn() =
+                  Test.equal([broken(edited("\"root\":", "\"roots\":")),
+                              broken(edited("\"port\": 8080 }",
+                                            "\"port\": 8080, \"key\": \"k\" }")),
+                              broken(edited("\"head\": 10000,",
+                                            "\"head\": 10000, \"body\": 1, \"arms\": 2,")),
+                              broken(edited("\"kind\": \"plain\", ", "")),
+                              broken("{}")],
+                             [Some(#("roots", "is no field of the configuration")),
+                              Some(#("listeners[2].key", "is no field of a plain listener")),
+                              Some(#("timeouts.arms", "is no field of timeouts")),
+                              Some(#("listeners[2].kind", "is required")),
+                              Some(#("listeners", "is required"))]))
+
+// design §4: a value of another type than the table's breaks the rule
+// naming the type, an array's element under its index.
+let refusesTypes =
+    Test.Case(name = "refuses a value of another type",
+              run = fn() =
+                  Test.equal([broken(edited("\"port\": 443", "\"port\": \"443\"")),
+                              broken(edited("\"port\": 443", "\"port\": 443.0")),
+                              broken(edited("\"root\": \"/srv/ernest-lang.org/site\"",
+                                            "\"root\": 1")),
+                              broken(edited("\"redirect-hosts\": [\"www.ernest-lang.org\", \"ernest-lang.se\"]",
+                                            "\"redirect-hosts\": [\"www.ernest-lang.org\", 2]")),
+                              broken(edited("\"timeouts\": { \"head\": 10000, \"idle\": 60000, \"write\": 30000 }",
+                                            "\"timeouts\": 5")),
+                              broken(edited("\"application/wasm\"", "[]")),
+                              broken("{\"listeners\": {}}")],
+                             [Some(#("listeners[0].port", "is an integer")),
+                              Some(#("listeners[0].port", "is an integer")),
+                              Some(#("root", "is a string")),
+                              Some(#("redirect-hosts[1]", "is a string")),
+                              Some(#("timeouts", "is an object")),
+                              Some(#("content-types..wasm", "is a string")),
+                              Some(#("listeners", "is an array"))]))
+
+// design §4: the rules on values: a kind, a port, a count, an empty string
+// and an empty array, a control character, a content type's dot, a header's
+// token, the shell's path and its warning.
+let refusesValues =
+    Test.Case(name = "refuses a value that breaks a rule",
+              run = fn() =
+                  Test.equal([broken(edited("\"kind\": \"plain\"", "\"kind\": \"quic\"")),
+                              broken(edited("\"port\": 8080", "\"port\": 65536")),
+                              broken(edited("\"port\": 8080", "\"port\": -1")),
+                              broken(edited("\"idle\": 60000", "\"idle\": 0")),
+                              broken(edited("\"canonical-host\": \"ernest-lang.org\"",
+                                            "\"canonical-host\": \"\"")),
+                              broken(edited("\"listeners\": [",
+                                            "\"listeners\": [], \"unused\": [")),
+                              broken(edited("\"command\": [\"podman\", \"run\", \"-it\", \"--rm\", \"ernest-shell\"]",
+                                            "\"command\": []")),
+                              broken(edited("\"canonical-host\": \"ernest-lang.org\"",
+                                            "\"canonical-host\": \"ernest\\u0000lang.org\"")),
+                              broken(edited("\"canonical-host\": \"ernest-lang.org\"",
+                                            "\"canonical-host\": \"ernest\\u007flang.org\"")),
+                              broken(edited("\".wasm\"", "\"wasm\"")),
+                              broken(edited("\".wasm\": \"application/wasm\"", "\".wasm\": \"\"")),
+                              broken(edited("\".wasm\"", "\".w\\tasm\"")),
+                              broken(edited("\"X-Content-Type-Options\"", "\"X Content\"")),
+                              broken(edited("\"X-Content-Type-Options\"", "\"\"")),
+                              broken(edited("\"path\": \"/shell/session\"", "\"path\": \"shell\"")),
+                              broken(edited("\"warning\": 60000", "\"warning\": 300000"))],
+                             [Some(#("listeners[2].kind", "is one of plain, tls and redirect")),
+                              Some(#("listeners[2].port", "is 0 to 65535")),
+                              Some(#("listeners[2].port", "is 0 to 65535")),
+                              Some(#("timeouts.idle", "is above 0")),
+                              Some(#("canonical-host", "is not empty")),
+                              Some(#("unused", "is no field of the configuration")),
+                              Some(#("shell.command", "is not empty")),
+                              Some(#("canonical-host", "holds no control character")),
+                              Some(#("canonical-host", "holds no control character")),
+                              Some(#("content-types.wasm", "begins with a dot")),
+                              Some(#("content-types..wasm", "is not empty")),
+                              Some(#("content-types..w\tasm", "holds no control character")),
+                              Some(#("headers.X Content", "is a token")),
+                              Some(#("headers.", "is a token")),
+                              Some(#("shell.path", "begins with /")),
+                              Some(#("shell.warning", "is below the lifetime"))]))
+
+// design §4: the fields are checked in the table's order, a row's rules in
+// theirs: a bad port before a bad root, a listener before the next, and
+// the warning below the lifetime after the message limit's.
+let checksInOrder =
+    Test.Case(name = "answers the first rule broken",
+              run = fn() =
+                  Test.equal([broken(String.replace(edited("\"port\": 443", "\"port\": -1"),
+                                                    "\"root\": \"/srv/ernest-lang.org/site\"",
+                                                    "\"root\": 1")),
+                              broken(String.replace(edited("\"port\": 443", "\"port\": -1"),
+                                                    "\"port\": 80",
+                                                    "\"port\": -1")),
+                              broken(String.replace(edited("\"warning\": 60000",
+                                                           "\"warning\": 300000"),
+                                                    "\"message-limit\": 65536",
+                                                    "\"message-limit\": 0"))],
+                             [Some(#("listeners[0].port", "is 0 to 65535")),
+                              Some(#("listeners[0].port", "is 0 to 65535")),
+                              Some(#("shell.message-limit", "is above 0"))]))
+
+// design §4: a name's dot and a path's `/` are its first code points,
+// though a combining mark follows them, as `Path` reads them.
+let readsCodePoints =
+    Test.Case(name = "reads a first character by its code point",
+              run = fn() =
+                  Test.equal(Either.map(parse(edited("\".wasm\"", "\".\\u0301x\"")),
+                                        fn(config) = Map.keys(config.contentTypes)),
+                             Right([".\u{301}x"])))
+
+// design §4: the reasons in prose.
+let writesReasons =
+    Test.Case(name = "writes an error in prose",
+              run = fn() =
+                  Test.equal([reason(Unreadable(Io.NotFound)),
+                              reason(NotJson(Json.UnexpectedEnd)),
+                              reason(Invalid(field = "limits.headers", rule = "is above 0"))],
+                             ["cannot read the file: NotFound",
+                              "is not JSON: UnexpectedEnd",
+                              "limits.headers is above 0"]))
+
+// The scratch directory the tests of `read` write under.
+let scratch : String = "build/scratch/config"
+
+// The example written against the scratch directory: the root and the
+// challenge's directories there, the certificate and the key files, the
+// key the user's alone, and the access log in it.
+fn prepared() : Either(Io.Error, String) = {
+    let _ <- Fs.makeDir(Path(scratch <> "/site"), 5000);
+    let _ <- Fs.makeDir(Path(scratch <> "/acme"), 5000);
+    let _ <- Fs.write(Path(scratch <> "/fullchain.pem"), <<>>, 5000);
+    let _ <- Fs.write(Path(scratch <> "/privkey.pem"), <<>>, 5000);
+    let _ <- Fs.setMode(Path(scratch <> "/privkey.pem"), 0o600, 5000);
+    Right(example
+              |> String.replace("/etc/ernest-httpd", scratch)
+              |> String.replace("/srv/ernest-httpd/acme", scratch <> "/acme")
+              |> String.replace("/srv/ernest-lang.org/site", scratch <> "/site")
+              |> String.replace("/var/log/ernest-httpd/access.log", scratch <> "/access.log"))
+}
+
+// The first field that breaks a rule when the text is written to the
+// scratch directory and read from there, or the error that is no Invalid.
+fn brokenFile(text : String) : Either(Error, Optional(#(String, String))) = {
+    let file = Path(scratch <> "/config.json");
+    let _ <- Either.mapLeft(Fs.write(file, String.toUtf8(text), 5000), Unreadable);
+    match read(file, 5000) {
+        Right(_) -> Right(None)
+      | Left(Invalid(=field, =rule)) -> Right(Some(#(field, rule)))
+      | Left(error) -> Left(error)
+    }
+}
+
+// design §4: read checks the file system's rules after the rest, the
+// certificate and the key regular files, the key the user's alone, the
+// challenge's directory and the root directories, and the access log's
+// directory there; a file that keeps every rule is read whole.
+let readsFiles =
+    Test.Case(name = "reads the file and checks the file system's rules",
+              run = fn() = match prepared() {
+                  Right(text) -> {
+                      let key = Path(scratch <> "/privkey.pem");
+                      let kept = brokenFile(text);
+                      let _ = Fs.setMode(key, 0o640, 5000);
+                      let loose = brokenFile(text);
+                      let _ = Fs.setMode(key, 0o600, 5000);
+                      Test.equal([kept,
+                                  loose,
+                                  brokenFile(String.replace(text,
+                                                            scratch <> "/fullchain.pem",
+                                                            scratch <> "/nothing.pem")),
+                                  brokenFile(String.replace(text,
+                                                            scratch <> "/fullchain.pem",
+                                                            scratch <> "/site")),
+                                  brokenFile(String.replace(text,
+                                                            scratch <> "/acme",
+                                                            scratch <> "/none")),
+                                  brokenFile(String.replace(text,
+                                                            scratch <> "/site",
+                                                            scratch <> "/privkey.pem")),
+                                  brokenFile(String.replace(text,
+                                                            scratch <> "/access.log",
+                                                            scratch <> "/none/access.log")),
+                                  brokenFile(String.replace(String.replace(text,
+                                                                           "\"port\": 443",
+                                                                           "\"port\": -1"),
+                                                            scratch <> "/site",
+                                                            scratch <> "/none"))],
+                                 [Right(None),
+                                  Right(Some(#("listeners[0].key",
+                                               "is readable by the program's user alone"))),
+                                  Right(Some(#("listeners[0].certificate",
+                                               "names a regular file"))),
+                                  Right(Some(#("listeners[0].certificate",
+                                               "names a regular file"))),
+                                  Right(Some(#("listeners[1].acme-challenge",
+                                               "names a directory"))),
+                                  Right(Some(#("root", "names a directory"))),
+                                  Right(Some(#("access-log", "stands in a directory that exists"))),
+                                  Right(Some(#("listeners[0].port", "is 0 to 65535")))])
+                  }
+                | Left(error) ->
+                      Test.Failed("cannot prepare " <> scratch <> ": " <> Io.show(error))
+              })
+
+// design §4: a file that cannot be read, and one that is not UTF-8.
+let refusesUnreadable = Test.Case(name = "refuses a file that cannot be read", run = fn() = {
+    let _ = Fs.makeDir(Path(scratch), 5000);
+    let _ = Fs.write(Path(scratch <> "/bytes.json"), <<255>>, 5000);
+    Test.equal(#(read(Path(scratch <> "/nothing.json"), 5000),
+                 read(Path(scratch <> "/bytes.json"), 5000)),
+               #(Left(Unreadable(Io.NotFound)), Left(Unreadable(Io.NotUtf8(<<255>>)))))
+})

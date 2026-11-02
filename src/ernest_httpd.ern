@@ -10,6 +10,7 @@
 export fn main() : Unit =
     Io.println("ernest_httpd: nothing yet")
 
-// design §1, §2, §3: the program is not written yet; this test goes as real
-// tests cite each section.
+// design §1, §2, §3: what the program does, its processes and its modules
+// wait for the items that write the program's entry point and its
+// processes; this test goes when real tests cite each section.
 let nothingYet = Test.Case(name = "nothing yet", run = fn() = Test.equal(1 + 1, 2))

@@ -1,0 +1,665 @@
+/// The static site: a request for a file under the root answered with the
+/// file, its content type and its modification time, or with an error
+/// (design §5).
+///
+/// A connection makes the site once, with `site`, from the configuration's
+/// root and content types, and answers each request with `serve`, whatever
+/// its method and target; it adds `Date` and the configuration's headers to
+/// the response before it writes it. `error` is the response of a status
+/// the connection answers itself.
+///
+/// `serve` reads the file system for each request, each read bounded by the
+/// milliseconds given, and keeps nothing between requests: a file changed
+/// under the root is served as it is when the request comes.
+///
+/// ## Examples
+///
+/// A method other than `GET` and `HEAD` is answered 405, its body plain text:
+///
+/// ```ernest
+/// let request =
+///     Http.Request(method = "POST",
+///                  target = "/",
+///                  version = Http.Version(major = 1, minor = 1),
+///                  headers = []);
+/// let #(response, body) = Static.serve(Static.site(Path("site"), Map.empty), request, 1000);
+/// #(response.status, response.headers, String.fromUtf8(body))
+/// // => #(405, [Header(name = "Allow", value = "GET, HEAD"), Header(name = "Content-Type", value = "text/plain; charset=utf-8")], Some("405 Method Not Allowed\n"))
+/// ```
+
+//
+// Types
+//
+
+/// The site a request for a file is served from: the root its files stand
+/// under, and the table of content types by extension, each with its dot.
+export type Site = Site(root : Path, contentTypes : Map(String, String))
+
+//
+// The site
+//
+
+/// The built-in table of content types, by extension with its dot.
+///
+/// ### Examples
+///
+/// ```ernest
+/// Map.get(Static.contentTypes, ".html")
+/// // => Some("text/html; charset=utf-8")
+/// ```
+export let contentTypes : Map(String, String) =
+    Map.fromList([#(".html", "text/html; charset=utf-8"),
+                  #(".css", "text/css; charset=utf-8"),
+                  #(".js", "text/javascript; charset=utf-8"),
+                  #(".json", "application/json"),
+                  #(".svg", "image/svg+xml"),
+                  #(".png", "image/png"),
+                  #(".ico", "image/x-icon"),
+                  #(".woff2", "font/woff2"),
+                  #(".txt", "text/plain; charset=utf-8"),
+                  #(".xml", "application/xml"),
+                  #(".wasm", "application/wasm")])
+
+/// The site of the root, its table the built-in one extended by
+/// `contentTypes`, whose type wins for an extension both have.
+///
+/// ### Examples
+///
+/// ```ernest
+/// let site = Static.site(Path("site"), Map.fromList([#(".txt", "text/plain")]));
+/// #(Map.get(site.contentTypes, ".txt"), Map.get(site.contentTypes, ".css"))
+/// // => #(Some("text/plain"), Some("text/css; charset=utf-8"))
+/// ```
+export fn site(root : Path, contentTypes : Map(String, String)) : Site =
+    Site(=root, contentTypes = Map.merge(Static.contentTypes, contentTypes))
+
+//
+// Serving
+//
+
+/// The response to the request and its body: the file the target names
+/// under the root, a redirect to a directory's path, or an error, each
+/// read of the file system bounded by `ms` milliseconds.
+///
+/// `GET` and `HEAD` are served, and a `HEAD` answers the `GET`'s response
+/// with no body and, but for a 304, its body's size as `Content-Length`;
+/// any other method answers 405. A file the file system refuses to describe
+/// or to read answers 500, and the path and the error are written on
+/// standard error.
+///
+/// ### Examples
+///
+/// A target of no form a server reads is answered 400:
+///
+/// ```ernest
+/// let request =
+///     Http.Request(method = "GET",
+///                  target = "*",
+///                  version = Http.Version(major = 1, minor = 1),
+///                  headers = []);
+/// let #(response, _) = Static.serve(Static.site(Path("site"), Map.empty), request, 1000);
+/// response.status
+/// // => 400
+/// ```
+export fn serve(site : Site, request : Http.Request, ms : Int) : #(Http.Response, Bytes) =
+    match request.method {
+        "GET" ->
+            get(site, request, ms)
+      | "HEAD" ->
+            withoutBody(get(site, request, ms))
+      | _ -> {
+            let #(response, body) = error(site, 405, ms);
+            #(Http.Response(..response, headers = header("Allow", "GET, HEAD") :: response.headers),
+              body)
+        }
+    }
+
+// The GET's response with its body dropped and, but for a 304, the body's
+// size as its Content-Length.
+fn withoutBody(#(response, body) : #(Http.Response, Bytes)) : #(Http.Response, Bytes) =
+    if response.status == 304 then
+        #(response, <<>>)
+    else {
+        let size = header("Content-Length", Int.toString(Bytes.size(body)));
+        #(Http.Response(..response, headers = response.headers <> [size]), <<>>)
+    }
+
+fn get(site : Site, request : Http.Request, ms : Int) : #(Http.Response, Bytes) =
+    match asked(request.target) {
+        Left(status) ->
+            error(site, status, ms)
+      | Right(Asked(=written, =segments, =asksDirectory)) -> {
+            let path = site.root <> Path.join(segments);
+            match Fs.stat(path, ms) {
+                Right(Fs.Entry(kind = Fs.Directory)) ->
+                    if asksDirectory then
+                        index(site, request, path <> Path("index.html"), ms)
+                    else
+                        #(response(301, [header("Location", location(written))]), <<>>)
+              | Right(Fs.Entry(kind = Fs.File) as entry) when !asksDirectory ->
+                    file(site, request, entry, ms)
+              | Right(_) or Left(Io.NotFound) ->
+                    error(site, 404, ms)
+              | Left(cause) ->
+                    refused(path, cause)
+            }
+        }
+    }
+
+// The path of a directory asked for without its `/`: the path as the target
+// wrote it with `/` appended, its leading `/`s made one, since two would
+// begin a host's name.
+fn location(written : String) : String = {
+    let #(_, rest) = List.span(String.toList(written), fn(char) = char == '/');
+    "/" <> String.fromList(rest) <> "/"
+}
+
+// A directory's index file, which is served where it is a regular file.
+fn index(site : Site, request : Http.Request, path : Path, ms : Int) : #(Http.Response, Bytes) =
+    match Fs.stat(path, ms) {
+        Right(Fs.Entry(kind = Fs.File) as entry) -> file(site, request, entry, ms)
+      | Right(_) or Left(Io.NotFound) -> error(site, 404, ms)
+      | Left(cause) -> refused(path, cause)
+    }
+
+// A regular file, answered 304 where the request's If-Modified-Since is at
+// or after its modification time, and otherwise read and served.
+fn file(site : Site, request : Http.Request, entry : Fs.Entry, ms : Int) : #(Http.Response, Bytes) =
+    if isUnmodified(request, entry) then
+        #(response(304, []), <<>>)
+    else match Fs.read(entry.path, ms) {
+        Right(bytes) ->
+            #(response(200,
+                       [header("Content-Type", contentType(site, entry.path)),
+                        header("Last-Modified", Http.date(entry.modified))]),
+              bytes)
+      | Left(Io.NotFound) or Left(Io.NotAFile) ->
+            error(site, 404, ms)
+      | Left(cause) ->
+            refused(entry.path, cause)
+    }
+
+fn isUnmodified(request : Http.Request, entry : Fs.Entry) : Bool =
+    match Optional.andThen(Http.header(request.headers, "If-Modified-Since"), Http.parseDate) {
+        Some(time) -> entry.modified <= time
+      | None -> false
+    }
+
+// The file's content type, by its extension with its dot, and
+// application/octet-stream where the table has none.
+fn contentType(site : Site, path : Path) : String =
+    Optional.andThen(Path.extension(path),
+                     fn(extension) = Map.get(site.contentTypes, "." <> extension))
+        |> Optional.withDefault("application/octet-stream")
+
+// A file the file system refused to describe or to read, or did not answer
+// in time: said on standard error, and answered 500.
+fn refused(path : Path, cause : Io.Error) : #(Http.Response, Bytes) = {
+    Io.printlnError(Path.toString(path) <> ": " <> Io.show(cause));
+    plain(500)
+}
+
+//
+// The target
+//
+
+// What a target asks for: its path as written, without its query; the
+// segments it names under the root; and whether it asks for a directory.
+type Asked = Asked(written : String, segments : List(String), asksDirectory : Bool)
+
+// The target read, its path decoded and split into segments, or the status
+// it is refused with: 400, or 404 for a segment that begins with a dot.
+fn asked(target : String) : Either(Int, Asked) = {
+    let written <- Either.fromOptional(writtenPath(target), 400);
+    let decoded <- Either.fromOptional(percentDecoded(String.toUtf8(written), <<>>), 400);
+    let parts <- List.tryMap(Bytes.split(decoded, slash), segment);
+    let segments = List.filter(parts, fn(part) = part != "" && part != ".");
+    let _ <- if List.contains(segments, "..") then Left(400) else Right(Unit);
+    let _ <- if List.any(segments, beginsWithDot) then Left(404) else Right(Unit);
+    Right(Asked(=written,
+                =segments,
+                asksDirectory = Bytes.endsWith(decoded, slash) || List.isEmpty(segments)))
+}
+
+// The byte `/`, at which a decoded path is split: by bytes, since a string
+// is split by graphemes, and a `/` a combining mark follows is one with it.
+let slash : Bytes = <<47>>
+
+// Whether a segment's first code point is `.`, a combining mark after it
+// or not.
+fn beginsWithDot(part : String) : Bool =
+    match String.toList(part) {
+        '.' :: _ -> true
+      | _ -> false
+    }
+
+// The target's path as written, without its query: in origin form, or in
+// absolute form after its scheme and its authority, `/` where that path is
+// empty; None for a target of another form. The target is read by code
+// point, as its `/`, `:` and `?` are written.
+fn writtenPath(target : String) : Optional(String) =
+    match String.toList(target) {
+        '/' :: _ as chars ->
+            Some(beforeQuery(chars))
+      | chars -> {
+            let #(scheme, rest) = List.span(chars, fn(char) = char != ':');
+            match rest {
+                ':' :: '/' :: '/' :: afterScheme when isScheme(scheme) -> {
+                    let #(_, path) = List.span(afterScheme, fn(char) = char != '/' && char != '?');
+                    match beforeQuery(path) {
+                        "" -> Some("/")
+                      | written -> Some(written)
+                    }
+                }
+              | _ ->
+                    None
+            }
+        }
+    }
+
+// The characters up to the first `?`.
+fn beforeQuery(chars : List(Char)) : String = {
+    let #(path, _) = List.span(chars, fn(char) = char != '?');
+    String.fromList(path)
+}
+
+// A scheme, RFC 3986's: a letter, then letters, digits, `+`, `-` and `.`.
+fn isScheme(chars : List(Char)) : Bool =
+    match chars {
+        first :: rest ->
+            isAsciiLetter(first)
+                && List.all(rest,
+                            fn(char) =
+                                isAsciiLetter(char)
+                                    || Char.isAsciiDigit(char)
+                                    || char == '+'
+                                    || char == '-'
+                                    || char == '.')
+      | [] ->
+            false
+    }
+
+fn isAsciiLetter(char : Char) : Bool = {
+    let codePoint = Char.toCodePoint(char);
+    codePoint >= 65 && codePoint <= 90 || codePoint >= 97 && codePoint <= 122
+}
+
+// The bytes the path writes, each `%` and two hexadecimal digits the byte
+// they write; None for `%2F` in either case, and for a `%` not followed by
+// two hexadecimal digits.
+fn percentDecoded(bytes : Bytes, acc : Bytes) : Optional(Bytes) =
+    match bytes {
+        <<37, high, low, rest:bytes>> -> {
+            let byte <- hexadecimal(high, low);
+            if byte == 47 then None else percentDecoded(rest, <<acc:bytes, byte>>)
+        }
+      | <<37, _:bytes>> ->
+            None
+      | <<byte, rest:bytes>> ->
+            percentDecoded(rest, <<acc:bytes, byte>>)
+      | _ ->
+            Some(acc) // the end of the bytes
+    }
+
+// The byte two hexadecimal digits write, each digit given as its byte.
+fn hexadecimal(high : Int, low : Int) : Optional(Int) = {
+    let highValue <- digit(high);
+    let lowValue <- digit(low);
+    Some(highValue * 16 + lowValue)
+}
+
+fn digit(byte : Int) : Optional(Int) =
+    Optional.andThen(Char.fromCodePoint(byte), fn(char) = Char.digitValue(char, 16))
+
+// A decoded segment as text: refused with 400 where it is not UTF-8 or
+// holds a control character.
+fn segment(bytes : Bytes) : Either(Int, String) = {
+    let text <- Either.fromOptional(String.fromUtf8(bytes), 400);
+    if List.any(String.toList(text), isControl) then Left(400) else Right(text)
+}
+
+fn isControl(char : Char) : Bool = {
+    let codePoint = Char.toCodePoint(char);
+    codePoint < 32 || codePoint == 127
+}
+
+//
+// The errors
+//
+
+/// The response of the status and its body, plain text naming the status
+/// and its phrase, `404 Not Found` and a line feed.
+///
+/// A 404 answers the root's `404.html` instead, as HTML, where that is a
+/// regular file, and 500 where the file system refuses to read it, the path
+/// and the error written on standard error.
+///
+/// ### Examples
+///
+/// ```ernest
+/// let #(response, body) = Static.error(Static.site(Path("site"), Map.empty), 400, 1000);
+/// #(response.status, response.headers, String.fromUtf8(body))
+/// // => #(400, [Header(name = "Content-Type", value = "text/plain; charset=utf-8")], Some("400 Bad Request\n"))
+/// ```
+export fn error(site : Site, status : Int, ms : Int) : #(Http.Response, Bytes) =
+    if status == 404 then {
+        let path = site.root <> Path("404.html");
+        match Fs.read(path, ms) {
+            Right(bytes) ->
+                #(response(404, [header("Content-Type", "text/html; charset=utf-8")]), bytes)
+          | Left(Io.NotFound) or Left(Io.NotAFile) ->
+                plain(404)
+          | Left(cause) ->
+                refused(path, cause)
+        }
+    } else
+        plain(status)
+
+// The status's response with its body plain text.
+fn plain(status : Int) : #(Http.Response, Bytes) =
+    #(response(status, [header("Content-Type", "text/plain; charset=utf-8")]),
+      String.toUtf8(Int.toString(status) <> " " <> Http.reason(status) <> "\n"))
+
+// A response of HTTP/1.1.
+fn response(status : Int, headers : List(Http.Header)) : Http.Response =
+    Http.Response(version = Http.Version(major = 1, minor = 1), =status, =headers)
+
+fn header(name : String, value : String) : Http.Header =
+    Http.Header(=name, =value)
+
+//
+// Tests
+//
+
+// The scratch directory the tests write their sites under: `site` with its
+// 404.html, served as `withPage`, `bare` without one, and `locked` with one
+// no one may read.
+let scratch : String = "build/scratch/static"
+
+// The modification time of every file written, Sun, 06 Nov 1994 08:49:37 GMT.
+let modified : Int = 784111777000
+
+fn written(name : String, text : String) : Either(Io.Error, Unit) = {
+    let path = Path(scratch <> "/" <> name);
+    let _ <- Fs.write(path, String.toUtf8(text), 5000);
+    Fs.setModified(path, modified, 5000)
+}
+
+fn prepared() : Either(Io.Error, Unit) = {
+    let _ <- Fs.makeDir(Path(scratch <> "/site/docs"), 5000);
+    let _ <- Fs.makeDir(Path(scratch <> "/site/empty"), 5000);
+    let _ <- Fs.makeDir(Path(scratch <> "/bare/empty"), 5000);
+    let _ <- Fs.makeDir(Path(scratch <> "/locked"), 5000);
+    let _ <- written("site/index.html", "home");
+    let _ <- written("site/a.txt", "alpha");
+    let _ <- written("site/a b.txt", "space");
+    let _ <- written("site/\u{e9}.txt", "e acute");
+    let _ <- written("site/data.bin", "bin");
+    let _ <- written("site/.hidden", "hidden");
+    let _ <- written("site/docs/index.html", "docs");
+    let _ <- written("site/404.html", "<p>none</p>");
+    written("bare/a.txt", "alpha")
+}
+
+let withPage : Site = site(Path(scratch <> "/site"), Map.empty)
+
+let bare : Site = site(Path(scratch <> "/bare"), Map.empty)
+
+// A request to the site, and the answer expected.
+type Check = Check(site : Site, request : Http.Request, expected : Answer)
+
+// A response as a test compares it: its status, its headers, and its body
+// as text.
+type Answer = Answer(status : Int, headers : List(Http.Header), body : Optional(String))
+
+fn request(method : String, target : String, headers : List(Http.Header)) : Http.Request =
+    Http.Request(=method, =target, version = Http.Version(major = 1, minor = 1), =headers)
+
+// A GET of the target, and the answer expected.
+fn getting(site : Site, target : String, expected : Answer) : Check =
+    Check(=site, request = request("GET", target, []), =expected)
+
+fn answer(#(response, body) : #(Http.Response, Bytes)) : Answer =
+    Answer(status = response.status, headers = response.headers, body = String.fromUtf8(body))
+
+// Each check's request served once the scratch sites are prepared, and the
+// answers against those expected.
+fn served(checks : List(Check)) : Test.Result =
+    match prepared() {
+        Right(Unit) ->
+            Test.equal(List.map(checks, fn(check) = answer(serve(check.site, check.request, 5000))),
+                       List.map(checks, fn(check) = check.expected))
+      | Left(error) ->
+            Test.Failed("cannot prepare " <> scratch <> ": " <> Io.show(error))
+    }
+
+// A file's answer: 200, its content type and its modification time, and
+// its text.
+fn fileAnswer(contentType : String, body : String) : Answer =
+    Answer(status = 200,
+           headers = [header("Content-Type", contentType),
+                      header("Last-Modified", "Sun, 06 Nov 1994 08:49:37 GMT")],
+           body = Some(body))
+
+fn textFile(body : String) : Answer =
+    fileAnswer("text/plain; charset=utf-8", body)
+
+fn htmlFile(body : String) : Answer =
+    fileAnswer("text/html; charset=utf-8", body)
+
+// An error's answer in plain text, and the root's 404.html's.
+fn plainError(status : Int) : Answer =
+    Answer(=status,
+           headers = [header("Content-Type", "text/plain; charset=utf-8")],
+           body = Some(Int.toString(status) <> " " <> Http.reason(status) <> "\n"))
+
+let notFoundPage : Answer =
+    Answer(status = 404,
+           headers = [header("Content-Type", "text/html; charset=utf-8")],
+           body = Some("<p>none</p>"))
+
+fn redirect(location : String) : Answer =
+    Answer(status = 301, headers = [header("Location", location)], body = Some(""))
+
+// design §5: a regular file is served with its content type by its
+// extension, its modification time as RFC 9110's date, and its bytes.
+let servesFiles =
+    Test.Case(name = "serves a file",
+              run = fn() =
+                  served([getting(withPage, "/a.txt", textFile("alpha")),
+                          getting(withPage, "/index.html", htmlFile("home"))]))
+
+// design §5: a directory asked for is served as its index.html, one asked
+// for without its `/` is redirected to it, its leading `/`s made one, and
+// one without an index.html is not found; a file asked for as a directory
+// is not found either.
+let servesDirectories =
+    Test.Case(name = "serves a directory",
+              run = fn() =
+                  served([getting(withPage, "/", htmlFile("home")),
+                          getting(withPage, "/docs/", htmlFile("docs")),
+                          getting(withPage, "/docs", redirect("/docs/")),
+                          getting(withPage, "/docs?page=2", redirect("/docs/")),
+                          getting(withPage, "//docs", redirect("/docs/")),
+                          getting(bare, "/empty/", plainError(404)),
+                          getting(withPage, "/a.txt/", notFoundPage)]))
+
+// design §5: a path that leads nowhere is answered with the root's
+// 404.html where there is one, and plain text where there is none; a
+// segment that begins with a combining mark is a name under the root, the
+// `/` before it splitting the path though a string holds the two as one
+// grapheme.
+let answersNotFound =
+    Test.Case(name = "answers a path that leads nowhere",
+              run = fn() =
+                  served([getting(withPage, "/missing.txt", notFoundPage),
+                          getting(bare, "/missing.txt", plainError(404)),
+                          getting(withPage, "/empty/", notFoundPage),
+                          getting(bare, "/%CC%81/a.txt", plainError(404)),
+                          getting(bare, "/\u{301}/a.txt", plainError(404))]))
+
+// design §5: a method other than GET and HEAD answers 405 with Allow.
+let refusesMethods = Test.Case(name = "refuses a method other than GET and HEAD", run = fn() = {
+    let refused =
+        Answer(..plainError(405),
+               headers = header("Allow", "GET, HEAD") :: plainError(405).headers);
+    served([Check(site = withPage, request = request("POST", "/a.txt", []), expected = refused),
+            Check(site = withPage, request = request("get", "/a.txt", []), expected = refused)])
+})
+
+// design §5: a HEAD is answered as the GET with no body and its body's size
+// as Content-Length, but for a 304, which has none.
+let answersHead = Test.Case(name = "answers a HEAD", run = fn() = {
+    fn head(site : Site, target : String, headers : List(Http.Header), expected : Answer) : Check =
+        Check(=site, request = request("HEAD", target, headers), =expected);
+    fn sized(answer : Answer, size : String) : Answer =
+        Answer(..answer,
+               headers = answer.headers <> [header("Content-Length", size)],
+               body = Some(""));
+    served([head(withPage, "/a.txt", [], sized(textFile("alpha"), "5")),
+            head(withPage, "/docs", [], sized(redirect("/docs/"), "0")),
+            head(bare, "/missing.txt", [], sized(plainError(404), "14")),
+            head(withPage,
+                 "/a.txt",
+                 [header("If-Modified-Since", Http.date(modified))],
+                 Answer(status = 304, headers = [], body = Some("")))])
+})
+
+// design §5: If-Modified-Since at or after the modification time answers
+// 304 with no body and no header; one before it, or one Http.parseDate
+// cannot read, serves the file.
+let answersUnmodified = Test.Case(name = "answers a file not modified since", run = fn() = {
+    let unmodified = Answer(status = 304, headers = [], body = Some(""));
+    fn since(value : String, expected : Answer) : Check =
+        Check(site = withPage,
+              request = request("GET", "/a.txt", [header("If-Modified-Since", value)]),
+              =expected);
+    served([since(Http.date(modified), unmodified),
+            since(Http.date(modified + 86400000), unmodified),
+            since("Sunday, 06-Nov-94 08:49:37 GMT", unmodified),
+            since(Http.date(modified - 1000), textFile("alpha")),
+            since("yesterday", textFile("alpha"))])
+})
+
+// design §5: the path's rules that answer 400: a target of no form read,
+// an encoded `/`, a bad `%`, bytes that are not UTF-8, a control
+// character, and `..`, written or encoded.
+let refusesPaths =
+    Test.Case(name = "refuses a bad path with 400",
+              run = fn() =
+                  served(List.map(["*",
+                                   "ernest-lang.org:443",
+                                   "a.txt",
+                                   "1http://ernest-lang.org/a.txt",
+                                   "://ernest-lang.org/a.txt",
+                                   "http:/ernest-lang.org/a.txt",
+                                   "/docs%2Findex.html",
+                                   "/docs%2findex.html",
+                                   "/%zz",
+                                   "/a.txt%4",
+                                   "/a.txt%",
+                                   "/%FF.txt",
+                                   "/a%00.txt",
+                                   "/a%7F.txt",
+                                   "/a%09.txt",
+                                   "/../site/a.txt",
+                                   "/docs/../a.txt",
+                                   "/%2E%2E/a.txt"],
+                                  fn(target) = getting(withPage, target, plainError(400)))))
+
+// design §5: a segment that begins with a dot is not found, though the
+// file is there, and `..` is answered 400 before it.
+let hidesDotSegments =
+    Test.Case(name = "answers a dot segment with 404",
+              run = fn() =
+                  served([getting(bare, "/.hidden", plainError(404)),
+                          getting(bare, "/docs/.git/config", plainError(404)),
+                          getting(bare, "/%2Ehidden", plainError(404)),
+                          getting(withPage, "/.%CC%81hidden", notFoundPage),
+                          getting(bare, "/.hidden/..", plainError(400))]))
+
+// design §5: empty segments and `.` are dropped, the query is ignored, and
+// the path is percent-decoded into UTF-8.
+let normalizesPaths =
+    Test.Case(name = "reads the path",
+              run = fn() =
+                  served([getting(withPage, "/./docs//index.html", htmlFile("docs")),
+                          getting(withPage, "//a.txt", textFile("alpha")),
+                          getting(withPage, "/a.txt?x=1&y=/../", textFile("alpha")),
+                          getting(withPage, "/a%2Etxt", textFile("alpha")),
+                          getting(withPage, "/a%20b.txt", textFile("space")),
+                          getting(withPage, "/%C3%A9.txt", textFile("e acute")),
+                          getting(withPage, "/%c3%a9.txt", textFile("e acute"))]))
+
+// design §5: a target in absolute form is read after its scheme and its
+// authority, `/` where its path is empty.
+let readsAbsoluteForm =
+    Test.Case(name = "reads a target in absolute form",
+              run = fn() =
+                  served([getting(withPage, "http://ernest-lang.org/a.txt?q=1", textFile("alpha")),
+                          getting(withPage, "http://ernest-lang.org", htmlFile("home")),
+                          getting(withPage, "http://ernest-lang.org?q=/a.txt", htmlFile("home")),
+                          getting(withPage, "HTTPS://ernest-lang.org:443/docs/", htmlFile("docs")),
+                          getting(withPage, "web+x.1-2://ernest-lang.org/a.txt", textFile("alpha")),
+                          getting(withPage, "http://ernest-lang.org/docs", redirect("/docs/"))]))
+
+// design §5: an extension the table lacks is application/octet-stream, and
+// the site's own table wins over the built-in one.
+let typesFiles = Test.Case(name = "types a file by its extension", run = fn() = {
+    let configured =
+        site(withPage.root, Map.fromList([#(".txt", "text/x-test"), #(".bin", "font/x-test")]));
+    served([getting(withPage, "/data.bin", fileAnswer("application/octet-stream", "bin")),
+            getting(configured, "/a.txt", fileAnswer("text/x-test", "alpha")),
+            getting(configured, "/data.bin", fileAnswer("font/x-test", "bin")),
+            getting(configured, "/index.html", htmlFile("home"))])
+})
+
+// design §5: the built-in table.
+let holdsTheTable =
+    Test.Case(name = "holds the built-in table",
+              run = fn() =
+                  Test.equal(List.sortBy(Map.toList(contentTypes), fn(#(extension, _)) = extension),
+                             [#(".css", "text/css; charset=utf-8"),
+                              #(".html", "text/html; charset=utf-8"),
+                              #(".ico", "image/x-icon"),
+                              #(".js", "text/javascript; charset=utf-8"),
+                              #(".json", "application/json"),
+                              #(".png", "image/png"),
+                              #(".svg", "image/svg+xml"),
+                              #(".txt", "text/plain; charset=utf-8"),
+                              #(".wasm", "application/wasm"),
+                              #(".woff2", "font/woff2"),
+                              #(".xml", "application/xml")]))
+
+// design §5: a file the file system refuses to read answers 500, the
+// root's 404.html among them.
+let answersRefused = Test.Case(name = "answers a file it cannot read with 500", run = fn() = {
+    let secret = Path(scratch <> "/site/secret.txt");
+    let locked = Path(scratch <> "/locked/404.html");
+    let _ = Fs.setMode(secret, 0o600, 5000);
+    let _ = Fs.setMode(locked, 0o600, 5000);
+    let _ = Fs.write(secret, String.toUtf8("secret"), 5000);
+    let _ = Fs.write(locked, String.toUtf8("<p>locked</p>"), 5000);
+    let _ = Fs.setMode(secret, 0, 5000);
+    let _ = Fs.setMode(locked, 0, 5000);
+    let result =
+        served([getting(withPage, "/secret.txt", plainError(500)),
+                getting(site(Path(scratch <> "/locked"), Map.empty),
+                        "/missing.txt",
+                        plainError(500))]);
+    let _ = Fs.setMode(secret, 0o600, 5000);
+    let _ = Fs.setMode(locked, 0o600, 5000);
+    result
+})
+
+// design §5: error answers a status's plain text, and the root's 404.html
+// for a 404.
+let writesErrors = Test.Case(name = "writes an error's response", run = fn() = match prepared() {
+    Right(Unit) ->
+        Test.equal([answer(error(bare, 400, 5000)),
+                    answer(error(bare, 404, 5000)),
+                    answer(error(withPage, 404, 5000))],
+                   [plainError(400), plainError(404), notFoundPage])
+  | Left(cause) ->
+        Test.Failed("cannot prepare " <> scratch <> ": " <> Io.show(cause))
+})
