@@ -14,7 +14,7 @@ The program's processes, each with what it owns; a process is spawned by the one
 
 It then makes the site, §5, starts the access log, §8, and the sessions where the configuration has a `shell`, §12, and for each listener of the configuration, in its order, listens, `Tcp.listen` for a `plain` or a `redirect` listener and `Tcp.listenTls` with its certificate and its key for a `tls` one, prints a line of `listening on `, the address, `:` and the port it got, `Tcp.port`, on standard output, and spawns the listener process, §7, monitored, with the server its connections share, §6: the configuration, the site, the access log's address, the sessions where there are any and, for a `redirect` listener, its challenge site, §9.
 
-A listen or a port that fails is said on standard error with the address, `:`, the port, `: ` and the error as `Io.show` writes it, and ends the program with the status 1. It then subscribes to the program's end, `Os.termination`, and waits.
+A listen or a port that fails is said on standard error with the address, `:`, the port, `: ` and the error as `Io.show` writes it, `Denied` on a port below 1024 followed by `: a port below 1024 needs CAP_NET_BIND_SERVICE`, and ends the program with the status 1. It then subscribes to the program's end, `Os.termination`, and waits.
 
 **The end.** Told of the program's end, the entry process stops the sessions where it started them, `Sessions.Stop`, which closes every attached shell with 1001 and ends every session, and waits for its reply; then tells each listener process to stop, `Listener.Stop`, which closes every shell left with 1001, waits for each to end, has the access log write what it holds, `AccessLog.Flush`, and answers the end's reply. A listener process that ends before the end was told is a failure of the program: the entry process stops the others and has the log write what it holds, as at the end, and then says `a listener ended: ` and the reason as `Io.show` writes it on standard error and ends the program with the status 1.
 
@@ -62,46 +62,48 @@ type Limits = Limits(requestLine : Int, headers : Int, connections : Int,
 type Shell = Shell(path : String, origins : List(String), command : List(String),
   mostAtOnce : Int, starts : Starts, lifetime : Int, warning : Int, messageLimit : Int, hangup : Int)
 type Starts = Starts(count : Int, within : Int) // within in milliseconds
-type Error = Unreadable(Io.Error) | NotJson(Json.Error) | Invalid(field : String, rule : String)
+type Error = Unreadable(Io.Error) | NotJson(Json.Error) | Invalid(field : String, rule : String, value : Optional(String))
 Config.read : (Path, Int) -> Either(Error, Config) // the file read within the milliseconds, each rule checked
 Config.parse : (String) -> Either(Error, Config) // the text read, every rule but the file system's checked
 Config.reason : (Error) -> String // the error in prose, the field first for an Invalid
 Config.withoutPort : (String) -> String // the host with its port dropped, as §9 drops it
 ```
 
-**The file.** The file is one object whose members are the fields of the table, each required but `shell`, and no other; a text whose value is no object breaks `is an object`, its field named `the configuration`. A field that is absent breaks the rule `is required`, and a member of no field breaks the rule `is no field of` and the object's name: `the configuration` at the top, `a plain listener` for a listener with its kind named, and otherwise the object's field, `timeouts`. A field whose value is not what the table says breaks the rule naming it, `is a string`, `is an integer`, `is an array` or `is an object`; an array's elements are so held one by one, indexed from 0, `redirect-hosts[1]`.
+**The file.** The file is one object whose members are the fields of the table, each required but `shell`, and no other; a text whose value is no object breaks `be an object`, its field named `the configuration`. A field that is absent breaks the rule `is required`, and a member of no field breaks the rule `is no field of` and the object's name: `the configuration` at the top, `a plain listener` for a listener with its kind named, and otherwise the object's field, `timeouts`. A field whose value is not what the table says breaks the rule naming it, `be a string`, `be an integer`, `be an array` or `be an object`; an array's elements are so held one by one, indexed from 0, `redirect-hosts[1]`.
 
-A string of the file, a member's name among them, breaks `holds no control character` where it holds one, U+0000 to U+001F or U+007F. `headers` is read into `List(Http.Header)` in the order of the names' code points, and `content-types` into a `Map` from each extension to its type.
+A string of the file, a member's name among them, breaks `hold no control character` where it holds one, U+0000 to U+001F or U+007F. `headers` is read into `List(Http.Header)` in the order of the names' code points, and `content-types` into a `Map` from each extension to its type.
 
 | Field | Value | Rule |
 |---|---|---|
-| `listeners` | an array of objects | `is not empty` |
-| `listeners[i].kind` | a string | `is one of plain, tls and redirect` |
-| `listeners[i].address` | a string | `is not empty` |
-| `listeners[i].port` | an integer | `is 0 to 65535` |
-| `listeners[i].certificate`, `listeners[i].key` | strings, paths, with `"tls"` alone | `names a regular file`; the key also `is readable by the program's user alone`: its user is the program's and its mode has none of the bits `0o077` |
-| `listeners[i].acme-challenge` | a string, a path, with `"redirect"` alone | `names a directory` |
-| `root` | a string, a path | `names a directory` |
-| `canonical-host` | a string | `is not empty` |
-| `redirect-hosts` | an array of strings | each `is not empty` and `is not the canonical host`, compared as §9 compares hosts |
-| `timeouts.head`, `timeouts.idle`, `timeouts.write`, `timeouts.file` | integers, milliseconds: a request's head, an idle connection, a write, and a read or an append of the file system | each `is above 0` |
-| `limits.request-line`, `limits.headers` | integers, bytes | each `is above 0` |
-| `limits.connections`, `limits.connections-per-address` | integers, counts | each `is above 0` |
-| `content-types` | an object of strings | each name `begins with a dot`, `.wasm`; each value `is not empty` |
-| `headers` | an object of strings | each name `is a token`, RFC 9110's: letters, digits and ``!#$%&'*+-.^_`|~``, and `is none of Content-Length, Date, Connection and Transfer-Encoding`, compared in any case, which the server writes itself |
-| `access-log` | a string, a path | `stands in a directory that exists` |
+| `listeners` | an array of objects | `not be empty` |
+| `listeners[i].kind` | a string | `be one of plain, tls and redirect` |
+| `listeners[i].address` | a string | `not be empty` |
+| `listeners[i].port` | an integer | `be 0 to 65535` |
+| `listeners[i].certificate`, `listeners[i].key` | strings, paths, with `"tls"` alone | `name a regular file`; the certificate also `be readable`, which `read` reads it whole to check; the key also `be readable by the program's user alone`: its user is the program's and its mode has the bit `0o400` and none of the bits `0o077` |
+| `listeners[i].acme-challenge` | a string, a path, with `"redirect"` alone | `name a directory` |
+| `root` | a string, a path | `name a directory` |
+| `canonical-host` | a string | `not be empty` |
+| `redirect-hosts` | an array of strings | each `not be empty` and `not be the canonical host`, compared as §9 compares hosts |
+| `timeouts.head`, `timeouts.idle`, `timeouts.write`, `timeouts.file` | integers, milliseconds: a request's head, an idle connection, a write, and a read or an append of the file system | each `be above 0` |
+| `limits.request-line`, `limits.headers` | integers, bytes | each `be above 0` |
+| `limits.connections`, `limits.connections-per-address` | integers, counts | each `be above 0` |
+| `content-types` | an object of strings | each name `begin with a dot`, `.wasm`; each value `not be empty` |
+| `headers` | an object of strings | each name `be a token`, RFC 9110's: letters, digits and ``!#$%&'*+-.^_`|~``, and `be none of Content-Length, Date, Connection and Transfer-Encoding`, compared in any case, which the server writes itself |
+| `access-log` | a string, a path | `stand in a directory that exists` |
 | `shell` | an object, or absent where no WebSocket is served | |
-| `shell.path` | a string | `begins with /` |
-| `shell.origins` | an array of strings | each `is not empty` |
-| `shell.command` | an array of strings | `is not empty`; the first is the program |
-| `shell.most-at-once` | an integer, a count | `is above 0` |
-| `shell.starts.count`, `shell.starts.within` | integers, a count and milliseconds | each `is above 0` |
-| `shell.lifetime`, `shell.warning`, `shell.message-limit` | integers, milliseconds, milliseconds and bytes | each `is above 0`, and the warning `is below the lifetime` |
-| `shell.hangup` | an integer, milliseconds: what a program has to exit after its terminal is hung up | `is above 0` |
+| `shell.path` | a string | `begin with /` |
+| `shell.origins` | an array of strings | each `not be empty` |
+| `shell.command` | an array of strings | `not be empty`; the first is the program |
+| `shell.most-at-once` | an integer, a count | `be above 0` |
+| `shell.starts.count`, `shell.starts.within` | integers, a count and milliseconds | each `be above 0` |
+| `shell.lifetime`, `shell.warning`, `shell.message-limit` | integers, milliseconds, milliseconds and bytes | each `be above 0`, and the warning `be below the lifetime` |
+| `shell.hangup` | an integer, milliseconds: what a program has to exit after its terminal is hung up | `be above 0` |
 
 A field that breaks a rule is answered as `Invalid`, its `field` the field's name from the file's top, `listeners[0].port`, and its `rule` the rule's text as the table writes it. An object's members of no field are answered before its fields, the first by its name's code points, a listener's after its kind; then the fields are checked in the table's order, a row's rules in the order it writes them, an array's elements in theirs and an object of strings' members by their names' code points, each name before its value, each string's control characters before its rule, and the first rule broken is answered. `read` checks the rules of the file system's after every other, in the table's order.
 
-**The errors.** `read` answers `Unreadable(error)` where the file cannot be read, `Io.NotUtf8` among them, and `NotJson(error)` where its text is not one JSON value. `reason(error)` writes `Unreadable` as `cannot read the file: ` and the error as `Io.show` writes it, `NotJson` as `is not JSON: ` and the error so written, and `Invalid` as the field, a space, and the rule: `listeners[0].port is 0 to 65535`.
+**The errors.** `read` answers `Unreadable(error)` where the file cannot be read, `Io.NotUtf8` among them, and `NotJson(error)` where its text is not one JSON value. `reason(error)` writes `Unreadable` as `cannot read the file: ` and the error as `Io.show` writes it, and `NotJson` as `is not JSON: ` and the error so written.
+
+An `Invalid`'s `value` is the value refused, a member's name where the rule is the name's, as `Json.format` writes it, without its last line feed and over the lines it lays a long array or object on, and U+007F, which it writes bare, as `\u007f`; it is `None` where the rule is `is required` or `is no field of`, which no value breaks. `reason` writes `Invalid` as the field, ` must `, the rule, `: ` and the value, `listeners[0].port must be 0 to 65535: 70000`, `root must name a directory: "/srv/site"`, and one with no value as the field, a space and the rule, `root is required`, `roots is no field of the configuration`.
 
 ## 5. The static site
 

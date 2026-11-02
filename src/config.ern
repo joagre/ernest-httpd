@@ -1,6 +1,6 @@
 /// The configuration: one JSON file read into one record, and every rule
-/// it checks, so that a bad file is refused at the start with its field
-/// named (design §4).
+/// it checks, so that a bad file is refused at the start with its field,
+/// the rule and the value named (design §4).
 ///
 /// A program reads the file once, at its start, with `read`, and keeps the
 /// record; a change of the file is a restart. `parse` reads a text alone
@@ -8,8 +8,8 @@
 ///
 /// An error is a value: what kept the file from being read, a text that is
 /// not JSON, or the first field that breaks a rule, named from the file's
-/// top, `listeners[0].port`. `reason` writes it for the operator, to stand
-/// after the file's path.
+/// top, `listeners[0].port`, with the value it refused. `reason` writes it
+/// for the operator, to stand after the file's path.
 ///
 /// A host is compared with its port dropped, `withoutPort`, and in any
 /// case: a redirect host so compared with the canonical host is refused,
@@ -17,18 +17,22 @@
 ///
 /// ## Examples
 ///
-/// A field that breaks a rule, and the rule it breaks:
+/// A field that breaks a rule, the rule it breaks, and no value, since the
+/// field is absent:
 ///
 /// ```ernest
 /// Config.parse("{}")
-/// // => Left(Invalid(field = "listeners", rule = "is required"))
+/// // => Left(Invalid(field = "listeners", rule = "is required", value = None))
 /// ```
 ///
-/// What the operator reads:
+/// What the operator reads, the value as JSON writes it:
 ///
 /// ```ernest
-/// Config.reason(Config.Invalid(field = "listeners[0].port", rule = "is 0 to 65535"))
-/// // => "listeners[0].port is 0 to 65535"
+/// #(Config.reason(Config.Invalid(field = "listeners[0].port",
+///                                rule = "be 0 to 65535",
+///                                value = Some("70000"))),
+///   Config.reason(Config.Invalid(field = "root", rule = "is required", value = None)))
+/// // => #("listeners[0].port must be 0 to 65535: 70000", "root is required")
 /// ```
 
 //
@@ -83,12 +87,13 @@ export type Shell =
 export type Starts = Starts(count : Int, within : Int)
 
 /// Why there is no configuration: the file cannot be read, its text is not
-/// JSON, or a field breaks a rule, the field named from the file's top and
-/// the rule as design §4's table writes it.
+/// JSON, or a field breaks a rule, the field named from the file's top, the
+/// rule as design §4's table writes it, and the value refused as JSON
+/// writes it, None for a field absent or of no field, which no value breaks.
 export type Error =
     Unreadable(Io.Error)
   | NotJson(Json.Error)
-  | Invalid(field : String, rule : String)
+  | Invalid(field : String, rule : String, value : Optional(String))
 
 //
 // Reading
@@ -111,10 +116,10 @@ export fn parse(text : String) : Either(Error, Config) = {
     let top <- object("the configuration", value);
     let _ <- members(top, "", "the configuration", fields);
     let listeners <- elements(top, "", "listeners", listener);
-    let _ <- notEmpty("listeners", listeners);
+    let _ <- notEmptyArray("listeners", listeners);
     let root <- path(top, "", "root");
     let canonicalHost <- string(top, "", "canonical-host");
-    let _ <- notEmpty("canonical-host", String.toList(canonicalHost));
+    let _ <- notEmptyText("canonical-host", canonicalHost);
     let redirectHosts <-
         elements(top,
                  "",
@@ -140,12 +145,14 @@ export fn parse(text : String) : Either(Error, Config) = {
 
 /// The error in prose, after which the operator reads the file's path:
 /// `cannot read the file: ` and the error, `is not JSON: ` and the error,
-/// or the field, a space and the rule.
+/// the field, ` must `, the rule, `: ` and the value refused, or, where
+/// there is no value, the field, a space and the rule.
 export fn reason(error : Error) : String =
     match error {
         Unreadable(cause) -> "cannot read the file: " <> Io.show(cause)
       | NotJson(cause) -> "is not JSON: " <> Io.show(cause)
-      | Invalid(=field, =rule) -> field <> " " <> rule
+      | Invalid(=field, =rule, value = Some(value)) -> field <> " must " <> rule <> ": " <> value
+      | Invalid(=field, =rule, value = None) -> field <> " " <> rule
     }
 
 /// The host with its port dropped: a `:` and digits alone after it at the
@@ -192,16 +199,18 @@ fn listener(field : String, value : Json.Value) : Either(Error, Listener) = {
       | "redirect" ->
             Right(#("a redirect listener", ["acme-challenge"]))
       | _ ->
-            Left(Invalid(field = member(field, "kind"), rule = "is one of plain, tls and redirect"))
+            Left(invalid(member(field, "kind"),
+                         "be one of plain, tls and redirect",
+                         Json.Text(kindName)))
     };
     let _ <- members(object, field, name, ["kind", "address", "port"] <> own);
     let address <- string(object, field, "address");
-    let _ <- notEmpty(member(field, "address"), String.toList(address));
+    let _ <- notEmptyText(member(field, "address"), address);
     let port <- integer(object, field, "port");
     let _ <- if port >= 0 && port <= 65535 then
         Right(Unit)
     else
-        Left(Invalid(field = member(field, "port"), rule = "is 0 to 65535"));
+        Left(invalid(member(field, "port"), "be 0 to 65535", Json.Integer(port)));
     let kind <- match kindName {
         "tls" -> {
             let certificate <- path(object, field, "certificate");
@@ -247,9 +256,9 @@ fn contentTypes(top : Map(String, Json.Value)) : Either(Error, Map(String, Strin
         let _ <- if beginsWith(name, '.') then
             Right(Unit)
         else
-            Left(Invalid(=field, rule = "begins with a dot"));
+            Left(invalid(field, "begin with a dot", Json.Text(name)));
         let text <- stringValue(field, value);
-        let _ <- notEmpty(field, String.toList(text));
+        let _ <- notEmptyText(field, text);
         Right(#(name, text))
     });
     Right(Map.fromList(pairs))
@@ -260,10 +269,11 @@ fn headers(top : Map(String, Json.Value)) : Either(Error, List(Http.Header)) =
         let _ <- if !String.isEmpty(name) && List.all(String.toList(name), isTokenChar) then
             Right(Unit)
         else
-            Left(Invalid(=field, rule = "is a token"));
+            Left(invalid(field, "be a token", Json.Text(name)));
         let _ <- if List.contains(written, String.toLower(name)) then
-            Left(Invalid(=field,
-                         rule = "is none of Content-Length, Date, Connection and Transfer-Encoding"))
+            Left(invalid(field,
+                         "be none of Content-Length, Date, Connection and Transfer-Encoding",
+                         Json.Text(name)))
         else
             Right(Unit);
         let text <- stringValue(field, value);
@@ -304,10 +314,10 @@ fn shell(top : Map(String, Json.Value)) : Either(Error, Optional(Shell)) =
             let _ <- if beginsWith(path, '/') then
                 Right(Unit)
             else
-                Left(Invalid(field = "shell.path", rule = "begins with /"));
+                Left(invalid("shell.path", "begin with /", Json.Text(path)));
             let origins <- elements(object, "shell", "origins", nonEmptyString);
             let command <- elements(object, "shell", "command", stringValue);
-            let _ <- notEmpty("shell.command", command);
+            let _ <- notEmptyArray("shell.command", command);
             let mostAtOnce <- positive(object, "shell", "most-at-once");
             let starts <- starts(object);
             let lifetime <- positive(object, "shell", "lifetime");
@@ -316,7 +326,7 @@ fn shell(top : Map(String, Json.Value)) : Either(Error, Optional(Shell)) =
             let _ <- if warning < lifetime then
                 Right(Unit)
             else
-                Left(Invalid(field = "shell.warning", rule = "is below the lifetime"));
+                Left(invalid("shell.warning", "be below the lifetime", Json.Integer(warning)));
             let hangup <- positive(object, "shell", "hangup");
             Right(Some(Shell(=path,
                              =origins,
@@ -352,12 +362,16 @@ fn files(config : Config, ms : Int) : Either(Error, Unit) = {
                 Right(Unit)
           | Tls(=certificate, =key) -> {
                 let _ <- regularFile(member(field, "certificate"), certificate, ms);
+                let _ <- readable(member(field, "certificate"), certificate, ms);
                 let entry <- regularFile(member(field, "key"), key, ms);
-                if entry.user == Os.user && Int.bitAnd(entry.mode, 0o077) == 0 then
+                if entry.user == Os.user
+                    && Int.bitAnd(entry.mode, 0o400) != 0
+                    && Int.bitAnd(entry.mode, 0o077) == 0 then
                     Right(Unit)
                 else
-                    Left(Invalid(field = member(field, "key"),
-                                 rule = "is readable by the program's user alone"))
+                    Left(invalid(member(field, "key"),
+                                 "be readable by the program's user alone",
+                                 pathValue(key)))
             }
           | Redirect(=acmeChallenge) ->
                 directory(member(field, "acme-challenge"), acmeChallenge, ms)
@@ -366,22 +380,38 @@ fn files(config : Config, ms : Int) : Either(Error, Unit) = {
     let _ <- directory("root", config.root, ms);
     let parent = Optional.withDefault(Path.parent(config.accessLog), Path("."));
     match Fs.stat(parent, ms) {
-        Right(Fs.Entry(kind = Fs.Directory)) -> Right(Unit)
-      | _ -> Left(Invalid(field = "access-log", rule = "stands in a directory that exists"))
+        Right(Fs.Entry(kind = Fs.Directory)) ->
+            Right(Unit)
+      | _ ->
+            Left(invalid("access-log",
+                         "stand in a directory that exists",
+                         pathValue(config.accessLog)))
     }
 }
 
 fn regularFile(field : String, path : Path, ms : Int) : Either(Error, Fs.Entry) =
     match Fs.stat(path, ms) {
         Right(Fs.Entry(kind = Fs.File) as entry) -> Right(entry)
-      | _ -> Left(Invalid(=field, rule = "names a regular file"))
+      | _ -> Left(invalid(field, "name a regular file", pathValue(path)))
+    }
+
+// A file the program can read, read whole within the milliseconds; any
+// error of the read breaks the rule.
+fn readable(field : String, path : Path, ms : Int) : Either(Error, Unit) =
+    match Fs.read(path, ms) {
+        Right(_) -> Right(Unit)
+      | Left(_) -> Left(invalid(field, "be readable", pathValue(path)))
     }
 
 fn directory(field : String, path : Path, ms : Int) : Either(Error, Unit) =
     match Fs.stat(path, ms) {
         Right(Fs.Entry(kind = Fs.Directory)) -> Right(Unit)
-      | _ -> Left(Invalid(=field, rule = "names a directory"))
+      | _ -> Left(invalid(field, "name a directory", pathValue(path)))
     }
+
+// A path of the file as JSON writes it, the string the file gave.
+fn pathValue(path : Path) : Json.Value =
+    Json.Text(Path.toString(path))
 
 //
 // The fields
@@ -403,21 +433,34 @@ fn members(object : Map(String, Json.Value),
            name : String,
            known : List(String)) : Either(Error, Unit) =
     match List.filter(List.sort(Map.keys(object)), fn(key) = !List.contains(known, key)) {
-        [] -> Right(Unit)
-      | key :: _ -> Left(Invalid(field = member(prefix, key), rule = "is no field of " <> name))
+        [] ->
+            Right(Unit)
+      | key :: _ ->
+            Left(Invalid(field = member(prefix, key),
+                         rule = "is no field of " <> name,
+                         value = None))
     }
+
+// The field breaking the rule with the value refused, as the refusal
+// writes it: as `Json.format` writes it, without its line feed at the
+// end, and U+007F, which it writes bare, as `\u007f`, so that a control
+// character refused is seen (design §4).
+fn invalid(field : String, rule : String, value : Json.Value) : Error = {
+    let formatted = String.trimEnd(Json.format(value));
+    Invalid(=field, =rule, value = Some(String.replace(formatted, "\u{7f}", "\\u007f")))
+}
 
 // The field's value, which is required.
 fn required(object : Map(String, Json.Value),
             prefix : String,
             name : String) : Either(Error, Json.Value) =
     Either.fromOptional(Map.get(object, name),
-                        Invalid(field = member(prefix, name), rule = "is required"))
+                        Invalid(field = member(prefix, name), rule = "is required", value = None))
 
 fn object(field : String, value : Json.Value) : Either(Error, Map(String, Json.Value)) =
     match value {
         Json.Object(members) -> Right(members)
-      | _ -> Left(Invalid(=field, rule = "is an object"))
+      | _ -> Left(invalid(field, "be an object", value))
     }
 
 fn objectField(object : Map(String, Json.Value),
@@ -432,11 +475,11 @@ fn stringValue(field : String, value : Json.Value) : Either(Error, String) =
     match value {
         Json.Text(text) ->
             if List.any(String.toList(text), isControl) then
-                Left(Invalid(=field, rule = "holds no control character"))
+                Left(invalid(field, "hold no control character", value))
             else
                 Right(text)
       | _ ->
-            Left(Invalid(=field, rule = "is a string"))
+            Left(invalid(field, "be a string", value))
     }
 
 // Whether the text's first code point is the character, a combining mark
@@ -455,7 +498,7 @@ fn isControl(char : Char) : Bool = {
 
 fn nonEmptyString(field : String, value : Json.Value) : Either(Error, String) = {
     let text <- stringValue(field, value);
-    let _ <- notEmpty(field, String.toList(text));
+    let _ <- notEmptyText(field, text);
     Right(text)
 }
 
@@ -467,7 +510,7 @@ fn redirectHost(field : String,
                 canonicalHost : String) : Either(Error, String) = {
     let host <- nonEmptyString(field, value);
     if String.toLower(withoutPort(host)) == String.toLower(withoutPort(canonicalHost)) then
-        Left(Invalid(=field, rule = "is not the canonical host"))
+        Left(invalid(field, "not be the canonical host", value))
     else
         Right(host)
 }
@@ -490,7 +533,7 @@ fn integer(object : Map(String, Json.Value),
     let value <- required(object, prefix, name);
     match value {
         Json.Integer(int) -> Right(int)
-      | _ -> Left(Invalid(field = member(prefix, name), rule = "is an integer"))
+      | _ -> Left(invalid(member(prefix, name), "be an integer", value))
     }
 }
 
@@ -499,11 +542,20 @@ fn positive(object : Map(String, Json.Value),
             prefix : String,
             name : String) : Either(Error, Int) = {
     let int <- integer(object, prefix, name);
-    if int > 0 then Right(int) else Left(Invalid(field = member(prefix, name), rule = "is above 0"))
+    if int > 0 then
+        Right(int)
+    else
+        Left(invalid(member(prefix, name), "be above 0", Json.Integer(int)))
 }
 
-fn notEmpty(field : String, list : List(a)) : Either(Error, Unit) =
-    if List.isEmpty(list) then Left(Invalid(=field, rule = "is not empty")) else Right(Unit)
+fn notEmptyText(field : String, text : String) : Either(Error, Unit) =
+    if String.isEmpty(text) then
+        Left(invalid(field, "not be empty", Json.Text(text)))
+    else
+        Right(Unit)
+
+fn notEmptyArray(field : String, list : List(a)) : Either(Error, Unit) =
+    if List.isEmpty(list) then Left(invalid(field, "not be empty", Json.Array([]))) else Right(Unit)
 
 // An array's elements, each read by `read` under its element's name.
 fn elements(object : Map(String, Json.Value),
@@ -517,7 +569,7 @@ fn elements(object : Map(String, Json.Value),
             List.tryMap(List.indexed(values),
                         fn(#(index, item)) = read(element(field, index), item))
       | _ ->
-            Left(Invalid(=field, rule = "is an array"))
+            Left(invalid(field, "be an array", value))
     }
 }
 
@@ -531,7 +583,7 @@ fn strings(top : Map(String, Json.Value),
     List.tryMap(List.sortBy(Map.toList(members), fn(#(key, _)) = key), fn(#(key, value)) = {
         let field = member(name, key);
         let _ <- if List.any(String.toList(key), isControl) then
-            Left(Invalid(=field, rule = "holds no control character"))
+            Left(invalid(field, "hold no control character", Json.Text(key)))
         else
             Right(Unit);
         step(field, key, value)
@@ -585,10 +637,10 @@ let example : String =
 fn edited(old : String, new : String) : String =
     String.replace(example, old, new)
 
-// The first field that breaks a rule, and the rule.
-fn broken(text : String) : Optional(#(String, String)) =
+// The first field that breaks a rule, the rule, and the value refused.
+fn broken(text : String) : Optional(#(String, String, Optional(String))) =
     match parse(text) {
-        Left(Invalid(=field, =rule)) -> Some(#(field, rule))
+        Left(Invalid(=field, =rule, =value)) -> Some(#(field, rule, value))
       | _ -> None
     }
 
@@ -650,7 +702,7 @@ let refusesNoJson =
               run = fn() =
                   Test.equal(#(parse("{"), broken("[]")),
                              #(Left(NotJson(Json.UnexpectedEnd)),
-                               Some(#("the configuration", "is an object")))))
+                               Some(#("the configuration", "be an object", Some("[]"))))))
 
 // design §4: a member of no field is answered before the fields, the
 // configuration's and a listener's by its kind, the first by its name's
@@ -665,14 +717,15 @@ let refusesMembers =
                                             "\"head\": 10000, \"body\": 1, \"arms\": 2,")),
                               broken(edited("\"kind\": \"plain\", ", "")),
                               broken("{}")],
-                             [Some(#("roots", "is no field of the configuration")),
-                              Some(#("listeners[2].key", "is no field of a plain listener")),
-                              Some(#("timeouts.arms", "is no field of timeouts")),
-                              Some(#("listeners[2].kind", "is required")),
-                              Some(#("listeners", "is required"))]))
+                             [Some(#("roots", "is no field of the configuration", None)),
+                              Some(#("listeners[2].key", "is no field of a plain listener", None)),
+                              Some(#("timeouts.arms", "is no field of timeouts", None)),
+                              Some(#("listeners[2].kind", "is required", None)),
+                              Some(#("listeners", "is required", None))]))
 
 // design §4: a value of another type than the table's breaks the rule
-// naming the type, an array's element under its index.
+// naming the type, an array's element under its index, the value refused
+// as Json.format writes it, over its lines where it is long.
 let refusesTypes =
     Test.Case(name = "refuses a value of another type",
               run = fn() =
@@ -685,14 +738,23 @@ let refusesTypes =
                               broken(edited("\"timeouts\": { \"head\": 10000, \"idle\": 60000, \"write\": 30000, \"file\": 5000 }",
                                             "\"timeouts\": 5")),
                               broken(edited("\"application/wasm\"", "[]")),
-                              broken("{\"listeners\": {}}")],
-                             [Some(#("listeners[0].port", "is an integer")),
-                              Some(#("listeners[0].port", "is an integer")),
-                              Some(#("root", "is a string")),
-                              Some(#("redirect-hosts[1]", "is a string")),
-                              Some(#("timeouts", "is an object")),
-                              Some(#("content-types..wasm", "is a string")),
-                              Some(#("listeners", "is an array"))]))
+                              broken("{\"listeners\": {}}"),
+                              broken("{\"listeners\": {\"kind\": \"plain\", \"address\": \"127.0.0.1\", \"port\": 8080, \"comment\": \"the one listener of the site\"}}")],
+                             [Some(#("listeners[0].port", "be an integer", Some("\"443\""))),
+                              Some(#("listeners[0].port", "be an integer", Some("443.0"))),
+                              Some(#("root", "be a string", Some("1"))),
+                              Some(#("redirect-hosts[1]", "be a string", Some("2"))),
+                              Some(#("timeouts", "be an object", Some("5"))),
+                              Some(#("content-types..wasm", "be a string", Some("[]"))),
+                              Some(#("listeners", "be an array", Some("{}"))),
+                              Some(#("listeners",
+                                     "be an array",
+                                     Some("{\n"
+                                              <> "  \"address\": \"127.0.0.1\",\n"
+                                              <> "  \"comment\": \"the one listener of the site\",\n"
+                                              <> "  \"kind\": \"plain\",\n"
+                                              <> "  \"port\": 8080\n"
+                                              <> "}")))]))
 
 // design §4: the rules on values: a kind, a port, a count, an empty string
 // and an empty array, an empty redirect host and one that is the canonical
@@ -732,32 +794,46 @@ let refusesValues =
                               broken(edited("\"warning\": 60000", "\"warning\": 300000")),
                               broken(edited("\"hangup\": 5000", "\"hangup\": 0")),
                               broken(edited(", \"hangup\": 5000", ""))],
-                             [Some(#("listeners[2].kind", "is one of plain, tls and redirect")),
-                              Some(#("listeners[2].port", "is 0 to 65535")),
-                              Some(#("listeners[2].port", "is 0 to 65535")),
-                              Some(#("timeouts.idle", "is above 0")),
-                              Some(#("timeouts.file", "is above 0")),
-                              Some(#("canonical-host", "is not empty")),
-                              Some(#("unused", "is no field of the configuration")),
-                              Some(#("redirect-hosts[1]", "is not empty")),
-                              Some(#("redirect-hosts[1]", "is not the canonical host")),
-                              Some(#("redirect-hosts[0]", "is not the canonical host")),
-                              Some(#("shell.command", "is not empty")),
-                              Some(#("canonical-host", "holds no control character")),
-                              Some(#("canonical-host", "holds no control character")),
-                              Some(#("content-types.wasm", "begins with a dot")),
-                              Some(#("content-types..wasm", "is not empty")),
-                              Some(#("content-types..w\tasm", "holds no control character")),
-                              Some(#("headers.X Content", "is a token")),
-                              Some(#("headers.", "is a token")),
+                             [Some(#("listeners[2].kind",
+                                     "be one of plain, tls and redirect",
+                                     Some("\"quic\""))),
+                              Some(#("listeners[2].port", "be 0 to 65535", Some("65536"))),
+                              Some(#("listeners[2].port", "be 0 to 65535", Some("-1"))),
+                              Some(#("timeouts.idle", "be above 0", Some("0"))),
+                              Some(#("timeouts.file", "be above 0", Some("-5"))),
+                              Some(#("canonical-host", "not be empty", Some("\"\""))),
+                              Some(#("unused", "is no field of the configuration", None)),
+                              Some(#("redirect-hosts[1]", "not be empty", Some("\"\""))),
+                              Some(#("redirect-hosts[1]",
+                                     "not be the canonical host",
+                                     Some("\"Ernest-Lang.ORG:443\""))),
+                              Some(#("redirect-hosts[0]",
+                                     "not be the canonical host",
+                                     Some("\"ernest-lang.org:\""))),
+                              Some(#("shell.command", "not be empty", Some("[]"))),
+                              Some(#("canonical-host",
+                                     "hold no control character",
+                                     Some("\"ernest\\u0000lang.org\""))),
+                              Some(#("canonical-host",
+                                     "hold no control character",
+                                     Some("\"ernest\\u007flang.org\""))),
+                              Some(#("content-types.wasm", "begin with a dot", Some("\"wasm\""))),
+                              Some(#("content-types..wasm", "not be empty", Some("\"\""))),
+                              Some(#("content-types..w\tasm",
+                                     "hold no control character",
+                                     Some("\".w\\tasm\""))),
+                              Some(#("headers.X Content", "be a token", Some("\"X Content\""))),
+                              Some(#("headers.", "be a token", Some("\"\""))),
                               Some(#("headers.date",
-                                     "is none of Content-Length, Date, Connection and Transfer-Encoding")),
+                                     "be none of Content-Length, Date, Connection and Transfer-Encoding",
+                                     Some("\"date\""))),
                               Some(#("headers.Transfer-ENCODING",
-                                     "is none of Content-Length, Date, Connection and Transfer-Encoding")),
-                              Some(#("shell.path", "begins with /")),
-                              Some(#("shell.warning", "is below the lifetime")),
-                              Some(#("shell.hangup", "is above 0")),
-                              Some(#("shell.hangup", "is required"))]))
+                                     "be none of Content-Length, Date, Connection and Transfer-Encoding",
+                                     Some("\"Transfer-ENCODING\""))),
+                              Some(#("shell.path", "begin with /", Some("\"shell\""))),
+                              Some(#("shell.warning", "be below the lifetime", Some("300000"))),
+                              Some(#("shell.hangup", "be above 0", Some("0"))),
+                              Some(#("shell.hangup", "is required", None))]))
 
 // design §4: the fields are checked in the table's order, a row's rules in
 // theirs: a bad port before a bad root, a listener before the next, an
@@ -787,12 +863,12 @@ let checksInOrder =
                                                            "\"warning\": 300000"),
                                                     "\"hangup\": 5000",
                                                     "\"hangup\": 0"))],
-                             [Some(#("listeners[0].port", "is 0 to 65535")),
-                              Some(#("listeners[0].port", "is 0 to 65535")),
-                              Some(#("canonical-host", "is not empty")),
-                              Some(#("redirect-hosts[0]", "is not empty")),
-                              Some(#("shell.message-limit", "is above 0")),
-                              Some(#("shell.warning", "is below the lifetime"))]))
+                             [Some(#("listeners[0].port", "be 0 to 65535", Some("-1"))),
+                              Some(#("listeners[0].port", "be 0 to 65535", Some("-1"))),
+                              Some(#("canonical-host", "not be empty", Some("\"\""))),
+                              Some(#("redirect-hosts[0]", "not be empty", Some("\"\""))),
+                              Some(#("shell.message-limit", "be above 0", Some("0"))),
+                              Some(#("shell.warning", "be below the lifetime", Some("300000")))]))
 
 // design §9: a host's port is a `:` and digits alone at its end, none among
 // them, after the last `]` where it holds one: dropped where it is, and
@@ -834,16 +910,32 @@ let readsCodePoints =
                                         fn(config) = Map.keys(config.contentTypes)),
                              Right([".\u{301}x"])))
 
-// design §4: the reasons in prose.
+// design §4: the reasons in prose: a file that cannot be read, a text
+// that is not JSON, a rule broken by a value, the field, must, the rule and
+// the value, a field absent and a member of no field, the field and the
+// rule, and a value refused as parse refuses it.
 let writesReasons =
     Test.Case(name = "writes an error in prose",
               run = fn() =
                   Test.equal([reason(Unreadable(Io.NotFound)),
                               reason(NotJson(Json.UnexpectedEnd)),
-                              reason(Invalid(field = "limits.headers", rule = "is above 0"))],
+                              reason(Invalid(field = "limits.headers",
+                                             rule = "be above 0",
+                                             value = Some("0"))),
+                              reason(Invalid(field = "root", rule = "is required", value = None)),
+                              reason(Invalid(field = "roots",
+                                             rule = "is no field of the configuration",
+                                             value = None)),
+                              match parse(edited("\"port\": 8080", "\"port\": 70000")) {
+                                  Left(error) -> reason(error)
+                                | Right(_) -> "read"
+                              }],
                              ["cannot read the file: NotFound",
                               "is not JSON: UnexpectedEnd",
-                              "limits.headers is above 0"]))
+                              "limits.headers must be above 0: 0",
+                              "root is required",
+                              "roots is no field of the configuration",
+                              "listeners[2].port must be 0 to 65535: 70000"]))
 
 // The scratch directory the tests of `read` write under.
 let scratch : String = "build/scratch/config"
@@ -865,32 +957,53 @@ fn prepared() : Either(Io.Error, String) = {
 }
 
 // The first field that breaks a rule when the text is written to the
-// scratch directory and read from there, or the error that is no Invalid.
-fn brokenFile(text : String) : Either(Error, Optional(#(String, String))) = {
+// scratch directory and read from there, the rule and the value refused,
+// or the error that is no Invalid.
+fn brokenFile(text : String) : Either(Error, Optional(#(String, String, Optional(String)))) = {
     let file = Path(scratch <> "/config.json");
     let _ <- Either.mapLeft(Fs.write(file, String.toUtf8(text), 5000), Unreadable);
     match read(file, 5000) {
         Right(_) -> Right(None)
-      | Left(Invalid(=field, =rule)) -> Right(Some(#(field, rule)))
+      | Left(Invalid(=field, =rule, =value)) -> Right(Some(#(field, rule, value)))
       | Left(error) -> Left(error)
     }
 }
 
+// A path under the scratch directory as the refusal writes it, a JSON
+// string.
+fn scratchValue(name : String) : Optional(String) =
+    Some("\"" <> scratch <> "/" <> name <> "\"")
+
 // design §4: read checks the file system's rules after the rest, the
-// certificate and the key regular files, the key the user's alone, the
-// challenge's directory and the root directories, and the access log's
-// directory there; a file that keeps every rule is read whole.
+// certificate and the key regular files, the certificate readable, the
+// key the user's alone, which a mode others may read and one its user may
+// not read both break, the challenge's directory and the root
+// directories, and the access log's directory there, in the table's
+// order, an unreadable certificate before a root that is none; a file
+// that keeps every rule is read whole. The certificate's case assumes the
+// tests run as no root, which reads any file.
 let readsFiles =
     Test.Case(name = "reads the file and checks the file system's rules",
               run = fn() = match prepared() {
                   Right(text) -> {
                       let key = Path(scratch <> "/privkey.pem");
+                      let chain = Path(scratch <> "/fullchain.pem");
                       let kept = brokenFile(text);
                       let _ = Fs.setMode(key, 0o640, 5000);
                       let loose = brokenFile(text);
+                      let _ = Fs.setMode(key, 0o000, 5000);
+                      let closed = brokenFile(text);
                       let _ = Fs.setMode(key, 0o600, 5000);
+                      let _ = Fs.setMode(chain, 0o000, 5000);
+                      let unreadable = brokenFile(text);
+                      let unreadableBeforeRoot =
+                          brokenFile(String.replace(text, scratch <> "/site", scratch <> "/none"));
+                      let _ = Fs.setMode(chain, 0o644, 5000);
                       Test.equal([kept,
                                   loose,
+                                  closed,
+                                  unreadable,
+                                  unreadableBeforeRoot,
                                   brokenFile(String.replace(text,
                                                             scratch <> "/fullchain.pem",
                                                             scratch <> "/nothing.pem")),
@@ -913,16 +1026,33 @@ let readsFiles =
                                                             scratch <> "/none"))],
                                  [Right(None),
                                   Right(Some(#("listeners[0].key",
-                                               "is readable by the program's user alone"))),
+                                               "be readable by the program's user alone",
+                                               scratchValue("privkey.pem")))),
+                                  Right(Some(#("listeners[0].key",
+                                               "be readable by the program's user alone",
+                                               scratchValue("privkey.pem")))),
                                   Right(Some(#("listeners[0].certificate",
-                                               "names a regular file"))),
+                                               "be readable",
+                                               scratchValue("fullchain.pem")))),
                                   Right(Some(#("listeners[0].certificate",
-                                               "names a regular file"))),
+                                               "be readable",
+                                               scratchValue("fullchain.pem")))),
+                                  Right(Some(#("listeners[0].certificate",
+                                               "name a regular file",
+                                               scratchValue("nothing.pem")))),
+                                  Right(Some(#("listeners[0].certificate",
+                                               "name a regular file",
+                                               scratchValue("site")))),
                                   Right(Some(#("listeners[1].acme-challenge",
-                                               "names a directory"))),
-                                  Right(Some(#("root", "names a directory"))),
-                                  Right(Some(#("access-log", "stands in a directory that exists"))),
-                                  Right(Some(#("listeners[0].port", "is 0 to 65535")))])
+                                               "name a directory",
+                                               scratchValue("none")))),
+                                  Right(Some(#("root",
+                                               "name a directory",
+                                               scratchValue("privkey.pem")))),
+                                  Right(Some(#("access-log",
+                                               "stand in a directory that exists",
+                                               scratchValue("none/access.log")))),
+                                  Right(Some(#("listeners[0].port", "be 0 to 65535", Some("-1"))))])
                   }
                 | Left(error) ->
                       Test.Failed("cannot prepare " <> scratch <> ": " <> Io.show(error))

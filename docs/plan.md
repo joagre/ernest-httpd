@@ -20,7 +20,7 @@ The server's design is `docs/design.md`, argued in the log from a proposal decid
 
 What the first release's readers found and the milestone's own items, each a step with its log entry when built.
 
-1. **The refusal's form**: a configuration's refusal names the field, `must` and the rule as §4's table writes it, and then the value it refused, `root must name a directory: /srv/site`; a host's error that the program shows carries what to do where the design knows it, `Denied` on a port below 1024 naming the capability; §4's table, §2's lines and their tests change with it (decided 2026-11-02, the log's *The refusal's form*).
+1. **The refusal's form**: done 2026-11-02, the log's *Milestone 2, item 1: the refusal's form*.
 2. **Quiet tests**: `make test` prints no fault's trace and no `cannot accept: Closed` among its passes; each test ends what it started in the design's order, and a message the end prints is decided in §2 or goes (the cold reader's finding 10, 2026-11-02).
 
 **The shell after MVP 4.2 (2026-11-02).** The site publishes one page and no shell until Ernest's MVP 4.2 runs; then `deploy/config.json` takes the member `shell` that design §13 gives, and `deploy/README.md`'s step 7 installs the image and the wrapper (the log's *The wrapper and the smoke test's configuration*).

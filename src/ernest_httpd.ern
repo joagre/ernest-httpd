@@ -2,8 +2,8 @@
 /// and stopped in order at the program's end (design §2).
 ///
 /// `main` takes the configuration's path, the one argument, and reads the
-/// file; a file that breaks a rule is refused with the field named, before
-/// anything listens. It then starts the access log and, where the
+/// file; a file that breaks a rule is refused with the field, the rule and
+/// the value named, before anything listens. It then starts the access log and, where the
 /// configuration has a `shell`, the sessions, and for each listener of the
 /// configuration listens, over TLS with the certificate and the key for a
 /// `tls` listener, says the port it got, and spawns the listener's process,
@@ -16,8 +16,9 @@
 /// write what it holds, and lets the end go on.
 ///
 /// The exit statuses are 2 for a command line of another count of
-/// arguments, 1 for a configuration refused and a listen that fails, and
-/// the signal's at the end. A listener's process that ends before the end
+/// arguments, 1 for a configuration refused and a listen that fails, a
+/// port below 1024 denied naming the capability it needs, and the signal's
+/// at the end. A listener's process that ends before the end
 /// is a failure: the entry process stops the sessions and the other
 /// listeners, as at the end, says so on standard error, and exits with the
 /// status 1.
@@ -122,13 +123,21 @@ fn listening(listener : Config.Listener,
             spawnMonitored(fn() = Listener.serve(socket, server), ListenerEnded)
         }
       | Left(error) -> {
-            Io.printlnError(listener.address
-                                <> ":"
-                                <> Int.toString(listener.port)
-                                <> ": "
-                                <> Io.show(error));
+            Io.printlnError(listenFailure(listener, error));
             Os.exit(1)
         }
+    }
+}
+
+// What a listen that fails says: the address, the port and the error, and
+// after Denied on a port below 1024 the capability that binds one.
+fn listenFailure(listener : Config.Listener, error : Io.Error) : String = {
+    let said = listener.address <> ":" <> Int.toString(listener.port) <> ": " <> Io.show(error);
+    match error {
+        Io.Denied when listener.port < 1024 ->
+            said <> ": a port below 1024 needs CAP_NET_BIND_SERVICE"
+      | _ ->
+            said
     }
 }
 
@@ -345,6 +354,23 @@ let refusesStarts = Test.Case(name = "refuses what it cannot serve", run = fn() 
       | Left(error) ->
             Test.Failed(Io.show(error))
     }
+})
+
+// design §2: a listen that fails says the address, the port and the error,
+// and Denied on a port below 1024 the capability it needs, which another
+// error and Denied on a port above say nothing of. A regression test,
+// written after the code: it holds the line, not the host's Denied, which
+// a test that runs as root or with the capability cannot make.
+let saysListenFailures = Test.Case(name = "says what a listen that fails needs", run = fn() = {
+    let listenerOn = fn(port) = Config.Listener(kind = Config.Plain, address = "0.0.0.0", =port);
+    Test.equal([listenFailure(listenerOn(80), Io.Denied),
+                listenFailure(listenerOn(1023), Io.Denied),
+                listenFailure(listenerOn(1024), Io.Denied),
+                listenFailure(listenerOn(443), Io.Other("address already in use"))],
+               ["0.0.0.0:80: Denied: a port below 1024 needs CAP_NET_BIND_SERVICE",
+                "0.0.0.0:1023: Denied: a port below 1024 needs CAP_NET_BIND_SERVICE",
+                "0.0.0.0:1024: Denied",
+                "0.0.0.0:443: Other(\"address already in use\")"])
 })
 
 // What a running program writes to standard output until its lines are
