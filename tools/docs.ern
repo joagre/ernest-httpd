@@ -144,7 +144,9 @@ fn missingIn(file : String, tops : List(String)) : List(String) =
 // The backticked pieces of the text outside fenced code that begin with one
 // of the tops; a wildcard or a metavariable, `<name>`, names no one file, a
 // piece that ends with "/" names a directory the writer did not mean to pin,
-// and a manual page is there only once a release has written it.
+// one that holds a space is a command line, whose first word is the program
+// the line runs and not a path the document pins, and a manual page is
+// there only once a release has written it.
 fn pathsIn(text : String, tops : List(String)) : List(String) = {
     let pieces = String.split(unfenced(text), "`");
     List.filterMap(List.indexed(pieces), fn(indexed) = match indexed {
@@ -158,6 +160,7 @@ fn isPath(piece : String, tops : List(String)) : Bool =
         && String.startsWith(piece, "docs/man/") == false
         && String.contains(piece, "*") == false
         && String.contains(piece, "<") == false
+        && String.contains(piece, " ") == false
         && String.endsWith(piece, "/") == false
 
 // The text without its fenced blocks and their fences.
@@ -485,11 +488,12 @@ let readsItems = Test.Case(name = "reads a list item as a paragraph", run = fn()
 })
 
 /// A backticked path under a top is found outside fenced code; one with a
-/// wildcard, a metavariable or a trailing "/" is not, nor a manual page, nor
-/// one under no top.
+/// wildcard, a metavariable, a space, which makes it a command line, or a
+/// trailing "/" is not, nor a manual page, nor one under no top.
 let findsPaths = Test.Case(name = "finds the backticked paths", run = fn() = {
     let text =
         "see `src/a.ern` and `lib/*/build`, `bin/<name>`, `src/`, `other/x`\n"
+            <> "`bin/a --config-dir dir b.json`\n"
             <> "```\n`src/fenced.ern`\n```\n`docs/b.md`, `docs/man/m.md`";
     Test.equal(pathsIn(text, ["src/", "docs/"]), ["src/a.ern", "docs/b.md"])
 })
