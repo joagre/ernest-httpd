@@ -673,12 +673,8 @@ fn opened(sessions : Sessions.Sessions,
                    },
                    Io.show)
 
-// A frame the client writes, masked with a key of its own.
-fn masked(message : WebSocket.Message) : Bytes =
-    Optional.withDefault(WebSocket.encodeMasked(message, Crypto.randomBytes(4)), <<>>)
-
 fn sent(client : Client, message : WebSocket.Message) : Client = {
-    let _ = Tcp.write(client.socket, masked(message), 5000);
+    let _ = Tcp.write(client.socket, Smoke.masked(message), 5000);
     client
 }
 
@@ -765,7 +761,7 @@ let answersPingsAndCloses = Test.Case(name = "answers a ping and a close", run =
             opened(sessions,
                    deadlines(60000),
                    [],
-                   masked(WebSocket.Ping(String.toUtf8("carried"))));
+                   Smoke.masked(WebSocket.Ping(String.toUtf8("carried"))));
         let _ = sent(client, WebSocket.Pong(String.toUtf8("dropped")));
         let _ = sent(client, WebSocket.Ping(String.toUtf8("read")));
         let _ = sent(client, WebSocket.Close(code = Some(1000), reason = "done"));
@@ -787,13 +783,13 @@ let closesOnBadMessages = Test.Case(name = "closes on a message it does not take
         Right(#(messages(client, 2), ended()))
     };
     let closed = ["Close(1008)", "closed"];
-    Test.equal(#([closing(masked(page("{"))),
-                  closing(masked(page("{\"size\": [24, 80]}"))),
-                  closing(masked(page("{\"resize\": [0, 80]}"))),
-                  closing(masked(page("{\"resize\": [24, 65536]}"))),
-                  closing(masked(page("{\"extend\": false}"))),
-                  closing(masked(page("{\"extend\": true, \"stop\": true}"))),
-                  closing(masked(WebSocket.Binary(Bytes.repeat(<<0>>, 33)))),
+    Test.equal(#([closing(Smoke.masked(page("{"))),
+                  closing(Smoke.masked(page("{\"size\": [24, 80]}"))),
+                  closing(Smoke.masked(page("{\"resize\": [0, 80]}"))),
+                  closing(Smoke.masked(page("{\"resize\": [24, 65536]}"))),
+                  closing(Smoke.masked(page("{\"extend\": false}"))),
+                  closing(Smoke.masked(page("{\"extend\": true, \"stop\": true}"))),
+                  closing(Smoke.masked(WebSocket.Binary(Bytes.repeat(<<0>>, 33)))),
                   closing(WebSocket.encode(WebSocket.Ping(<<>>)))],
                  stopped(sessions)),
                #([Right(#(closed, "Returned")),
@@ -834,8 +830,8 @@ let carriesASession = Test.Case(name = "carries a session through the sessions",
             opened(sessions,
                    deadlines(60000),
                    carried,
-                   masked(page("{\"resize\": [24, 80]}"))
-                       <> masked(WebSocket.Binary(String.toUtf8("hello\n"))));
+                   Smoke.masked(page("{\"resize\": [24, 80]}"))
+                       <> Smoke.masked(WebSocket.Binary(String.toUtf8("hello\n"))));
         let #(echoed, first) = typed(first, "hello\r\nhello\r\n", "");
         let second <- opened(sessions, deadlines(60000), carried, <<>>);
         let _ = sent(second, page("{\"resize\": [30, 100]}"));

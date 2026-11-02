@@ -1,0 +1,621 @@
+/// The smoke test: the checks run against a deployed site, each said on
+/// standard output as a line, and the program's status whether every one
+/// passed (design §13).
+///
+/// `main` takes the site's canonical host, its one argument, and runs the
+/// checks against it over TLS on 443, the far end's certificate verified
+/// against the host's bundle, `/etc/ssl/certs/ca-certificates.crt`, and
+/// over plain HTTP on 80. It prints each check's line, the check's name and
+/// `: ok`, or `: failed: ` and what came, and exits with the status 0 where
+/// every check passed and 1 otherwise; it refuses another count of
+/// arguments with `usage: smoke host` on standard error and the status 2.
+///
+/// `checks` runs the same checks against any site, over the scheme its
+/// port takes, `https` or `http`: `/` answered 200; `/` on the redirect
+/// port, and `/` for the first redirect host, `www.` and the host, each
+/// answered 301 to `https://`, the host and `/`; `/` for a host that is
+/// neither, `elsewhere`, answered 421; and the shell's path,
+/// `/shell/session`, upgraded from the origin, a resize of 24 rows by 80
+/// columns attaching a session, `1 + 2` and a line feed typed as keys
+/// answering output that holds `3 : Int` within 5000 milliseconds, its
+/// type dimmed as the shell writes it at a terminal or plain where
+/// `NO_COLOR` is set, and a stop closing with 4004. Each check opens a
+/// connection of its own, so that one that fails says what came and the
+/// next runs as any.
+///
+/// The checks' client is the end-to-end tests' too: a GET's response,
+/// `get`; an upgrade's, `upgrade`; a message framed as a client frames it,
+/// `masked`; and a shell's output read until a test passes,
+/// `readOutput`.
+///
+/// ## Examples
+///
+/// Against the deployed site, from a checkout or an unpacked release:
+///
+/// ```sh
+/// make smoke HOST=ernest-lang.org
+/// ```
+
+//
+// Types
+//
+
+/// A check run: its name, and `Right(Unit)` where it passed or what came
+/// where it failed.
+export type Check = Check(name : String, result : Either(String, Unit))
+
+//
+// Program
+//
+
+/// The checks run against the site of the host the one argument names,
+/// over TLS on 443 and plain HTTP on 80, each check's line printed, and
+/// the status 0 where every one passed and 1 otherwise.
+export fn main() : Unit =
+    match Os.arguments {
+        [host] -> {
+            let checked = checks("https", host, 443, 80, "https://" <> host);
+            List.forEach(checked, fn(check) = Io.println(line(check)));
+            Os.exit(if List.all(checked, passed) then 0 else 1)
+        }
+      | _ -> {
+            Io.printlnError("usage: smoke host");
+            Os.exit(2)
+        }
+    }
+
+// A check's line: its name, and `: ok` where it passed or `: failed: ` and
+// what came where it failed.
+fn line(check : Check) : String =
+    match check.result {
+        Right(Unit) -> check.name <> ": ok"
+      | Left(came) -> check.name <> ": failed: " <> came
+    }
+
+fn passed(check : Check) : Bool =
+    check.result == Right(Unit)
+
+//
+// The checks
+//
+
+// The host's bundle of the certificate authorities, which a site's
+// certificate is verified against over TLS.
+let bundle : Path = Path("/etc/ssl/certs/ca-certificates.crt")
+
+// The shell's path the site serves.
+let shellPath : String = "/shell/session"
+
+// The milliseconds each connect, write and read of a check waits.
+let socketMs : Int = 5000
+
+// The milliseconds the shell has, from the keys written, to answer them
+// with output that holds `3 : Int`: a session started and its program's
+// answer.
+let answerMs : Int = 5000
+
+/// The checks run against the site of the host on the port, over the
+/// scheme, `https` or `http`, and on the redirect port over plain HTTP,
+/// the shell's upgrade from the origin, each with its name and what came
+/// where it failed, in the order the module's documentation gives them.
+export fn checks(scheme : String,
+                 host : String,
+                 port : Int,
+                 redirectPort : Int,
+                 origin : String) : List(Check) = {
+    let canonical = "https://" <> host <> "/";
+    let site = scheme <> "://" <> host <> ":" <> Int.toString(port);
+    let redirect = "http://" <> host <> ":" <> Int.toString(redirectPort);
+    [Check(name = site <> "/ answers 200",
+           result = answered(opened(scheme, host, port), host, "200")),
+     Check(name = redirect <> "/ answers 301 to " <> canonical,
+           result = answered(opened("http", host, redirectPort), host, "301 " <> canonical)),
+     Check(name = site <> "/ for www." <> host <> " answers 301 to " <> canonical,
+           result = answered(opened(scheme, host, port), "www." <> host, "301 " <> canonical)),
+     Check(name = site <> "/ for elsewhere answers 421",
+           result = answered(opened(scheme, host, port), "elsewhere", "421")),
+     Check(name = site <> shellPath <> " runs 1 + 2 and closes with 4004 at a stop",
+           result = shell(opened(scheme, host, port), host, origin))]
+}
+
+// A connection to the host's port: over TLS, the far end's certificate
+// verified against the bundle, for https, and plain for http; another
+// scheme is refused.
+fn opened(scheme : String, host : String, port : Int) : Either(String, Address(Tcp.SocketMsg)) =
+    match scheme {
+        "https" ->
+            Either.mapLeft(Tcp.connectTls(host, port, Tcp.Verified(bundle), socketMs), Io.show)
+      | "http" ->
+            Either.mapLeft(Tcp.connect(host, port, socketMs), Io.show)
+      | _ ->
+            Left("the scheme " <> scheme <> " is neither https nor http")
+    }
+
+// What a GET of / naming the host answers over the connection, which is
+// then closed, compared with what is wanted: its status, and its Location
+// after a space where it has one.
+fn answered(connection : Either(String, Address(Tcp.SocketMsg)),
+            host : String,
+            wanted : String) : Either(String, Unit) = {
+    let socket <- connection;
+    let got = Either.map(get(socket, "/", host, socketMs), shown);
+    Tcp.close(socket);
+    let came <- Either.mapLeft(got, Io.show);
+    if came == wanted then Right(Unit) else Left(came)
+}
+
+// A response as a check compares it: its status, and its Location after a
+// space where it has one.
+fn shown(#(response, _) : #(Http.Response, Bytes)) : String =
+    match Http.header(response.headers, "Location") {
+        Some(location) -> Int.toString(response.status) <> " " <> location
+      | None -> Int.toString(response.status)
+    }
+
+// The shell's check over the connection, which is then closed.
+fn shell(connection : Either(String, Address(Tcp.SocketMsg)),
+         host : String,
+         origin : String) : Either(String, Unit) = {
+    let socket <- connection;
+    let result = shellOver(socket, host, origin);
+    Tcp.close(socket);
+    result
+}
+
+// The shell's path upgraded from the origin, answered 101; the terminal
+// resized to 24 by 80 and `1 + 2` and a line feed typed, answered within
+// answerMs by output that holds `3 : Int`; and a stop, answered by a close
+// of 4004, the output before it passed over.
+fn shellOver(socket : Address(Tcp.SocketMsg),
+             host : String,
+             origin : String) : Either(String, Unit) = {
+    let #(response, carried) <-
+        Either.mapLeft(upgrade(socket, shellPath, host, origin, socketMs), Io.show);
+    let _ <- if response.status == 101 then Right(Unit) else Left(shown(#(response, <<>>)));
+    let typed =
+        masked(WebSocket.Text("{\"resize\": [24, 80]}"))
+            <> masked(WebSocket.Binary(String.toUtf8("1 + 2\n")));
+    let _ <- Either.mapLeft(Tcp.write(socket, typed, socketMs), Io.show);
+    // the server's messages, a piece of the terminal's output each, of at
+    // most 1 MiB
+    let decoder = WebSocket.decoder(WebSocket.FromServer, 1048576);
+    let #(_, rest) <- readOutput(socket, decoder, carried, answerMs, holdsTheAnswer);
+    let _ <-
+        Either.mapLeft(Tcp.write(socket, masked(WebSocket.Text("{\"stop\": true}")), socketMs),
+                       Io.show);
+    let code <- closeCode(socket, rest, <<>>);
+    if code == 4004 then Right(Unit) else Left("Close(" <> Int.toString(code) <> ")")
+}
+
+// Whether the output holds `3 : Int` as the shell writes it at a terminal,
+// its type dimmed, or plain where the environment's NO_COLOR is set.
+fn holdsTheAnswer(output : Bytes) : Bool =
+    List.any(["3" <> Ansi.styled(" : Int", Ansi.Dim), "3 : Int"],
+             fn(text) = Bytes.contains(output, String.toUtf8(text)))
+
+// The code of the next close the socket carries, the bytes carried first
+// and the binary messages before it passed over; what came instead where
+// another message, an error or the connection's end comes first.
+fn closeCode(socket : Address(Tcp.SocketMsg),
+             decoder : WebSocket.Decoder,
+             carried : Bytes) : Either(String, Int) = {
+    let #(messages, rest) <- Either.mapLeft(WebSocket.decode(decoder, carried), Io.show);
+    match List.filter(messages, fn(message) = !isBinary(message)) {
+        WebSocket.Close(code = Some(code)) :: _ ->
+            Right(code)
+      | message :: _ ->
+            Left(Io.show(message))
+      | [] ->
+            match Tcp.read(socket, socketMs) {
+                Right(bytes) -> closeCode(socket, rest, bytes)
+              | Left(Io.Closed) -> Left("closed")
+              | Left(error) -> Left(Io.show(error))
+            }
+    }
+}
+
+fn isBinary(message : WebSocket.Message) : Bool =
+    match message {
+        WebSocket.Binary(_) -> true
+      | _ -> false
+    }
+
+//
+// The client
+//
+
+/// The response to a GET of the target naming the host, written to the
+/// socket, and its body, of at most 16 MiB; the write, the head and the
+/// body each within the milliseconds. A response that is no HTTP/1.1
+/// answers `Other` and what is wrong with it.
+export fn get(socket : Address(Tcp.SocketMsg),
+              target : String,
+              host : String,
+              ms : Int) : Either(Io.Error, #(Http.Response, Bytes)) = {
+    let request = requested(target, [Http.Header(name = "Host", value = host)]);
+    let _ <- Tcp.write(socket, Http.renderRequest(request, <<>>), ms);
+    let #(response, rest) <- Either.mapLeft(Http.readResponse(socket, <<>>, limits, ms), readError);
+    let #(body, _) <-
+        Either.mapLeft(Http.readResponseBody(socket, rest, response, 16777216, ms), readError);
+    Right(#(response, body))
+}
+
+/// The response to an upgrade of the target to a WebSocket, naming the
+/// host and from the origin, its key 16 bytes of its own, written to the
+/// socket, and the bytes after the response's head; the write and the head
+/// each within the milliseconds. A response that is no HTTP/1.1 answers
+/// `Other` and what is wrong with it.
+export fn upgrade(socket : Address(Tcp.SocketMsg),
+                  target : String,
+                  host : String,
+                  origin : String,
+                  ms : Int) : Either(Io.Error, #(Http.Response, Bytes)) = {
+    let request =
+        requested(target,
+                  [Http.Header(name = "Host", value = host),
+                   Http.Header(name = "Upgrade", value = "websocket"),
+                   Http.Header(name = "Connection", value = "Upgrade"),
+                   Http.Header(name = "Sec-WebSocket-Version", value = "13"),
+                   Http.Header(name = "Origin", value = origin),
+                   Http.Header(name = "Sec-WebSocket-Key",
+                               value = Base64.encode(Crypto.randomBytes(16)))]);
+    let _ <- Tcp.write(socket, Http.renderRequest(request, <<>>), ms);
+    Either.mapLeft(Http.readResponse(socket, <<>>, limits, ms), readError)
+}
+
+/// The message as a client sends it: one frame masked with a key of its
+/// own, `Crypto.randomBytes(4)`.
+export fn masked(message : WebSocket.Message) : Bytes =
+    Optional.withDefault(WebSocket.encodeMasked(message, Crypto.randomBytes(4)), <<>>)
+
+/// The binary messages the socket carries, the bytes carried first,
+/// decoded with the decoder and read within the milliseconds until the
+/// test passes of what they hold together: what they hold and the decoder
+/// after them, or what came instead, the output shown and then the
+/// message, the error or the time that came before the test passed.
+export fn readOutput(socket : Address(Tcp.SocketMsg),
+                     decoder : WebSocket.Decoder,
+                     carried : Bytes,
+                     ms : Int,
+                     test : (Bytes) -> Bool) : Either(String, #(Bytes, WebSocket.Decoder)) =
+    outputUntil(socket, decoder, carried, test, <<>>, Clock.monotonic() + ms)
+
+// The output read on until the test passes or the time, a monotonic one,
+// comes.
+fn outputUntil(socket : Address(Tcp.SocketMsg),
+               decoder : WebSocket.Decoder,
+               carried : Bytes,
+               test : (Bytes) -> Bool,
+               acc : Bytes,
+               time : Int) : Either(String, #(Bytes, WebSocket.Decoder)) = {
+    let #(messages, rest) <-
+        Either.mapLeft(WebSocket.decode(decoder, carried),
+                       fn(error) = following(acc, Io.show(error)));
+    let output <- List.tryFold(messages, acc, fn(sofar, message) = match message {
+        WebSocket.Binary(bytes) -> Right(sofar <> bytes)
+      | other -> Left(following(sofar, Io.show(other)))
+    });
+    let left = time - Clock.monotonic();
+    if test(output) then
+        Right(#(output, rest))
+    else if left <= 0 then
+        Left(following(output, "nothing more within the time"))
+    else match Tcp.read(socket, left) {
+        Right(bytes) -> outputUntil(socket, rest, bytes, test, output, time)
+      | Left(Io.Timeout) -> Left(following(output, "nothing more within the time"))
+      | Left(error) -> Left(following(output, Io.show(error)))
+    }
+}
+
+// The output shown, as text where it is UTF-8, and what came after it.
+fn following(output : Bytes, came : String) : String = {
+    let text = match String.fromUtf8(output) {
+        Some(written) -> Io.show(written)
+      | None -> Io.show(output)
+    };
+    "output " <> text <> " then " <> came
+}
+
+// A request of HTTP/1.1 for the target with the headers.
+fn requested(target : String, headers : List(Http.Header)) : Http.Request =
+    Http.Request(method = "GET", =target, version = Http.Version(major = 1, minor = 1), =headers)
+
+// The most bytes of a response's line and of its headers together.
+let limits : Http.Limits = Http.Limits(line = 8192, headers = 65536)
+
+// A read's error as the socket's, a response that is no HTTP/1.1 written
+// as `Other`.
+fn readError(error : Http.ReadError) : Io.Error =
+    match error {
+        Http.Socket(cause) -> cause
+      | Http.Protocol(cause) -> Io.Other("the response is " <> Io.show(cause))
+    }
+
+//
+// Tests
+//
+
+// The scratch directory the tests write their site and configuration
+// under, from the repository's root, where make test runs them.
+let scratch : String = "build/scratch/smoke"
+
+// The scratch site's configuration: a plain and a redirect listener on the
+// loopback, ports the host picks, the host localhost and its redirect host
+// www.localhost, and a shell on the site's path from http://localhost,
+// whose command answers the first line typed with `3 : Int` and then
+// copies the terminal, as a stand-in for `ern shell`.
+let configuration : String =
+    "{\"listeners\": [{\"kind\": \"plain\", \"address\": \"127.0.0.1\", \"port\": 0},\n"
+        <> "  {\"kind\": \"redirect\", \"address\": \"127.0.0.1\", \"port\": 0, \"acme-challenge\": \""
+        <> scratch
+        <> "/acme\"}],\n"
+        <> " \"root\": \""
+        <> scratch
+        <> "/site\", \"canonical-host\": \"localhost\", \"redirect-hosts\": [\"www.localhost\"],\n"
+        <> " \"timeouts\": {\"head\": 5000, \"idle\": 60000, \"write\": 5000, \"file\": 5000},\n"
+        <> " \"limits\": {\"request-line\": 1024, \"headers\": 4096,\n"
+        <> "            \"connections\": 16, \"connections-per-address\": 16},\n"
+        <> " \"content-types\": {}, \"headers\": {}, \"access-log\": \""
+        <> scratch
+        <> "/access.log\",\n"
+        <> " \"shell\": {\"path\": \"/shell/session\", \"origins\": [\"http://localhost\"],\n"
+        <> "           \"command\": [\"sh\", \"-c\", \"read line && echo '3 : Int' && exec cat\"],\n"
+        <> "           \"most-at-once\": 2, \"starts\": {\"count\": 10, \"within\": 60000},\n"
+        <> "           \"lifetime\": 60000, \"warning\": 30000,\n"
+        <> "           \"message-limit\": 1024, \"hangup\": 1000}}\n"
+
+// The scratch site written, its page, the challenge's directory and the
+// configuration, and the configuration's path.
+fn written() : Either(Io.Error, String) = {
+    let path = scratch <> "/config.json";
+    let _ <- Fs.makeDir(Path(scratch <> "/site"), 5000);
+    let _ <- Fs.makeDir(Path(scratch <> "/acme"), 5000);
+    let _ <- Fs.write(Path(scratch <> "/site/index.html"), String.toUtf8("<p>smoke</p>\n"), 5000);
+    let _ <- Fs.write(Path(path), String.toUtf8(configuration), 5000);
+    Right(path)
+}
+
+// The server started on the configuration by its launcher through a shell
+// that says its process number first, the launcher running in its place:
+// the running program, its number, and the ports it says it listens on.
+fn served(path : String) : Either(Io.Error, #(Address(Os.ProgramMsg), String, List(Int))) = {
+    let program <-
+        Os.start(Os.Command(program = "sh",
+                            arguments = ["-c", "echo $$; exec bin/ernest_httpd \"$0\"", path],
+                            input = <<>>));
+    let out <- said(program, "", 3);
+    match String.lines(out) {
+        pid :: listening ->
+            Right(#(program,
+                    pid,
+                    List.filterMap(listening,
+                                   fn(line) =
+                                       String.toInt(String.replace(line,
+                                                                   "listening on 127.0.0.1:",
+                                                                   "")))))
+      | [] ->
+            Left(Io.Other("said nothing"))
+    }
+}
+
+// What the running program writes to standard output until its lines are
+// the count.
+fn said(program : Address(Os.ProgramMsg), acc : String, count : Int) : Either(Io.Error, String) =
+    if List.size(String.lines(acc)) >= count && String.endsWith(acc, "\n") then
+        Right(acc)
+    else match Os.read(program, 30000) {
+        Right(Os.Stdout(bytes)) ->
+            said(program, acc <> Optional.withDefault(String.fromUtf8(bytes), "?"), count)
+      | Right(Os.Stderr(_)) ->
+            said(program, acc, count)
+      | Right(Os.Exited(status)) ->
+            Left(Io.Other("exited with " <> Int.toString(status) <> " after " <> acc))
+      | Left(error) ->
+            Left(error)
+    }
+
+// The server told to end by the termination signal, by its number, and its
+// status once it has exited.
+fn stopped(program : Address(Os.ProgramMsg), pid : String) : Either(Io.Error, Int) = {
+    let _ <- Os.run(Os.Command(program = "kill", arguments = ["-TERM", pid], input = <<>>), 5000);
+    exited(program)
+}
+
+fn exited(program : Address(Os.ProgramMsg)) : Either(Io.Error, Int) =
+    match Os.read(program, 30000) {
+        Right(Os.Exited(status)) -> Right(status)
+      | Right(_) -> exited(program)
+      | Left(error) -> Left(error)
+    }
+
+// design §13: the checks against a site, the scratch site served by the
+// launcher over plain HTTP: every check passes and says `: ok` against the
+// site whose host, redirect host, listeners and shell they check, the
+// shell's stand-in answering the keys typed and the stop closing with
+// 4004; and against the same site from an origin it does not take, the
+// shell's check fails and says what came, the 403, while the rest pass;
+// and against a port where nothing listens every check fails and says
+// `Refused`, each in a connection of its own. get, upgrade, masked and
+// readOutput are the client they run with.
+let checksASite = Test.Case(name = "checks a site and says what came", run = fn() = {
+    let result = {
+        let path <- written();
+        let #(program, pid, ports) <- served(path);
+        let #(plainPort, redirectPort) = match ports {
+            [one, two] -> #(one, two)
+          | _ -> #(0, 0)
+        };
+        let passing = checks("http", "localhost", plainPort, redirectPort, "http://localhost");
+        let refused = checks("http", "localhost", plainPort, redirectPort, "http://elsewhere");
+        let closed <- Tcp.listen("127.0.0.1", 0);
+        let nothing <- Tcp.port(closed);
+        Tcp.closeListener(closed);
+        let unanswered = checks("http", "localhost", nothing, nothing, "http://localhost");
+        let status <- stopped(program, pid);
+        Right(#(List.map(passing, line),
+                List.map(refused, line),
+                List.map(unanswered, line),
+                status,
+                plainPort,
+                redirectPort,
+                nothing))
+    };
+    match result {
+        Right(#(passing, refused, unanswered, status, plainPort, redirectPort, nothing)) -> {
+            let named = fn(port, redirect) = {
+                let site = "http://localhost:" <> Int.toString(port);
+                [site <> "/ answers 200",
+                 "http://localhost:"
+                     <> Int.toString(redirect)
+                     <> "/ answers 301 to https://localhost/",
+                 site <> "/ for www.localhost answers 301 to https://localhost/",
+                 site <> "/ for elsewhere answers 421",
+                 site <> "/shell/session runs 1 + 2 and closes with 4004 at a stop"]
+            };
+            let ok = List.map(named(plainPort, redirectPort), fn(name) = name <> ": ok");
+            let shellName =
+                "http://localhost:"
+                    <> Int.toString(plainPort)
+                    <> "/shell/session runs 1 + 2 and closes with 4004 at a stop";
+            Test.equal(#(passing, refused, unanswered, status),
+                       #(ok,
+                         List.take(ok, 4) <> [shellName <> ": failed: 403"],
+                         List.map(named(nothing, nothing), fn(name) = name <> ": failed: Refused"),
+                         143))
+        }
+      | Left(error) ->
+            Test.Failed(Io.show(error))
+    }
+})
+
+// What a test's process takes: a run of `ern run` on this module's
+// compiled form, by the index of its arguments.
+type Ran = Ran(index : Int, outcome : Either(Io.Error, Os.Finished))
+
+// design §13: the program refuses a command line of another count of
+// arguments than one, none and two, with the usage on standard error,
+// nothing on standard output, and the status 2; each is run by `ern run`
+// on the module's own compiled form, as make smoke runs it, at once.
+let refusesUsage = Test.Case(name = "refuses another count of arguments", run = fn() = {
+    let me = self();
+    let runs = [[], ["ernest-lang.org", "www.ernest-lang.org"]];
+    List.forEach(List.indexed(runs), fn(#(index, arguments)) = {
+        let _ =
+            spawn(fn() =
+                      send(me,
+                           Ran(=index,
+                               outcome = Os.run(Os.Command(program = "ern",
+                                                           arguments = ["run", "build/smoke.erc"]
+                                                               <> arguments,
+                                                           input = <<>>),
+                                                30000))));
+        Unit
+    });
+    let outcomes = List.map(List.indexed(runs), fn(#(wanted, _)) = receive {
+        Ran(=index, =outcome) when index == wanted ->
+            Either.map(outcome,
+                       fn(finished) =
+                           #(finished.status,
+                             String.fromUtf8(finished.stdout),
+                             String.fromUtf8(finished.stderr)))
+      | after 60000 ->
+            Left(Io.Timeout)
+    });
+    let refusal = Right(#(2, Some(""), Some("usage: smoke host\n")));
+    Test.equal(outcomes, [refusal, refusal])
+})
+
+// The text of a file of the repository, by its path; "" where it cannot be
+// read.
+fn text(path : String) : String =
+    match Fs.read(Path(path), 5000) {
+        Right(bytes) -> Optional.withDefault(String.fromUtf8(bytes), "")
+      | Left(_) -> ""
+    }
+
+// The lines of the file's text that it lacks, each with the file's path.
+fn lacked(path : String, wanted : List(String)) : List(String) = {
+    let lines = List.map(String.lines(text(path)), String.trim);
+    List.filterMap(wanted,
+                   fn(line) =
+                       if List.contains(lines, line) then None else Some(path <> " lacks " <> line))
+}
+
+// The seconds of the unit's TimeoutStopSec, where it has one.
+fn stopSeconds(unit : String) : Optional(Int) =
+    List.map(String.lines(unit), String.trim)
+        |> List.filter(fn(line) = String.startsWith(line, "TimeoutStopSec="))
+        |> List.filterMap(fn(line) = String.toInt(String.replace(line, "TimeoutStopSec=", "")))
+        |> List.get(0)
+
+// design §13: the files of deploy/ as they are installed: config.json
+// passes Config.parse, every rule but the file system's, with a shell;
+// the unit holds each line the design names, Type=exec, User=httpd, the
+// working directory, the PATH with the prefix's bin first, the installed
+// launcher's ExecStart with node/ and its config.json, the prefix's ern in
+// ExecReload, Restart=on-failure, KillMode=mixed,
+// AmbientCapabilities=CAP_NET_BIND_SERVICE, ProtectSystem=strict,
+// PrivateTmp=yes and the ReadWritePaths, and a TimeoutStopSec above
+// timeouts.write and shell.hangup of config.json together; the deploy hook
+// copies fullchain.pem and privkey.pem into node/, owned by httpd, the
+// key's mode 0600, and restarts the unit; and logrotate rotates log/'s
+// access.log as httpd. A line that is missing is named.
+let holdsTheDeployment = Test.Case(name = "holds the files of deploy/", run = fn() = {
+    let unit = "deploy/ernest-httpd.service";
+    let parsed = Config.parse(text("deploy/config.json"));
+    let stop = match #(parsed, stopSeconds(text(unit))) {
+        #(Right(Config.Config(=timeouts, shell = Some(shell))), Some(seconds)) ->
+            if seconds * 1000 > timeouts.write + shell.hangup then
+                []
+            else
+                [unit <> "'s TimeoutStopSec is not above timeouts.write and shell.hangup together"]
+      | #(Right(Config.Config(shell = None)), _) ->
+            ["deploy/config.json has no shell"]
+      | #(_, None) ->
+            [unit <> " lacks TimeoutStopSec"]
+      | #(Left(error), _) ->
+            ["deploy/config.json: " <> Config.reason(error)]
+    };
+    let prefix = "/home/httpd/opt/local";
+    let home = "/home/httpd/ernest-httpd";
+    let node = home <> "/node";
+    let live = "/etc/letsencrypt/live/ernest-lang.org";
+    Test.equal(lacked(unit,
+                      ["Type=exec",
+                       "User=httpd",
+                       "WorkingDirectory=/home/httpd",
+                       "Environment=PATH=" <> prefix <> "/bin:/usr/local/bin:/usr/bin:/bin",
+                       "ExecStart="
+                           <> prefix
+                           <> "/bin/ernest_httpd --config-dir "
+                           <> node
+                           <> " "
+                           <> node
+                           <> "/config.json",
+                       "ExecReload=" <> prefix <> "/bin/ern reload --config-dir " <> node,
+                       "Restart=on-failure",
+                       "KillMode=mixed",
+                       "AmbientCapabilities=CAP_NET_BIND_SERVICE",
+                       "ProtectSystem=strict",
+                       "PrivateTmp=yes",
+                       "ReadWritePaths="
+                           <> home
+                           <> "/log "
+                           <> node
+                           <> " /home/httpd/.local/share/containers /run/user"])
+                   <> stop
+                   <> lacked("deploy/certbot-deploy.sh",
+                             ["install -o httpd -g httpd -m 0644 "
+                                  <> live
+                                  <> "/fullchain.pem "
+                                  <> node
+                                  <> "/fullchain.pem",
+                              "install -o httpd -g httpd -m 0600 "
+                                  <> live
+                                  <> "/privkey.pem "
+                                  <> node
+                                  <> "/privkey.pem",
+                              "systemctl restart ernest-httpd.service"])
+                   <> lacked("deploy/logrotate", [home <> "/log/access.log {", "su httpd httpd"]),
+               [])
+})

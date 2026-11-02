@@ -1,12 +1,16 @@
 #!/bin/sh
-# The launcher: ern run on the program named as this file is, with everything
-# under lib/ on the load path, each library's build and the applications'
-# ebins through --libs-dir, from a checkout and from an unpacked release
-# alike. A leading --config-dir dir, the one option an operator gives, goes to
-# ern run (report §11.2, §8.3); everything after it goes to the program. The
-# working directory stays the caller's.
-root=$(cd "$(dirname "$0")/.." && pwd) || exit 1
+# The launcher: ern run on the program named as this file is (docs/design.md
+# §13). Its root is ../lib/NAME/ where NAME's compiled form stands there,
+# beside an installed launcher, and .. otherwise, a checkout or an unpacked
+# release; everything under that root's lib/ is on the load path, each
+# library's build and the applications' ebins through --libs-dir. A leading
+# --config-dir dir, the one option an operator gives, goes to ern run (report
+# §11.2, §8.3); everything after it goes to the program. The working
+# directory stays the caller's.
+here=$(cd "$(dirname "$0")/.." && pwd) || exit 1
 name=$(basename "$0")
+root=$here
+[ -f "$here/lib/$name/build/$name.erc" ] && root=$here/lib/$name
 config=
 if [ "$1" = "--config-dir" ]; then
     config=$2

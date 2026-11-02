@@ -27,7 +27,7 @@
 /// Run by its launcher, the configuration's path its argument:
 ///
 /// ```sh
-/// bin/ernest_httpd /etc/ernest-httpd/config.json
+/// bin/ernest_httpd examples/site/config.json
 /// ```
 
 //
@@ -373,32 +373,12 @@ fn exited(program : Address(Os.ProgramMsg)) : Either(Io.Error, Int) =
     }
 
 // The response to a GET of the target naming the host, written to the
-// socket, and its body.
-fn fetched(socket : Address(Tcp.SocketMsg),
-           target : String,
-           host : String) : Either(Io.Error, #(Http.Response, Bytes)) = {
-    let request =
-        Http.Request(method = "GET",
-                     =target,
-                     version = Http.Version(major = 1, minor = 1),
-                     headers = [Http.Header(name = "Host", value = host)]);
-    let _ <- Tcp.write(socket, Http.renderRequest(request, <<>>), 5000);
-    let limits = Http.Limits(line = 1024, headers = 4096);
-    let #(response, rest) <-
-        Either.mapLeft(Http.readResponse(socket, <<>>, limits, 5000), fn(_) = Io.Invalid);
-    let #(body, _) <-
-        Either.mapLeft(Http.readResponseBody(socket, rest, response, 65536, 5000),
-                       fn(_) = Io.Invalid);
-    Right(#(response, body))
-}
-
-// The response to a GET of the target naming the host, written to the
 // socket: its status, and its Location where it has one or else its body
 // as text.
 fn got(socket : Address(Tcp.SocketMsg),
        target : String,
        host : String) : Either(Io.Error, String) = {
-    let #(response, body) <- fetched(socket, target, host);
+    let #(response, body) <- Smoke.get(socket, target, host, 5000);
     let text =
         Http.header(response.headers, "Location")
             |> Optional.withDefault(Optional.withDefault(String.fromUtf8(body), "?"));
@@ -468,10 +448,6 @@ fn withShell(listeners : String) : String =
                        <> "           \"lifetime\": 60000, \"warning\": 30000,\n"
                        <> "           \"message-limit\": 1024, \"hangup\": 1000}}\n")
 
-// A frame a client writes, masked with a key of its own.
-fn masked(message : WebSocket.Message) : Bytes =
-    Optional.withDefault(WebSocket.encodeMasked(message, Crypto.randomBytes(4)), <<>>)
-
 // A shell's client on the port, its upgrade of the target from the origin
 // written without a cookie: the response and the bytes after its head, and
 // the socket.
@@ -479,24 +455,7 @@ fn upgraded(port : Int,
             target : String,
             origin : String) : Either(Io.Error, #(Http.Response, Bytes, Address(Tcp.SocketMsg))) = {
     let socket <- Tcp.connect("127.0.0.1", port, 5000);
-    let request =
-        Http.Request(method = "GET",
-                     =target,
-                     version = Http.Version(major = 1, minor = 1),
-                     headers = [Http.Header(name = "Host", value = "localhost"),
-                                Http.Header(name = "Upgrade", value = "websocket"),
-                                Http.Header(name = "Connection", value = "Upgrade"),
-                                Http.Header(name = "Sec-WebSocket-Version", value = "13"),
-                                Http.Header(name = "Origin", value = origin),
-                                Http.Header(name = "Sec-WebSocket-Key",
-                                            value = Base64.encode(Crypto.randomBytes(16)))]);
-    let _ <- Tcp.write(socket, Http.renderRequest(request, <<>>), 5000);
-    let #(response, rest) <-
-        Either.mapLeft(Http.readResponse(socket,
-                                         <<>>,
-                                         Http.Limits(line = 1024, headers = 4096),
-                                         5000),
-                       fn(_) = Io.Invalid);
+    let #(response, rest) <- Smoke.upgrade(socket, target, "localhost", origin, 5000);
     Right(#(response, rest, socket))
 }
 
@@ -512,45 +471,24 @@ fn shellClient(port : Int) : Either(Io.Error,
                                       WebSocket.Decoder)) = {
     let #(response, rest, socket) <- upgraded(port, "/shell", "http://localhost");
     let typed =
-        masked(WebSocket.Text("{\"resize\": [24, 80]}"))
-            <> masked(WebSocket.Binary(String.toUtf8("hello\n")));
+        Smoke.masked(WebSocket.Text("{\"resize\": [24, 80]}"))
+            <> Smoke.masked(WebSocket.Binary(String.toUtf8("hello\n")));
     let _ <- Tcp.write(socket, typed, 5000);
-    let #(text, decoder) <-
-        echoed(socket,
-               WebSocket.decoder(WebSocket.FromServer, 65536),
-               rest,
-               "",
-               "hello\r\nhello\r\n");
+    let #(output, decoder) <-
+        Either.mapLeft(Smoke.readOutput(socket,
+                                        WebSocket.decoder(WebSocket.FromServer, 65536),
+                                        rest,
+                                        5000,
+                                        fn(output) =
+                                            Bytes.contains(output,
+                                                           String.toUtf8("hello\r\nhello\r\n"))),
+                       Io.Other);
     Right(#(response.status,
             Http.header(response.headers, "Set-Cookie") != None,
-            text,
+            Optional.withDefault(String.fromUtf8(output), "?"),
             socket,
             decoder))
 }
-
-// The binary messages the socket carries, the bytes carried first, as text
-// until it holds the line; and the decoder after them.
-fn echoed(socket : Address(Tcp.SocketMsg),
-          decoder : WebSocket.Decoder,
-          carried : Bytes,
-          acc : String,
-          line : String) : Either(Io.Error, #(String, WebSocket.Decoder)) =
-    if String.contains(acc, line) then
-        Right(#(acc, decoder))
-    else {
-        let #(messages, rest) <-
-            Either.mapLeft(WebSocket.decode(decoder, carried), fn(_) = Io.Invalid);
-        let text = List.foldLeft(messages, acc, fn(sofar, message) = match message {
-            WebSocket.Binary(bytes) -> sofar <> Optional.withDefault(String.fromUtf8(bytes), "?")
-          | other -> sofar <> Io.show(other)
-        });
-        if String.contains(text, line) then
-            Right(#(text, rest))
-        else {
-            let bytes <- Tcp.read(socket, 5000);
-            echoed(socket, rest, bytes, text, line)
-        }
-    }
 
 // The next message the shell's socket carries, and what the socket answers
 // after it.
@@ -681,7 +619,7 @@ fn example(path : String) : Either(Io.Error, Bytes) =
 fn described(socket : Address(Tcp.SocketMsg),
              target : String,
              host : String) : Either(Io.Error, #(Int, String, Bytes)) = {
-    let #(response, body) <- fetched(socket, target, host);
+    let #(response, body) <- Smoke.get(socket, target, host, 5000);
     let shown = match Http.header(response.headers, "Location") {
         Some(location) -> location
       | None -> Optional.withDefault(Http.header(response.headers, "Content-Type"), "")
@@ -689,18 +627,20 @@ fn described(socket : Address(Tcp.SocketMsg),
     Right(#(response.status, shown, body))
 }
 
-// design §4, §5, §9, §11: the example site, examples/site/, served from its
-// own configuration, whose relative paths, the root's, the challenge's and
-// the access log's, name files under the checkout, the program's working
-// directory, with its listeners' ports made 0 and nothing else changed, so
-// that a rule the configuration breaks fails the test: on the plain
-// listener its pages, stylesheet and image with their types, the guide's
-// directory answered 301 with its slash and then served as its index, a
-// path that leads nowhere answered with the root's 404.html, and a host
-// that is neither answered 421; on the redirect listener the challenge's
-// file and a page redirected to the canonical host; and the shell's
+// design §4, §5, §9, §11, §13: the example site, examples/site/, served
+// from its own configuration, whose relative paths, the root's, the
+// challenge's and the access log's, name files under the checkout, the
+// program's working directory, with its listeners' ports made 0 and nothing
+// else changed, so that a rule the configuration breaks fails the test: on
+// the plain listener its pages, stylesheet and image with their types, the
+// guide's directory answered 301 with its slash and then served as its
+// index, a path that leads nowhere answered with the root's 404.html, and a
+// host that is neither answered 421; on the redirect listener the
+// challenge's file and a page redirected to the canonical host; the shell's
 // handshake from the configured origin answered 101, its shell closed with
-// 1001 at the end.
+// 1001 at the end; and the smoke test's checks, run over plain HTTP against
+// its two ports from its shell's origin, each passed, `ern shell` the
+// program its shell's check types `1 + 2` to.
 let servesTheExample = Test.Case(name = "serves the example site", run = fn() = {
     let challengeTarget = "/.well-known/acme-challenge/LoqXcYV8q5ONbJQxbmR7SCTNo3tiAXDfowyjxAjEuX0";
     let result = {
@@ -742,6 +682,9 @@ let servesTheExample = Test.Case(name = "serves the example site", run = fn() = 
             List.tryMap([challengeTarget, "/about.html"],
                         fn(target) = described(redirect, target, "localhost"));
         let #(response, _, shell) <- upgraded(plainPort, "/shell/session", "http://localhost:8080");
+        let failed =
+            Smoke.checks("http", "localhost", plainPort, redirectPort, "http://localhost:8080")
+                |> List.filter(fn(check) = check.result != Right(Unit));
         let _ <-
             Os.run(Os.Command(program = "kill", arguments = ["-TERM", pid], input = <<>>), 5000);
         let status <- exited(program);
@@ -753,7 +696,7 @@ let servesTheExample = Test.Case(name = "serves the example site", run = fn() = 
         let notFound <- example("root/404.html");
         let challenge <- example("acme" <> challengeTarget);
         let html = "text/html; charset=utf-8";
-        Right(#(#(served <> redirected, response.status, shellEnd, status),
+        Right(#(#(served <> redirected, response.status, shellEnd, status, failed),
                 #([#(200, html, index),
                    #(200, "text/css; charset=utf-8", style),
                    #(200, "image/svg+xml", image),
@@ -765,7 +708,8 @@ let servesTheExample = Test.Case(name = "serves the example site", run = fn() = 
                    #(301, "https://localhost/about.html", <<>>)],
                   101,
                   "Close(1001), closed",
-                  143)))
+                  143,
+                  [])))
     };
     match result {
         Right(#(outcome, wanted)) -> Test.equal(outcome, wanted)

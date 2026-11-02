@@ -1,0 +1,16 @@
+# The access log of ernest-httpd, installed as /etc/logrotate.d/ernest-httpd
+# (docs/design.md §13): rotated by rename, daily, as the server's user,
+# httpd, with no signal and no postrotate, since the server appends by the
+# path and creates the file anew at its next append. The day's file is
+# compressed a day later, so that an append that opened it as it was
+# renamed is kept.
+/home/httpd/ernest-httpd/log/access.log {
+    su httpd httpd
+    daily
+    rotate 14
+    missingok
+    notifempty
+    nocreate
+    compress
+    delaycompress
+}

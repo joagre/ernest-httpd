@@ -1,0 +1,44 @@
+# ernest-httpd under systemd, installed as
+# /etc/systemd/system/ernest-httpd.service (docs/design.md §13): the server
+# run as its own user, httpd, from the launcher installed under that user's
+# prefix, /home/httpd/opt/local, as a node of its configuration directory,
+# /home/httpd/ernest-httpd/node.
+
+[Unit]
+Description=ernest-httpd, the server of ernest-lang.org
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=httpd
+WorkingDirectory=/home/httpd
+# The prefix's bin first: the launcher finds ern there, and ern the prefix's
+# erl; the shell's command finds podman in /usr/bin.
+Environment=PATH=/home/httpd/opt/local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/httpd/opt/local/bin/ernest_httpd --config-dir /home/httpd/ernest-httpd/node /home/httpd/ernest-httpd/node/config.json
+# A reload reads the node's peers again, and nothing of config.json, whose
+# change is a restart.
+ExecReload=/home/httpd/opt/local/bin/ern reload --config-dir /home/httpd/ernest-httpd/node
+Restart=on-failure
+# Above timeouts.write and shell.hangup of config.json together, 30 and 5
+# seconds, so that the orderly stop ends before systemd kills what is left.
+TimeoutStopSec=40
+# The stop's signal goes to the server alone, which ends each session's
+# program itself, by its terminal's hangup; what is left once the server
+# has ended is killed.
+KillMode=mixed
+# 80 and 443 bound as no root.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+ProtectSystem=strict
+PrivateTmp=yes
+# What the server writes under ProtectSystem=strict: the access log's
+# directory, the node's directory for ernest.pid, and podman's storage and
+# run directories, the run directory under /run/user named by the number of
+# the server's user, which the unit cannot name.
+ReadWritePaths=/home/httpd/ernest-httpd/log /home/httpd/ernest-httpd/node /home/httpd/.local/share/containers /run/user
+# No NoNewPrivileges=yes: it would break rootless podman's newuidmap, which
+# the shell's command runs and which takes privileges of its own.
+
+[Install]
+WantedBy=multi-user.target

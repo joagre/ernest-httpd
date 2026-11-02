@@ -15,8 +15,13 @@ make test       the layout, every module's tests, the documents and the design's
                 Ernest program of examples/
 make run        runs the example site through the launcher, bin/ernest_httpd, on
                 examples/site/config.json; CONFIG=path make run serves another configuration
+make smoke      the smoke test against the deployed site whose canonical host HOST
+                names, make smoke HOST=ernest-lang.org
 make xterm      fetches xterm.js and its fit addon into the example site, once
 make release    the archive, build/ernest_httpd-VERSION.tar.gz
+make install    installs what stands built under PREFIX, /usr/local by default, from a
+                checkout or an unpacked archive: make install PREFIX=/home/httpd/opt/local
+make uninstall  removes from PREFIX what make install put there, and nothing else
 make man        a library's manual pages into docs/man/, committed with its release
 ```
 
@@ -26,9 +31,11 @@ Everything the program loads beyond the standard library and Ernest's own librar
 
 ## Running
 
-`bin/<name> [--config-dir dir] [argument]...` runs the program from the checkout and from an unpacked release alike, with everything under `lib/` on the load path. `--config-dir dir` makes the run a node, as *Running Ernest*, the deployment guide of the installation, says; everything else goes to the program.
+`bin/<name> [--config-dir dir] [argument]...` runs the program from the checkout and from an unpacked release alike, and once `make install` has put it under a prefix, the prefix's `bin/<name>` runs the installed program, each with everything under its own `lib/` on the load path. `--config-dir dir` makes the run a node, as *Running Ernest*, the deployment guide of the installation, says; everything else goes to the program.
 
 `make run` serves the example site under `examples/site/`, its pages and its shell, on localhost; [`examples/README.md`](examples/README.md) says what it shows and how to try it.
+
+The server runs on its machine as [`deploy/README.md`](deploy/README.md) says, step by step, from the machine to `make smoke HOST=ernest-lang.org` passing, with the files of `deploy/` it installs.
 
 ## The documents
 
@@ -38,6 +45,7 @@ Everything the program loads beyond the standard library and Ernest's own librar
 - [`docs/release.md`](docs/release.md): what a release runs to be ready.
 - `docs/proposals/`: what is designed, a directory for each proposal, from the first one on.
 - [`examples/README.md`](examples/README.md): the example site, what it shows and how it is run.
+- [`deploy/README.md`](deploy/README.md): the deployment, the operator's steps in their order.
 - `language_feedback.md`, from its first line: what writing Ernest felt against the principles, carried to Ernest by copy.
 - [`CLAUDE.md`](CLAUDE.md): the working rules.
 

@@ -1,0 +1,36 @@
+{
+  "listeners": [
+    { "kind": "tls", "address": "::", "port": 443,
+      "certificate": "/home/httpd/ernest-httpd/node/fullchain.pem",
+      "key": "/home/httpd/ernest-httpd/node/privkey.pem" },
+    { "kind": "redirect", "address": "::", "port": 80,
+      "acme-challenge": "/home/httpd/ernest-httpd/acme" }
+  ],
+  "root": "/home/httpd/ernest-httpd/site",
+  "canonical-host": "ernest-lang.org",
+  "redirect-hosts": ["www.ernest-lang.org", "ernest-lang.se", "www.ernest-lang.se"],
+  "timeouts": { "head": 10000, "idle": 15000, "write": 30000, "file": 5000 },
+  "limits": {
+    "request-line": 8192, "headers": 16384,
+    "connections": 160, "connections-per-address": 16
+  },
+  "content-types": {},
+  "headers": {
+    "Strict-Transport-Security": "max-age=31536000",
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' wss://ernest-lang.org"
+  },
+  "access-log": "/home/httpd/ernest-httpd/log/access.log",
+  "shell": {
+    "path": "/shell/session",
+    "origins": ["https://ernest-lang.org"],
+    "command": ["podman", "run", "-it", "--rm", "--network", "none", "--read-only",
+                "--cap-drop=ALL", "--security-opt=no-new-privileges",
+                "--memory", "128m", "--pids-limit", "128",
+                "--tmpfs", "/home/shell:size=64m", "ernest-shell"],
+    "most-at-once": 10,
+    "starts": { "count": 10, "within": 3600000 },
+    "lifetime": 300000, "warning": 60000,
+    "message-limit": 65536, "hangup": 5000
+  }
+}
