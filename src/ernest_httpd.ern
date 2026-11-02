@@ -285,9 +285,9 @@ fn ran(runs : List(List(String))) : List(Either(Io.Error, Os.Finished)) receivin
 // another count of arguments than one with the usage and the status 2; a
 // configuration that breaks a rule with the path and the reason, and the
 // status 1; and a listen that fails, its port taken, and a TLS listen whose
-// certificate the host refuses, each with the address, the port and the
-// error as Io.show writes it, the host's reason for the certificate, and
-// the status 1.
+// certificate's file holds none, each with the address, the port and the
+// error as Io.show writes it, the file's name and what is wrong for the
+// certificate, and the status 1.
 let refusesStarts = Test.Case(name = "refuses what it cannot serve", run = fn() = {
     let result = {
         let taken <- Tcp.listen("127.0.0.1", 0);
@@ -299,18 +299,13 @@ let refusesStarts = Test.Case(name = "refuses what it cannot serve", run = fn() 
         Tcp.closeListener(taken);
         Right(#(outcomes, port))
     };
-    // an outcome as the test compares it: the status, standard output, and
-    // standard error up to the error's text where it begins with the
-    // address and the port of the TLS listener
+    // an outcome as the test compares it: the status, standard output and
+    // standard error
     fn compared(outcome : Either(Io.Error,
                                  Os.Finished)) : Either(Io.Error, #(Int, String, String)) =
         Either.map(outcome, fn(finished) = {
             let text = fn(bytes) = Optional.withDefault(String.fromUtf8(bytes), "?");
-            let error = text(finished.stderr);
-            let prefix = "127.0.0.1:0: Other(\"";
-            #(finished.status,
-              text(finished.stdout),
-              if String.startsWith(error, prefix) then prefix else error)
+            #(finished.status, text(finished.stdout), text(finished.stderr))
         });
     match result {
         Right(#(outcomes, port)) ->
@@ -323,7 +318,11 @@ let refusesStarts = Test.Case(name = "refuses what it cannot serve", run = fn() 
                                 "127.0.0.1:"
                                     <> Int.toString(port)
                                     <> ": Other(\"address already in use\")\n")),
-                        Right(#(1, "", "127.0.0.1:0: Other(\""))])
+                        Right(#(1,
+                                "",
+                                "127.0.0.1:0: Other(\""
+                                    <> scratch
+                                    <> "/empty.pem: no certificate\")\n"))])
       | Left(error) ->
             Test.Failed(Io.show(error))
     }
