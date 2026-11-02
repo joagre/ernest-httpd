@@ -22,8 +22,8 @@ make xterm      fetches xterm.js and its fit addon into the example site, once
 make release    the archive, build/ernest_httpd-VERSION.tar.gz
 make install    installs what stands built under PREFIX, /usr/local by default, from a
                 checkout or an unpacked archive: make install PREFIX=/home/httpd/opt/local
-make uninstall  removes from PREFIX what make install put there, then the directories
-                it made where they are empty, and nothing else
+make uninstall  removes from PREFIX what make install put there, then share/doc, share,
+                lib and bin under it, each where it is empty, and nothing else
 make man        the template's target for a library's manual pages into docs/man/,
                 committed with its release; this program has none
 ```
@@ -42,7 +42,7 @@ bin/ernest_httpd [--config-dir dir] config.json
 
 Once `make install` has put it under a prefix, the installed `ernest_httpd` runs the same way, each with everything under its own `lib/` on the load path. `--config-dir dir` makes the run a node, as *Running Ernest*, the deployment guide of the installation, says.
 
-The configuration is one JSON file, whose relative paths name files under the working directory. Every field of it but `shell` is required, an empty one written empty, `"content-types": {}`; the design's §4, [`docs/design.md`](docs/design.md), describes each field with its rule, and `examples/site/config.json` is one that runs.
+The configuration is one JSON file, whose relative paths name files under the working directory. Every field of it but `shell` is required, an empty one written empty, `"content-types": {}`; the design's §4, [`docs/design.md`](docs/design.md), describes each field with its rule, and `examples/site/config.json` is one that `make run` serves, its access log's directory made first.
 
 `make run` serves the example site under `examples/site/`, its pages and its shell, on localhost; [`examples/README.md`](examples/README.md) says what it shows and how to try it.
 
@@ -57,7 +57,7 @@ The server runs on its machine as [`deploy/README.md`](deploy/README.md) says, s
 - `docs/proposals/`: what is designed, a directory for each proposal, from the first one on.
 - [`examples/README.md`](examples/README.md): the example site, what it shows and how it is run.
 - [`deploy/README.md`](deploy/README.md): the deployment, the operator's steps in their order.
-- `language_feedback.md`, from its first line: what writing Ernest felt against the principles, carried to Ernest by copy.
+- [`docs/language_feedback.md`](docs/language_feedback.md), from its first line: what writing Ernest felt against the principles, carried to Ernest by copy.
 - [`CLAUDE.md`](CLAUDE.md): the working rules.
 
 The tests live in the modules they test, which `make test` runs; `test/`, where it exists, holds a program run end to end, and `tools/` the checker of the documents, `make test` runs them too.

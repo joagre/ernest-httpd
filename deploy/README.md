@@ -2,7 +2,7 @@
 
 The operator's steps, in their order, from a machine with Debian 13, systemd, podman and certbot to the smoke test passing. Each step gives its commands and what it says when it fails. What each file of `deploy/` is, and the server's arrangement on the machine, is the design's §13, [`docs/design.md`](../docs/design.md); the files stand here as they are installed, and the release archive carries them under its own `deploy/`.
 
-A line whose prompt is `$` is typed by the operator, `sudo` before what the superuser runs. A line whose prompt is `httpd$` is typed in a shell of the server's user, `sudo -u httpd -H bash` and then `cd`, its home, with `export PATH=/home/httpd/opt/local/bin:$PATH`, the user's prefix's `bin` first, so that the prefix's `erl` and `ern` are found once steps 3 and 4 install them.
+A line whose prompt is `$` is typed by the operator, `sudo` before what the superuser runs. A line whose prompt is `httpd$` is typed in a shell of the server's user, `sudo -u httpd -H bash` and then `cd`, its home, with `export PATH=/home/httpd/opt/local/bin:$PATH`, the user's prefix's `bin` first, so that the prefix's `ern` is found once step 4 installs it, and `/usr/local`'s `erl` after it.
 
 ## 1. The machine
 
@@ -39,7 +39,7 @@ $ erl -noshell -eval 'io:format("~s~n", [erlang:system_info(otp_release)]), halt
 
 ## 4. Ernest and the server
 
-Ernest is installed under the same prefix from the archive the release was built with, since a node runs only what its own build of `ern` compiled and refuses another's, `ern run: /home/httpd/opt/local/lib/ernest_httpd/build/ernest_httpd.erc: compiled by another build of ern`; then the server, from its unpacked release archive, which `make install` installs as it was compiled:
+Ernest is installed under the server's prefix, `/home/httpd/opt/local`, from the archive the release was built with, since a node runs only what its own build of `ern` compiled and refuses another's, `ern run: /home/httpd/opt/local/lib/ernest_httpd/build/ernest_httpd.erc: compiled by another build of ern`; then the server, from its unpacked release archive, which `make install` installs as it was compiled:
 
 ```console
 httpd$ tar -xzf ern-0.9.0.tar.gz && cd ern-0.9.0
@@ -54,7 +54,7 @@ httpd$ cd && command -v ernest_httpd
 
 `ern --version` prints the version and, after its `+`, the commit Ernest's archive was made from. `make` without a C compiler fails at the helper's line, `make: cc: No such file or directory`, and `ern` without OTP says `ern: erl, of Erlang/OTP 29, is not on the path`. A prefix the user cannot write fails at its first `mkdir`, `Permission denied`.
 
-The server's `make install` puts the launcher in `/home/httpd/opt/local/bin/ernest_httpd`, the compiled program under `/home/httpd/opt/local/lib/ernest_httpd/` and its documents under `/home/httpd/opt/local/share/doc/ernest_httpd/`, `deploy/` and `examples/` among them, and replaces an installation there whole; a launcher there of another program's is refused, `/home/httpd/opt/local/bin/ernest_httpd is there already and is not this program's`. A later release installs the same way, from its own unpacked archive, and `make uninstall PREFIX=/home/httpd/opt/local` there removes what `make install` put under the prefix, then the directories it made where they are empty, and nothing else.
+The server's `make install` puts the launcher in `/home/httpd/opt/local/bin/ernest_httpd`, the compiled program under `/home/httpd/opt/local/lib/ernest_httpd/` and its documents under `/home/httpd/opt/local/share/doc/ernest_httpd/`, `deploy/` and `examples/` among them, and replaces an installation there whole; a launcher there of another program's is refused, `/home/httpd/opt/local/bin/ernest_httpd is there already and is not this program's`. A later release installs the same way, from its own unpacked archive, and `make uninstall PREFIX=/home/httpd/opt/local` there removes what `make install` put under the prefix, then `share/doc`, `share`, `lib` and `bin` under it where each is empty, and nothing else.
 
 ## 5. The directories
 

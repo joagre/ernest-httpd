@@ -71,7 +71,7 @@ EXAMPLES      = $(wildcard examples/*.ern)
 EXAMPLES_MADE = examples/build examples/site/root/xterm
 # The documents make install and make release take: README.md, LICENSE,
 # CHANGES.md, CLAUDE.md, and under docs/, deploy/ and examples/ the files git
-# tracks in a checkout, so that no draft goes in, read as whoever installs,
+# tracks in a checkout, so that no untracked file goes in, read as whoever installs,
 # whose checkout it need not be, which git refuses unless told it is safe; or
 # in an unpacked archive every file there but EXAMPLES_MADE's, which make
 # release wrote with those.
@@ -242,13 +242,14 @@ install:
 	tar cf - $(DOCS) | tar xf - -C $(DOC_DIR)
 
 # What make install put under PREFIX, and nothing else: the launcher, the
-# installation's two directories, and then each directory make install's
-# mkdir makes, deepest first, where it is empty; one that is not stays.
+# installation's two directories, and then share/doc, share, lib and bin
+# under PREFIX, deepest first, each where it is empty, whoever made it; one
+# that is not stays, and so does PREFIX itself.
 uninstall:
 	@test -d $(TREE) || { echo "no installation of $(NAME) under $(PREFIX)"; exit 1; }
 	rm -f $(PREFIX)/bin/$(NAME)
 	rm -rf $(TREE) $(DOC_DIR)
-	@for dir in $(PREFIX)/share/doc $(PREFIX)/share $(PREFIX)/lib $(PREFIX)/bin $(PREFIX); do \
+	@for dir in $(PREFIX)/share/doc $(PREFIX)/share $(PREFIX)/lib $(PREFIX)/bin; do \
 	    rmdir $$dir 2>/dev/null || true; \
 	done
 

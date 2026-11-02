@@ -13,8 +13,8 @@ Wants=network-online.target
 Type=exec
 User=httpd
 WorkingDirectory=/home/httpd
-# The prefix's bin first: the launcher finds ern there, and ern the prefix's
-# erl; the shell's wrapper finds podman in /usr/bin.
+# The prefix's bin first: the launcher finds ern there, and ern finds erl in
+# /usr/local/bin; the shell's wrapper finds podman in /usr/bin.
 Environment=PATH=/home/httpd/opt/local/bin:/usr/local/bin:/usr/bin:/bin
 # Rootless podman keeps a pause process in the user's own scope, outside
 # this unit, holding the mount namespace of the instance that started it;
