@@ -2,7 +2,7 @@
 
 *The Importance of Being Ernest, a Trivial Comedy for Serious People*
 
-ernest-httpd serves one site, ernest-lang.org: static pages, and one WebSocket per visitor that connects a terminal in the browser to a shell on the server. It implements what that needs of HTTP/1.1 and nothing more, and is written in Ernest against an installed Ernest. Its design is [`docs/proposals/basic/proposal.md`](docs/proposals/basic/proposal.md) until `docs/design.md` states it; what it asks of Ernest is Ernest's own proposal, https://github.com/joagre/ernest/blob/main/docs/proposals/httpd/proposal.md. This repository was begun from [`ernest-template`](https://github.com/joagre/ernest-template).
+ernest-httpd serves one site, ernest-lang.org: static pages, and one WebSocket per visitor that connects a terminal in the browser to a shell on the server. It implements what that needs of HTTP/1.1 and nothing more, and is written in Ernest against an installed Ernest. Its design is [`docs/design.md`](docs/design.md), argued in [`docs/proposals/basic/proposal.md`](docs/proposals/basic/proposal.md); what it asks of Ernest is Ernest's own proposal, https://github.com/joagre/ernest/blob/main/docs/proposals/httpd/proposal.md. This repository was begun from [`ernest-template`](https://github.com/joagre/ernest-template).
 
 ## Building
 
@@ -22,8 +22,10 @@ make xterm      fetches xterm.js and its fit addon into the example site, once
 make release    the archive, build/ernest_httpd-VERSION.tar.gz
 make install    installs what stands built under PREFIX, /usr/local by default, from a
                 checkout or an unpacked archive: make install PREFIX=/home/httpd/opt/local
-make uninstall  removes from PREFIX what make install put there, and nothing else
-make man        a library's manual pages into docs/man/, committed with its release
+make uninstall  removes from PREFIX what make install put there, then the directories
+                it made where they are empty, and nothing else
+make man        the template's target for a library's manual pages into docs/man/,
+                committed with its release; this program has none
 ```
 
 `make lib` fills `lib/` with each dependency `DEPS` names by the URL of its release archive, fetched and unpacked once, and each Erlang application `ERL_DEPS` names, a git submodule under `erl/` built by its own `make` and linked.
@@ -32,7 +34,15 @@ Everything the program loads beyond the standard library and Ernest's own librar
 
 ## Running
 
-`bin/<name> [--config-dir dir] [argument]...` runs the program from the checkout and from an unpacked release alike, and once `make install` has put it under a prefix, the prefix's `bin/<name>` runs the installed program, each with everything under its own `lib/` on the load path. `--config-dir dir` makes the run a node, as *Running Ernest*, the deployment guide of the installation, says; everything else goes to the program.
+The launcher runs the server on a configuration, from the checkout and from an unpacked release alike:
+
+```
+bin/ernest_httpd [--config-dir dir] config.json
+```
+
+Once `make install` has put it under a prefix, the installed `ernest_httpd` runs the same way, each with everything under its own `lib/` on the load path. `--config-dir dir` makes the run a node, as *Running Ernest*, the deployment guide of the installation, says.
+
+The configuration is one JSON file, whose relative paths name files under the working directory. Every field of it but `shell` is required, an empty one written empty, `"content-types": {}`; the design's §4, [`docs/design.md`](docs/design.md), describes each field with its rule, and `examples/site/config.json` is one that runs.
 
 `make run` serves the example site under `examples/site/`, its pages and its shell, on localhost; [`examples/README.md`](examples/README.md) says what it shows and how to try it.
 

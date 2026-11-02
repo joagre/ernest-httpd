@@ -20,14 +20,17 @@
 #                 fetched and unpacked where its script is not there
 #   make doc      the documentation of every module, as CommonMark under build/
 #   make man      the pages copied into docs/man/, which a library's release
-#                 commits, its index the directory's README
+#                 commits, its index the directory's README; this program,
+#                 not a library, commits none
 #   make format   lays every module out
 #   make release  the archive, build/NAME-VERSION.tar.gz, tests first
 #   make install  installs what stands built under PREFIX, /usr/local by
 #                 default, from a checkout or an unpacked archive alike:
 #                 the launcher in bin/, build/'s and lib/'s in lib/NAME/,
-#                 and the documents in share/doc/NAME/
-#   make uninstall  removes from PREFIX what make install put there
+#                 and the documents in share/doc/NAME/, deploy/ and
+#                 examples/ among them
+#   make uninstall  removes from PREFIX what make install put there, and the
+#                 directories it made where they are empty
 #   make clean    removes what the build, make lib and make xterm wrote
 
 NAME        = ernest_httpd
@@ -63,14 +66,20 @@ DEP_DIRS      = $(addprefix lib/,$(notdir $(basename $(basename $(DEPS)))))
 VERSION       = $(shell cat VERSION)
 # The programs of examples/; a site under it is data, and is not built.
 EXAMPLES      = $(wildcard examples/*.ern)
-# The documents make install and make release take: README.md, LICENSE, and
-# under docs/ the files git tracks in a checkout, so that no draft goes in,
-# read as whoever installs, whose checkout it need not be, which git refuses
-# unless told it is safe; or every file in an unpacked archive, which make
+# What the build and make xterm write under examples/, which git ignores,
+# make clean removes and the documents leave out.
+EXAMPLES_MADE = examples/build examples/site/root/xterm
+# The documents make install and make release take: README.md, LICENSE,
+# CHANGES.md, CLAUDE.md, and under docs/, deploy/ and examples/ the files git
+# tracks in a checkout, so that no draft goes in, read as whoever installs,
+# whose checkout it need not be, which git refuses unless told it is safe; or
+# in an unpacked archive every file there but EXAMPLES_MADE's, which make
 # release wrote with those.
-DOCS          = README.md LICENSE \
-                $(if $(wildcard .git),$(shell git -c safe.directory=$(CURDIR) ls-files docs),\
-                    $(shell find docs -type f 2>/dev/null))
+DOCS          = README.md LICENSE CHANGES.md CLAUDE.md \
+                $(if $(wildcard .git),\
+                    $(shell git -c safe.directory=$(CURDIR) ls-files docs deploy examples),\
+                    $(shell find docs deploy examples -type f \
+                        $(foreach dir,$(EXAMPLES_MADE),! -path '$(dir)/*') 2>/dev/null))
 # An installation's own directories under PREFIX, beside its launcher.
 TREE          = $(PREFIX)/lib/$(NAME)
 DOC_DIR       = $(PREFIX)/share/doc/$(NAME)
@@ -194,9 +203,9 @@ format:
 
 # The archive unpacks to NAME-VERSION/: the launcher where there is one, the
 # source and the compiled modules, lib/ with each link copied through, the
-# documents of DOCS, the README and the license among them, the third
-# parties' licenses where there are any, the files git tracks under deploy/,
-# and the Makefile with VERSION, so that make install runs in it. One shape
+# documents of DOCS, the README, the license, deploy/ and examples/ among
+# them, the third parties' licenses where there are any, and the Makefile
+# with VERSION, so that make install and make run run in it. One shape
 # for an application and a library, so that any archive can be a
 # dependency.
 release: test
@@ -210,7 +219,7 @@ release: test
 	test -d lib && cp -RL lib build/$(NAME)-$(VERSION)/lib || true
 	test -x bin/$(NAME) && mkdir -p build/$(NAME)-$(VERSION)/bin && \
 	    cp bin/$(NAME) build/$(NAME)-$(VERSION)/bin/ || true
-	tar cf - $(DOCS) $(shell git ls-files deploy) Makefile VERSION | \
+	tar cf - $(DOCS) Makefile VERSION | \
 	    tar xf - -C build/$(NAME)-$(VERSION)
 	test -f THIRD_PARTY_LICENSES && cp THIRD_PARTY_LICENSES build/$(NAME)-$(VERSION)/ || true
 	tar -czf build/$(NAME)-$(VERSION).tar.gz -C build $(NAME)-$(VERSION)
@@ -232,12 +241,16 @@ install:
 	test ! -d lib || cp -RL lib $(TREE)/lib
 	tar cf - $(DOCS) | tar xf - -C $(DOC_DIR)
 
-# What make install put under PREFIX, and nothing else: the launcher and the
-# installation's two directories. The directories above them stay.
+# What make install put under PREFIX, and nothing else: the launcher, the
+# installation's two directories, and then each directory make install's
+# mkdir makes, deepest first, where it is empty; one that is not stays.
 uninstall:
 	@test -d $(TREE) || { echo "no installation of $(NAME) under $(PREFIX)"; exit 1; }
 	rm -f $(PREFIX)/bin/$(NAME)
 	rm -rf $(TREE) $(DOC_DIR)
+	@for dir in $(PREFIX)/share/doc $(PREFIX)/share $(PREFIX)/lib $(PREFIX)/bin $(PREFIX); do \
+	    rmdir $$dir 2>/dev/null || true; \
+	done
 
 clean:
-	rm -rf build tools/build test/build examples/build lib examples/site/root/xterm
+	rm -rf build tools/build test/build lib $(EXAMPLES_MADE)
