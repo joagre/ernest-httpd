@@ -2,7 +2,7 @@
 
 *The Importance of Being Ernest, a Trivial Comedy for Serious People*
 
-ernest-httpd serves one site, ernest-lang.org: static pages, and one WebSocket per visitor that connects a terminal in the browser to a shell on the server. It implements what that needs of HTTP/1.1 and nothing more, and is written in Ernest against an installed Ernest. Its design is [`docs/design.md`](docs/design.md), argued in [`docs/proposals/basic/proposal.md`](docs/proposals/basic/proposal.md); what it asks of Ernest is Ernest's own proposal, https://github.com/joagre/ernest/blob/main/docs/proposals/httpd/proposal.md. This repository was begun from [`ernest-template`](https://github.com/joagre/ernest-template).
+ernest-httpd serves one site, ernest-lang.org: static pages, and one WebSocket per visitor that connects a terminal in the browser to a shell on the server. It implements what that needs of HTTP/1.1 and nothing more, and is written in Ernest against an installed Ernest. Its design is [`docs/design.md`](docs/design.md), argued in [`docs/log.md`](docs/log.md); what it asks of Ernest is Ernest's own proposal, https://github.com/joagre/ernest/blob/main/docs/proposals/httpd/proposal.md. This repository was begun from [`ernest-template`](https://github.com/joagre/ernest-template).
 
 ## Building
 
@@ -54,7 +54,6 @@ The server runs on its machine as [`deploy/README.md`](deploy/README.md) says, s
 - [`docs/plan.md`](docs/plan.md): where the program stands and what comes next.
 - [`docs/log.md`](docs/log.md): the dated rationale, never normative.
 - [`docs/release.md`](docs/release.md): what a release runs to be ready.
-- `docs/proposals/`: what is designed, a directory for each proposal, from the first one on.
 - [`examples/README.md`](examples/README.md): the example site, what it shows and how it is run.
 - [`deploy/README.md`](deploy/README.md): the deployment, the operator's steps in their order.
 - [`docs/language_feedback.md`](docs/language_feedback.md), from its first line: what writing Ernest felt against the principles, carried to Ernest by copy.

@@ -4,7 +4,7 @@ How the program is arranged, stated as rules: its processes and what each owns, 
 
 ## 1. What the program does
 
-ernest-httpd serves one site, ernest-lang.org: its static pages, and one WebSocket per visitor that connects a terminal in the browser to a shell in a container on the server. It implements what that needs of HTTP/1.1 and WebSocket, and nothing more. It is configured by one file, §4, runs as §2 says, answers a request for a file as §5 says and serves it over HTTP/1.1 as §6 to §8 say; what else it implements of HTTP/1.1 and WebSocket, and what it leaves out, is `docs/proposals/basic/proposal.md`'s until the item that builds it states it here.
+ernest-httpd serves one site, ernest-lang.org: its static pages, and one WebSocket per visitor that connects a terminal in the browser to a shell in a container on the server. It implements what that needs of HTTP/1.1 and WebSocket, and nothing more. It is configured by one file, §4, runs as §2 says, and serves the site, §5 to §9, and the shell, §10 to §12; §13 is its deployment. It leaves out of HTTP/1.1 a request's body, chunked responses, ranges, `ETag`, `Cache-Control`, content negotiation, compression, trailers and every version but 1.0 and 1.1, §6; and of WebSocket its extensions and its subprotocols, §10.
 
 ## 2. Processes
 

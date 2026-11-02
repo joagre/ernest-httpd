@@ -542,7 +542,7 @@ fn strings(top : Map(String, Json.Value),
 // Tests
 //
 
-// The proposal's exhaustive example, with the configured content types,
+// The exhaustive example, every field, with the configured content types,
 // the headers and the shell; `withoutShell` is the example with its shell
 // left out.
 let withoutShell : String =
