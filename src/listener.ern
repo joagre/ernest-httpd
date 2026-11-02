@@ -78,17 +78,25 @@ export fn serve(socket : Address(Tcp.ListenerMsg),
 
 // The acceptor: one connection accepted for each Accept, in rounds of the
 // idle deadline until one comes or the accept fails otherwise, its socket
-// given to the listener, and the outcome told it.
+// given to the listener, and the outcome told it; at Closed, the socket
+// closed by another process, it ends and tells nothing, since its end has
+// no order with what it told (report §6.9) and the line is said already.
 fn accepting(socket : Address(Tcp.ListenerMsg),
              listener : Address(ListenerMsg),
              idle : Int) : Unit receiving AcceptorMsg =
     receive {
-        Accept -> {
-            send(listener, Accepted(accepted(socket, listener, idle)));
-            accepting(socket, listener, idle)
-        }
+        Accept ->
+            match accepted(socket, listener, idle) {
+                Left(Io.Closed) ->
+                    Unit
+              | outcome -> {
+                    send(listener, Accepted(outcome));
+                    accepting(socket, listener, idle)
+                }
+            }
     }
 
+// An accept that fails is said here, by the process that met it.
 fn accepted(socket : Address(Tcp.ListenerMsg),
             listener : Address(ListenerMsg),
             idle : Int) : Either(Io.Error, Address(Tcp.SocketMsg)) =
@@ -99,8 +107,10 @@ fn accepted(socket : Address(Tcp.ListenerMsg),
         }
       | Left(Io.Timeout) ->
             accepted(socket, listener, idle)
-      | Left(error) ->
+      | Left(error) -> {
+            Io.printlnError("cannot accept: " <> Io.show(error));
             Left(error)
+        }
     }
 
 // The listener waiting on its mailbox: each message taken as it comes.
@@ -110,8 +120,7 @@ fn waiting(listening : Listening,
     receive {
         Accepted(Right(socket)) ->
             asked(listening, admitted(listening, connections, socket))
-      | Accepted(Left(error)) -> {
-            Io.printlnError("cannot accept: " <> Io.show(error));
+      | Accepted(Left(_)) -> {
             let _ = Clock.alarm(listening.server.config.timeouts.idle, Retry);
             waiting(listening, connections, Retrying)
         }
@@ -466,6 +475,13 @@ let endsInOrder = Test.Case(name = "ends its connections when told to stop", run
                        ["GET /a.txt HTTP/1.1 200 5"])))
 })
 
+// Whether the process was spawned in serve, as the acceptor is.
+fn spawnedInServe(process : Process) : Bool =
+    match Process.status(process) {
+        Some(status) -> String.startsWith(status.site, "Listener.serve:")
+      | None -> false
+    }
+
 // Whether the process is an acceptor waiting in its accept: spawned in
 // serve, and waiting for a call's answer.
 fn isAccepting(process : Process) : Bool =
@@ -476,10 +492,10 @@ fn isAccepting(process : Process) : Bool =
             false
     }
 
-// design §7: an accept that fails, answering Closed since another process
-// closed the socket, is said, and asked again after an idle deadline; the
-// acceptor's next accept faults, as one does on a socket closed before it,
-// and an acceptor that ends before the stop ends the listener.
+// design §7: an accept answered Closed, since another process closed the
+// socket, is said and ends the acceptor, which returns and tries no accept
+// on the closed socket; an acceptor that ends before the stop ends the
+// listener, which returns, and no process of the acceptor's is left.
 let endsWithItsAcceptor = Test.Case(name = "ends when its acceptor ends", run = fn() = {
     let result = {
         let _ <- Either.mapLeft(prepared(), Io.show);
@@ -506,13 +522,20 @@ let endsWithItsAcceptor = Test.Case(name = "ends when its acceptor ends", run = 
                            else
                                Test.Failed("no acceptor waits in an accept"),
                        5000);
+        let acceptor <- Either.fromOptional(List.find(Process.live(), isAccepting), "no acceptor");
+        monitor(acceptor, Watched);
         Tcp.closeListener(socket);
-        Right(#(accepting, receive {
-                  Ended(down) -> Io.show(down.reason)
-                | after 5000 -> "no end"
-              }))
+        let acceptorEnd = receive {
+            Watched(down) -> Io.show(down.reason)
+          | after 5000 -> "the acceptor lives"
+        };
+        let end = receive {
+            Ended(down) -> Io.show(down.reason)
+          | after 5000 -> "no end"
+        };
+        Right(#(accepting, acceptorEnd, end, List.any(Process.live(), spawnedInServe)))
     };
-    Test.equal(result, Right(#(Test.Passed, "Returned")))
+    Test.equal(result, Right(#(Test.Passed, "Returned", "Returned", false)))
 })
 
 // A stand-in for a connection, which waits until it is ended.

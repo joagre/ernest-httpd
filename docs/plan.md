@@ -21,7 +21,9 @@ The server's design is `docs/design.md`, argued in the log from a proposal decid
 What the first release's readers found and the milestone's own items, each a step with its log entry when built.
 
 1. **The refusal's form**: done 2026-11-02, the log's *Milestone 2, item 1: the refusal's form*.
-2. **Quiet tests**: `make test` prints no fault's trace and no `cannot accept: Closed` among its passes; each test ends what it started in the design's order, and a message the end prints is decided in §2 or goes (the cold reader's finding 10, 2026-11-02).
+2. **Quiet tests**: done 2026-11-02, the log's *Milestone 2, item 2: quiet tests*; the four lines the design has the program say stay in the run until Ernest's test runner can capture a case's standard error, `language_feedback.md` line 21.
+
+**The listener's retry, a gap (2026-11-02).** §7's retry after an accept that fails otherwise than by `Closed` or its time has no test since item 2, which ended the acceptor at `Closed`; a test needs a host error an accept can be made to answer, `emfile` with the process's descriptors used up the nearest, and is written when one is found cheap, with the test that then cites the sentence.
 
 **The shell after MVP 4.2 (2026-11-02).** The site publishes one page and no shell until Ernest's MVP 4.2 runs; then `deploy/config.json` takes the member `shell` that design §13 gives, and `deploy/README.md`'s step 7 installs the image and the wrapper (the log's *The wrapper and the smoke test's configuration*).
 
