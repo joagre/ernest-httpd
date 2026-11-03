@@ -22,6 +22,8 @@ What the first release's readers found and the milestone's own items, each a ste
 
 1. **The refusal's form**: done 2026-11-02, the log's *Milestone 2, item 1: the refusal's form*.
 2. **Quiet tests**: done 2026-11-02, the log's *Milestone 2, item 2: quiet tests*; the four lines the design has the program say stay in the run until Ernest's test runner can capture a case's standard error, `language_feedback.md` line 21.
+3. **The attach's word**: as an attach completes, the shell tells the page whether it started a session or joined one, a text message `{"attached": "new"}` or `{"attached": "joined"}`, so that a page joining a live session knows to ask the shell for its line again; §11's protocol and §12's attach change with it, and the example's shell page follows (decided 2026-11-03, the log's *From the site's client*). Built with the site's shell page, Ernest's MVP 4.2 item 4.
+4. **A restart at the cap**: an attach under the cookie of a session whose end has begun takes that session's place in the count of `shell.most-at-once`, instead of counting beside it until its program exits, so that a restart, a `Stop` and a new attach under one cookie, never meets the cap; §12's *An attach* changes with it (decided 2026-11-03, the same entry). Built with item 3.
 
 **The listener's retry, a gap (2026-11-02).** §7's retry after an accept that fails otherwise than by `Closed` or its time has no test since item 2, which ended the acceptor at `Closed`; a test needs a host error an accept can be made to answer, `emfile` with the process's descriptors used up the nearest, and is written when one is found cheap, with the test that then cites the sentence.
 
