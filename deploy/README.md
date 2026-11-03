@@ -6,7 +6,7 @@ A line whose prompt is `$` is typed by the operator, `sudo` before what the supe
 
 ## 1. The machine
 
-The machine runs Debian 13 with systemd, podman and certbot, `sudo apt install podman certbot git curl`, its ports 80 and 443 open, and the four names in DNS: `ernest-lang.org`, `www.ernest-lang.org`, `ernest-lang.se` and `www.ernest-lang.se`. The operator brings the server's release archive, `ernest_httpd-0.1.0.tar.gz`, which `make release` writes, and Ernest's, `ern-0.9.0.tar.gz`, the one the release was built with.
+The machine runs Debian 13 with systemd, podman and certbot, `sudo apt install podman certbot git curl`, its ports 80 and 443 open, and the four names in DNS: `ernest-lang.org`, `www.ernest-lang.org`, `ernest-lang.se` and `www.ernest-lang.se`. The operator brings the server's release archive, `ernest_httpd-0.1.0.tar.gz`, which `make release` writes, and Ernest's, `ern-0.10.0.tar.gz`, the one the release was built with.
 
 Each of the two ports has a listener on `0.0.0.0` and one on `::`, since a listener takes connections of its address's family alone, and the four names resolve to the machine's address of each family it serves.
 
@@ -17,7 +17,7 @@ The server runs as its own user, `httpd`, whose home, `/home/httpd`, holds every
 ```console
 $ sudo useradd --create-home --home-dir /home/httpd --shell /usr/sbin/nologin httpd
 $ grep httpd /etc/subuid /etc/subgid
-$ sudo install -o httpd -g httpd -m 0644 ern-0.9.0.tar.gz ernest_httpd-0.1.0.tar.gz /home/httpd/
+$ sudo install -o httpd -g httpd -m 0644 ern-0.10.0.tar.gz ernest_httpd-0.1.0.tar.gz /home/httpd/
 ```
 
 `grep` prints a line of each file; where it prints none, `useradd` gave the user no range, and podman later says `potentially insufficient UIDs or GIDs available in user namespace`: give one of 65536 that no other line of the files holds, `sudo usermod --add-subuids 300000-365535 --add-subgids 300000-365535 httpd`. A user made before is refused, `useradd: user 'httpd' already exists`.
@@ -42,10 +42,10 @@ $ erl -noshell -eval 'io:format("~s~n", [erlang:system_info(otp_release)]), halt
 Ernest is installed under the server's prefix, `/home/httpd/opt/local`, from the archive the release was built with, since a node runs only what its own build of `ern` compiled and refuses another's, `ern run: /home/httpd/opt/local/lib/ernest_httpd/build/ernest_httpd.erc: compiled by another build of ern`; then the server, from its unpacked release archive, which `make install` installs as it was compiled:
 
 ```console
-httpd$ tar -xzf ern-0.9.0.tar.gz && cd ern-0.9.0
+httpd$ tar -xzf ern-0.10.0.tar.gz && cd ern-0.10.0
 httpd$ make && make install PREFIX=/home/httpd/opt/local
 httpd$ cd && ern --version
-ern 0.9.0+<commit>
+ern 0.10.0+<commit>
 httpd$ tar -xzf ernest_httpd-0.1.0.tar.gz && cd ernest_httpd-0.1.0
 httpd$ make install PREFIX=/home/httpd/opt/local
 httpd$ cd && command -v ernest_httpd
@@ -133,7 +133,7 @@ The rest of the step is run when the configuration takes a shell, which it does 
 The visitor's shell runs in a container of the image `ernest-shell`, built by `httpd` from `deploy/Containerfile` with Ernest's archive beside it as `ern.tar.gz`, through the shell's wrapper, `deploy/shell.sh`, installed in the server's directory:
 
 ```console
-httpd$ mkdir image && cp ernest_httpd-0.1.0/deploy/Containerfile image/ && cp ern-0.9.0.tar.gz image/ern.tar.gz
+httpd$ mkdir image && cp ernest_httpd-0.1.0/deploy/Containerfile image/ && cp ern-0.10.0.tar.gz image/ern.tar.gz
 httpd$ podman build -t ernest-shell image
 httpd$ install -m 0755 ernest_httpd-0.1.0/deploy/shell.sh ernest-httpd/shell.sh
 ```
@@ -218,19 +218,19 @@ The operator's shell attaches to the server's node from the operator's directory
 
 ```console
 $ cd && export PATH=$HOME/opt/local/bin:$PATH
-$ sudo install -o $USER -g $USER -m 0644 /home/httpd/ern-0.9.0.tar.gz ~/
-$ tar -xzf ern-0.9.0.tar.gz && cd ern-0.9.0
+$ sudo install -o $USER -g $USER -m 0644 /home/httpd/ern-0.10.0.tar.gz ~/
+$ tar -xzf ern-0.10.0.tar.gz && cd ern-0.10.0
 $ make && make install PREFIX=$HOME/opt/local
 $ cd && ern --version
-ern 0.9.0+<commit>
+ern 0.10.0+<commit>
 ```
 
-`ern --version` prints step 4's line, the same commit. Each command fails as step 4's do, and `install` without the archive says `cannot stat '/home/httpd/ern-0.9.0.tar.gz': No such file or directory`. A shell begun later exports the `PATH` again, or puts `PATH=$HOME/opt/local/bin:$PATH` in front of the `ern` line. Then the attach:
+`ern --version` prints step 4's line, the same commit. Each command fails as step 4's do, and `install` without the archive says `cannot stat '/home/httpd/ern-0.10.0.tar.gz': No such file or directory`. A shell begun later exports the `PATH` again, or puts `PATH=$HOME/opt/local/bin:$PATH` in front of the `ern` line. Then the attach:
 
 ```console
 $ ern shell --config-dir ~/ops --attach node
 the peer node connected
-Ernest 0.9.0+<commit>, session 1. :help for the commands, :quit to leave.
+Ernest 0.10.0+<commit>, session 1. :help for the commands, :quit to leave.
 > :processes
 > :quit
 ```

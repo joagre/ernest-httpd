@@ -34,7 +34,7 @@
 #   make clean    removes what the build, make lib and make xterm wrote
 
 NAME        = ernest_httpd
-ERN_VERSION = 0.9
+ERN_VERSION = 0.10
 DEPS        =
 ERL_DEPS    =
 # The example site's terminal, xterm.js and its fit addon, each by the URL
