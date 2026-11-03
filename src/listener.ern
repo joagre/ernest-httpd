@@ -424,7 +424,7 @@ let capsConnections =
         };
         Test.equal(result,
                    Right(#(#(200, 5),
-                           Left("Socket(Timeout)"),
+                           Left("Http.Socket(Io.Timeout)"),
                            #(200, 5),
                            #(200, 5),
                            #(200, 5),
@@ -471,7 +471,7 @@ let endsInOrder = Test.Case(name = "ends its connections when told to stop", run
                        #("Returned", true),
                        "closed",
                        "closed",
-                       "Refused",
+                       "Io.Refused",
                        ["GET /a.txt HTTP/1.1 200 5"])))
 })
 

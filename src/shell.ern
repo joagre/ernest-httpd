@@ -102,7 +102,7 @@ type Asked = Resize(Terminal.Size) | Extend | Stop
 ///                  version = Http.Version(major = 1, minor = 1),
 ///                  headers = []);
 /// Shell.handshake(shell, request)
-/// // => Left(Refusal(status = 405, headers = [Header(name = "Allow", value = "GET")]))
+/// // => Left(Shell.Refusal(status = 405, headers = [Http.Header(name = "Allow", value = "GET")]))
 /// ```
 export fn handshake(shell : Config.Shell, request : Http.Request) : Either(Refusal, Accepted) = {
     let headers = request.headers;
@@ -546,7 +546,7 @@ let refusesUpgrades = Test.Case(name = "refuses an upgrade it does not take", ru
                                 "Sec-WebSocket-Key",
                                 [header("Sec-WebSocket-Key",
                                         Base64.encode(Crypto.randomBytes(15)))]))],
-               ["405 [Header(name = \"Allow\", value = \"GET\")]",
+               ["405 [Http.Header(name = \"Allow\", value = \"GET\")]",
                 "426 " <> upgradeHeaders,
                 "426 " <> upgradeHeaders,
                 "426 " <> upgradeHeaders,
@@ -620,7 +620,7 @@ fn upgrading(socket : Address(Tcp.SocketMsg),
         Right(#(request, rest)) ->
             match handshake(sessions.shell, request) {
                 Right(Accepted(=response, cookie = carried)) ->
-                    match Tcp.write(socket, Http.render(response, <<>>), 5000) {
+                    match Tcp.write(socket, Http.renderResponse(response, <<>>), 5000) {
                         Right(Unit) -> serve(socket, rest, sessions, carried, "127.0.0.1", timeouts)
                       | Left(_) -> Tcp.close(socket)
                     }

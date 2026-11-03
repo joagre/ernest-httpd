@@ -473,7 +473,7 @@ fn exited(program : Address(Os.ProgramMsg)) : Either(Io.Error, Int) =
 // 4004; given no shell's path, the four checks of the rest alone pass;
 // against the same site from an origin it does not take, the shell's check
 // fails and says what came, the 403, while the rest pass; and against a
-// port where nothing listens every check fails and says `Refused`, each in
+// port where nothing listens every check fails and says `Io.Refused`, each in
 // a connection of its own. get, upgrade, masked and readOutput are the
 // client they run with.
 let checksASite = Test.Case(name = "checks a site and says what came", run = fn() = {
@@ -534,7 +534,8 @@ let checksASite = Test.Case(name = "checks a site and says what came", run = fn(
                        #(ok,
                          List.take(ok, 4),
                          List.take(ok, 4) <> [shellName <> ": failed: 403"],
-                         List.map(named(nothing, nothing), fn(name) = name <> ": failed: Refused"),
+                         List.map(named(nothing, nothing),
+                                  fn(name) = name <> ": failed: Io.Refused"),
                          143))
         }
       | Left(error) ->
@@ -573,7 +574,7 @@ let refusesTheCommandLine = Test.Case(name = "refuses a command line it cannot t
                Right([refusal,
                       refusal,
                       refusal,
-                      refused(missing <> ": cannot read the file: NotFound"),
+                      refused(missing <> ": cannot read the file: Io.NotFound"),
                       refused(empty <> ": listeners is required")]))
 })
 

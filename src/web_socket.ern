@@ -28,7 +28,7 @@
 /// let decoder = WebSocket.decoder(WebSocket.FromClient, 65536);
 /// let frame = <<0x81, 0x85, 0x37, 0xfa, 0x21, 0x3d, 0x7f, 0x9f, 0x4d, 0x51, 0x58>>;
 /// Either.map(WebSocket.decode(decoder, frame), fn(#(messages, _)) = messages)
-/// // => Right([Text("Hello")])
+/// // => Right([WebSocket.Text("Hello")])
 /// ```
 ///
 /// The server's text message encoded, the RFC's unmasked frame of §5.7:
@@ -76,7 +76,7 @@ export type Message =
 /// let decoder = WebSocket.decoder(WebSocket.FromServer, 65536);
 /// let frame = <<0x81, 0x85, 0x37, 0xfa, 0x21, 0x3d, 0x7f, 0x9f, 0x4d, 0x51, 0x58>>;
 /// Either.map(WebSocket.decode(decoder, frame), fn(#(messages, _)) = messages)
-/// // => Left(ProtocolError)
+/// // => Left(WebSocket.ProtocolError)
 /// ```
 export type Role = FromClient | FromServer
 
@@ -90,7 +90,7 @@ export type Role = FromClient | FromServer
 /// let decoder = WebSocket.decoder(WebSocket.FromServer, 4);
 /// let frame = <<0x81, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f>>;
 /// Either.map(WebSocket.decode(decoder, frame), fn(#(messages, _)) = messages)
-/// // => Left(TooBig)
+/// // => Left(WebSocket.TooBig)
 /// ```
 export type Error = ProtocolError | TooBig | NotUtf8
 
@@ -110,7 +110,7 @@ export type Error = ProtocolError | TooBig | NotUtf8
 ///     let #(second, _) <- WebSocket.decode(decoder, <<0x80, 0x02, 0x6c, 0x6f>>);
 ///     Right(#(first, second))
 /// }
-/// // => Right(#([], [Text("Hello")]))
+/// // => Right(#([], [WebSocket.Text("Hello")]))
 /// ```
 export abstract type Decoder =
     Decoder(role : Role, limit : Int, carried : Bytes, message : Optional(Fragments))
@@ -207,7 +207,7 @@ export fn decoder(role : Role, limit : Int) : Decoder =
 /// let decoder = WebSocket.decoder(WebSocket.FromServer, 65536);
 /// let frames = <<0x01, 0x03, 0x48, 0x65, 0x6c, 0x89, 0x00, 0x80, 0x02, 0x6c, 0x6f>>;
 /// Either.map(WebSocket.decode(decoder, frames), fn(#(messages, _)) = messages)
-/// // => Right([Ping(<<>>), Text("Hello")])
+/// // => Right([WebSocket.Ping(<<>>), WebSocket.Text("Hello")])
 /// ```
 ///
 /// A frame whose header says it passes the limit, refused before its
@@ -217,7 +217,7 @@ export fn decoder(role : Role, limit : Int) : Decoder =
 /// let decoder = WebSocket.decoder(WebSocket.FromServer, 65536);
 /// let header = <<0x82, 0x7F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01>>;
 /// Either.map(WebSocket.decode(decoder, header), fn(#(messages, _)) = messages)
-/// // => Left(TooBig)
+/// // => Left(WebSocket.TooBig)
 /// ```
 export fn decode(decoder : Decoder, bytes : Bytes) : Either(Error, #(List(Message), Decoder)) =
     decodedFrom(Decoder(..decoder, carried = decoder.carried <> bytes), [])

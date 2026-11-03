@@ -137,7 +137,7 @@ export fn line(message : LogMsg) : Optional(String) =
 // The time as Common Log Format writes it, in UTC: the day, the month's
 // three letters in English, the year, and the time of day.
 fn civilTime(time : Int) : String = {
-    let civil = Time.civil(time);
+    let civil = Time.toCivil(time);
     digits(civil.day, 2)
         <> "/"
         <> String.slice("JanFebMarAprMayJunJulAugSepOctNovDec",
@@ -187,7 +187,7 @@ let scratch : String = "build/scratch/access_log"
 fn entry(request : Optional(String)) : LogMsg =
     Entry(remote = "192.0.2.7", time = 784111777000, =request, status = 200, size = 5)
 
-// design §8: the line of an entry, its time in UTC over Time.civil, the
+// design §8: the line of an entry, its time in UTC over Time.toCivil, the
 // day and the month in English, and `-` for no request.
 let writesLines =
     Test.Case(name = "writes an entry's line",

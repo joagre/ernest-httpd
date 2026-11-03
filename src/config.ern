@@ -22,7 +22,7 @@
 ///
 /// ```ernest
 /// Config.parse("{}")
-/// // => Left(Invalid(field = "listeners", rule = "is required", value = None))
+/// // => Left(Config.Invalid(field = "listeners", rule = "is required", value = None))
 /// ```
 ///
 /// What the operator reads, the value as JSON writes it:
@@ -930,8 +930,8 @@ let writesReasons =
                                   Left(error) -> reason(error)
                                 | Right(_) -> "read"
                               }],
-                             ["cannot read the file: NotFound",
-                              "is not JSON: UnexpectedEnd",
+                             ["cannot read the file: Io.NotFound",
+                              "is not JSON: Json.UnexpectedEnd",
                               "limits.headers must be above 0: 0",
                               "root is required",
                               "roots is no field of the configuration",

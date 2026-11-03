@@ -36,7 +36,7 @@
 ///                  version = Http.Version(major = 1, minor = 1),
 ///                  headers = [Http.Header(name = "Host", value = "WWW.ernest-lang.org:80")]);
 /// Either.map(Config.parse(text), fn(config) = Hosts.answer(config, None, request, 1000))
-/// // => Right(Answered(#(Response(version = Version(major = 1, minor = 1), status = 301, headers = [Header(name = "Location", value = "https://ernest-lang.org/docs?page=2")]), <<>>)))
+/// // => Right(Hosts.Answered(#(Http.Response(version = Http.Version(major = 1, minor = 1), status = 301, headers = [Http.Header(name = "Location", value = "https://ernest-lang.org/docs?page=2")]), <<>>)))
 /// ```
 
 //

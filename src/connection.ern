@@ -224,7 +224,7 @@ fn responded(connection : Connection,
     };
     let headers =
         [header("Date", Http.date(time))] <> config.headers <> response.headers <> persistence;
-    let bytes = Http.render(Http.Response(..response, =headers), body);
+    let bytes = Http.renderResponse(Http.Response(..response, =headers), body);
     match Tcp.write(connection.socket, bytes, config.timeouts.write) {
         Right(Unit) -> {
             send(connection.server.log,

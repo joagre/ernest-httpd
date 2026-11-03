@@ -26,7 +26,7 @@
 ///                  headers = []);
 /// let #(response, body) = Static.serve(Static.site(Path("site"), Map.empty), request, 1000);
 /// #(response.status, response.headers, String.fromUtf8(body))
-/// // => #(405, [Header(name = "Allow", value = "GET, HEAD"), Header(name = "Content-Type", value = "text/plain; charset=utf-8")], Some("405 Method Not Allowed\n"))
+/// // => #(405, [Http.Header(name = "Allow", value = "GET, HEAD"), Http.Header(name = "Content-Type", value = "text/plain; charset=utf-8")], Some("405 Method Not Allowed\n"))
 /// ```
 
 //
@@ -126,7 +126,7 @@ export fn serve(site : Site, request : Http.Request, ms : Int) : #(Http.Response
 /// let ok =
 ///     Http.Response(version = Http.Version(major = 1, minor = 1), status = 200, headers = []);
 /// Static.withoutBody(#(ok, <<104, 105>>))
-/// // => #(Response(version = Version(major = 1, minor = 1), status = 200, headers = [Header(name = "Content-Length", value = "2")]), <<>>)
+/// // => #(Http.Response(version = Http.Version(major = 1, minor = 1), status = 200, headers = [Http.Header(name = "Content-Length", value = "2")]), <<>>)
 /// ```
 export fn withoutBody(#(response, body) : #(Http.Response, Bytes)) : #(Http.Response, Bytes) =
     if response.status == 304 then
@@ -397,7 +397,7 @@ fn isControl(char : Char) : Bool = {
 /// ```ernest
 /// let #(response, body) = Static.error(Static.site(Path("site"), Map.empty), 400, 1000);
 /// #(response.status, response.headers, String.fromUtf8(body))
-/// // => #(400, [Header(name = "Content-Type", value = "text/plain; charset=utf-8")], Some("400 Bad Request\n"))
+/// // => #(400, [Http.Header(name = "Content-Type", value = "text/plain; charset=utf-8")], Some("400 Bad Request\n"))
 /// ```
 export fn error(site : Site, status : Int, ms : Int) : #(Http.Response, Bytes) =
     if status == 404 then {
