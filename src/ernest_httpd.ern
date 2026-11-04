@@ -486,12 +486,14 @@ fn upgraded(port : Int,
 }
 
 // A shell's client on the port, upgraded, the terminal resized and a line
-// typed, and the binary messages read until they hold the line twice, the
-// terminal's echo and cat's: the 101's status, whether it set a cookie, the
-// text read, and the socket and its decoder, to be read at the end.
+// typed, and the attach's text read and then the binary messages until they
+// hold the line twice, the terminal's echo and cat's: the 101's status,
+// whether it set a cookie, the attach's word, the text read, and the socket
+// and its decoder, to be read at the end.
 fn shellClient(port : Int) : Either(Io.Error,
                                     #(Int,
                                       Bool,
+                                      String,
                                       String,
                                       Address(Tcp.SocketMsg),
                                       WebSocket.Decoder)) = {
@@ -500,7 +502,7 @@ fn shellClient(port : Int) : Either(Io.Error,
         Smoke.masked(WebSocket.Text("{\"resize\": [24, 80]}"))
             <> Smoke.masked(WebSocket.Binary(String.toUtf8("hello\n")));
     let _ <- Tcp.write(socket, typed, 5000);
-    let #(output, decoder) <-
+    let #(attached, output, decoder) <-
         Either.mapLeft(Smoke.readOutput(socket,
                                         WebSocket.decoder(WebSocket.FromServer, 65536),
                                         rest,
@@ -511,6 +513,7 @@ fn shellClient(port : Int) : Either(Io.Error,
                        Io.Other);
     Right(#(response.status,
             Http.header(response.headers, "Set-Cookie") != None,
+            attached,
             Optional.withDefault(String.fromUtf8(output), "?"),
             socket,
             decoder))
@@ -536,8 +539,9 @@ fn closing(socket : Address(Tcp.SocketMsg), decoder : WebSocket.Decoder) : Strin
 // listener; serves a request for a file from the site over HTTP/1.1, plain
 // and over TLS, answers a host that is neither with 421, redirects to the
 // canonical host and serves the ACME challenge on the redirect listener,
-// upgrades a request on the shell's path, setting its cookie, and carries
-// the keys typed to `cat` under a terminal and its output back, and tells
+// upgrades a request on the shell's path, setting its cookie, tells it
+// `{"attached": "new"}`, and carries the keys typed to `cat` under a
+// terminal and its output back, and tells
 // each response to the access log; at the termination signal it stops the
 // sessions first, which closes the attached shell with 1001, then its
 // listeners at once, which close the shell no session is attached to with
@@ -573,7 +577,8 @@ let servesAndEnds = Test.Case(name = "serves the site and ends in order", run = 
           | _ -> #(0, 0, 0)
         };
         let #(answers, sockets) <- answered(plainPort, tlsPort, redirectPort);
-        let #(upgradeStatus, cookieSet, typed, shellSocket, decoder) <- shellClient(plainPort);
+        let #(upgradeStatus, cookieSet, attached, typed, shellSocket, decoder) <-
+            shellClient(plainPort);
         let #(_, _, unattached) <- upgraded(plainPort, "/shell", "http://localhost");
         let start = Clock.monotonic();
         let _ <-
@@ -589,7 +594,7 @@ let servesAndEnds = Test.Case(name = "serves the site and ends in order", run = 
                     == List.map([plainPort, tlsPort, redirectPort],
                                 fn(port) = "listening on 127.0.0.1:" <> Int.toString(port)),
                 answers,
-                #(upgradeStatus, cookieSet, typed, shellEnd, unattachedEnd),
+                #(upgradeStatus, cookieSet, attached, typed, shellEnd, unattachedEnd),
                 status,
                 took < 3000,
                 kept,
@@ -605,6 +610,7 @@ let servesAndEnds = Test.Case(name = "serves the site and ends in order", run = 
                         "200 token-1.key"],
                        #(101,
                          true,
+                         "new",
                          "hello\r\nhello\r\n",
                          "Close(1001), closed",
                          "Close(1001), closed"),

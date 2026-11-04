@@ -14,7 +14,8 @@
 /// sessions start for it, and from then on the visitor's keys go to the
 /// session and the program's output comes back, each as a binary message,
 /// with the page's resizes, extensions and stop beside them as small JSON
-/// texts and the session's warning as one. A shell closes with a close
+/// texts, and the attach's completion, whether it started the session or
+/// joined it, and the session's warning as two more. A shell closes with a close
 /// code that says why: 4001 its session expired, 4002 another shell took it
 /// over, 4003 no session was to be had and 4004 it was stopped, or a code
 /// of RFC 6455's.
@@ -361,22 +362,28 @@ fn toSession(attachment : Attachment, message : Session.SessionMsg) : Attachment
     }
 
 // What the session, or the sessions, told: the session attached and
-// monitored, and told what was held for it meanwhile, in order; no session
-// to be had; the program's output written as a binary message; the warning
-// as a text; and the session's end with its close code.
+// monitored, told what was held for it meanwhile, in order, and the
+// attachment written as a text, before any output; no session to be had;
+// the program's output written as a binary message; the warning as a text;
+// and the session's end with its close code.
 fn toldBy(connected : Connected,
           attachment : Attachment,
           reader : Optional(Process),
           told : Session.Told) : Unit receiving ShellMsg =
     match told {
-        Session.Attached(session) -> {
+        Session.Attached(=session, attachment = attachedAs) -> {
             monitor(Process.fromAddress(session), SessionEnded);
             let held = match attachment {
                 Attaching(held) -> List.reverse(held)
               | Unattached or AttachedTo(_) -> []
             };
             List.forEach(held, fn(message) = send(session, message));
-            serving(connected, AttachedTo(session), reader)
+            let word = match attachedAs {
+                Session.New -> "new"
+              | Session.Joined -> "joined"
+            };
+            let text = Json.format(Json.Object(Map.fromList([#("attached", Json.Text(word))])));
+            written(connected, AttachedTo(session), reader, WebSocket.Text(text))
         }
       | Session.Unavailable ->
             closedWith(connected, attachment, reader, 4003)
@@ -749,6 +756,12 @@ fn stopped(sessions : Sessions.Sessions) : Bool =
 fn page(value : String) : WebSocket.Message =
     WebSocket.Text(value)
 
+// The text of `{"attached": word}` as Json writes it, as a test compares
+// it.
+fn attachedText(word : String) : String =
+    Io.show(WebSocket.Text(Json.format(Json.Object(Map.fromList([#("attached",
+                                                                   Json.Text(word))])))))
+
 // design §11: the reader decodes the bytes after the head first: a ping
 // carried with the upgrade is answered with its pong, and a ping read after
 // it too; a pong is dropped; and the client's close is answered with a
@@ -815,13 +828,14 @@ let closesIdle = Test.Case(name = "closes an unattached shell at the idle deadli
 })
 
 // design §11, §12: through the sessions with `cat`: the first resize
-// attaches the shell, keys written with it, while the attach is under way,
-// are held and told once it is attached, and they come back as binary
-// messages, the terminal's echo and cat's line; a second client with the
-// cookie takes
-// the session over, the first closed with 4002, and is written what
-// follows; its stop closes it with 4004; at the cap a resize of another
-// cookie is told Unavailable and closes with 4003.
+// attaches the shell, which writes `{"attached": "new"}` first, and keys
+// written with it, while the attach is under way, are held and told once it
+// is attached, and they come back after the text as binary messages, the
+// terminal's echo and cat's line; a second client with the cookie takes
+// the session over, the first closed with 4002, is written
+// `{"attached": "joined"}` and then what follows; its stop closes it with
+// 4004; at the cap a resize of another cookie is told Unavailable and
+// closes with 4003, no text written.
 let carriesASession = Test.Case(name = "carries a session through the sessions", run = fn() = {
     let sessions = Sessions.start(configured(1, 60000, 30000, 1024), deadlines(60000));
     let carried = [header("Cookie", "shell=" <> cookie)];
@@ -832,11 +846,13 @@ let carriesASession = Test.Case(name = "carries a session through the sessions",
                    carried,
                    Smoke.masked(page("{\"resize\": [24, 80]}"))
                        <> Smoke.masked(WebSocket.Binary(String.toUtf8("hello\n"))));
+        let #(firstWord, first) = nextMessage(first);
         let #(echoed, first) = typed(first, "hello\r\nhello\r\n", "");
         let second <- opened(sessions, deadlines(60000), carried, <<>>);
         let _ = sent(second, page("{\"resize\": [30, 100]}"));
         let takenOver = messages(first, 2);
         let firstEnd = ended();
+        let #(secondWord, second) = nextMessage(second);
         let _ = sent(second, WebSocket.Binary(String.toUtf8("again\n")));
         let #(again, second) = typed(second, "again\r\nagain\r\n", "");
         let other <- opened(sessions, deadlines(60000), [], <<>>);
@@ -845,12 +861,23 @@ let carriesASession = Test.Case(name = "carries a session through the sessions",
         let otherEnd = ended();
         let _ = sent(second, page("{\"stop\": true}"));
         let stop = messages(second, 2);
-        Right(#(echoed, takenOver, firstEnd, again, unavailable, otherEnd, stop, ended()))
+        Right(#(firstWord,
+                echoed,
+                takenOver,
+                firstEnd,
+                secondWord,
+                again,
+                unavailable,
+                otherEnd,
+                stop,
+                ended()))
     };
     Test.equal(#(result, stopped(sessions)),
-               #(Right(#("hello\r\nhello\r\n",
+               #(Right(#(attachedText("new"),
+                         "hello\r\nhello\r\n",
                          ["Close(4002)", "closed"],
                          "Returned",
+                         attachedText("joined"),
                          "again\r\nagain\r\n",
                          ["Close(4003)", "closed"],
                          "Returned",
@@ -868,12 +895,14 @@ let warnsAndExpires = Test.Case(name = "writes the warning and closes at the exp
     let result = {
         let client <- opened(sessions, deadlines(200), [], <<>>);
         let _ = sent(client, page("{\"resize\": [24, 80]}"));
+        let #(attached, client) = nextMessage(client);
         let #(warning, client) = nextMessage(client);
-        Right(#(warning, messages(client, 2), ended()))
+        Right(#(attached, warning, messages(client, 2), ended()))
     };
     let expected =
         Io.show(WebSocket.Text(Json.format(Json.Object(Map.fromList([#("warning",
                                                                        Json.Integer(0))])))));
     Test.equal(#(result, stopped(sessions)),
-               #(Right(#(expected, ["Close(4001)", "closed"], "Returned")), true))
+               #(Right(#(attachedText("new"), expected, ["Close(4001)", "closed"], "Returned")),
+                 true))
 })

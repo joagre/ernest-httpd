@@ -2,9 +2,11 @@
 // §11 of ernest-httpd has it. The terminal's bytes go each way as binary
 // messages; the page's own messages are text, one JSON object each: the
 // terminal's size at the open and at each change, which attaches the
-// session and then resizes it, an extend and a stop. The server's one text
-// message is the warning of the seconds left. At the close the status line
-// says why, by the close code.
+// session and then resizes it, an extend and a stop. The server's text
+// messages are the attach's completion, whether it started the session or
+// joined one, and the warning of the seconds left; a page that joined a
+// live session sends C-l, so that the shell draws its line again on the
+// fresh terminal. At the close the status line says why, by the close code.
 "use strict";
 
 const path = "/shell/session"; // the configuration's shell.path
@@ -44,7 +46,9 @@ function connect() {
             terminal.write(new Uint8Array(event.data));
         } else {
             const message = JSON.parse(event.data);
-            if ("warning" in message) {
+            if (message.attached === "joined") {
+                send(Uint8Array.of(0x0c));
+            } else if ("warning" in message) {
                 warn(message.warning);
             }
         }

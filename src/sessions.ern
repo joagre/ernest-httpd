@@ -12,7 +12,9 @@
 ///
 /// A session tells the sessions as its end begins, `SessionEnding`: its
 /// cookie names it no more, so that an attach under that cookie starts a new
-/// session, and it is counted among the live until it has ended.
+/// session, and it is counted among the live until it has ended or a
+/// session is started under its cookie, which then counts in its place, so
+/// that a visitor's restart never meets the cap.
 ///
 /// `Stop` ends every session with 1001, which closes every shell attached,
 /// and answers once each has ended; after it every attach is told
@@ -38,13 +40,16 @@ export type SessionsMsg =
 
 // What the sessions hold: the shell's configuration and the deadlines each
 // session is started with, the live sessions by their cookies, the ones
-// whose end has begun, and the times of the starts within the window by
-// remote address, as Clock.monotonic counts them.
+// whose end has begun with their cookies, counted among the live, the ones
+// whose end has begun and under whose cookie a session has since started,
+// not counted, and the times of the starts within the window by remote
+// address, as Clock.monotonic counts them.
 type Held =
     Held(shell : Config.Shell,
          timeouts : Config.Timeouts,
          live : Map(String, Address(Session.SessionMsg)),
-         ending : Set(Process),
+         ending : Map(Process, String),
+         replaced : Set(Process),
          starts : Map(String, List(Int)))
 
 //
@@ -59,7 +64,8 @@ export fn start(shell : Config.Shell, timeouts : Config.Timeouts) : Sessions =
                                  serving(Held(=shell,
                                               =timeouts,
                                               live = Map.empty,
-                                              ending = Set.empty,
+                                              ending = Map.empty,
+                                              replaced = Set.empty,
                                               starts = Map.empty))))
 
 // The sessions waiting on their mailbox: each message taken as it comes,
@@ -81,7 +87,9 @@ fn serving(held : Held) : Unit receiving SessionsMsg =
     }
 
 // An attach passed to the live session its cookie names, or a session
-// started for the cookie within the caps, or the shell told Unavailable.
+// started for the cookie within the caps, or the shell told Unavailable. A
+// session whose end has begun under the cookie is not counted against the
+// cap, and once a session is started in its place is counted no more.
 fn attached(held : Held,
             cookie : String,
             remote : String,
@@ -98,7 +106,10 @@ fn attached(held : Held,
             let made =
                 List.filter(Optional.withDefault(Map.get(held.starts, remote), []),
                             fn(time) = time > window);
-            if Map.size(held.live) + Set.size(held.ending) < held.shell.mostAtOnce
+            // the ending sessions under the cookie, which a start replaces
+            let ours = Map.filter(held.ending, fn(_, under) = under == cookie);
+            let others = Map.filter(held.ending, fn(_, under) = under != cookie);
+            if Map.size(held.live) + Map.size(others) < held.shell.mostAtOnce
                 && List.size(made) < held.shell.starts.count then {
                 let config = held.shell;
                 let timeouts = held.timeouts;
@@ -109,6 +120,8 @@ fn attached(held : Held,
                 send(session, Session.Attach(shell));
                 Held(..held,
                      live = Map.put(held.live, cookie, session),
+                     ending = others,
+                     replaced = Set.union(held.replaced, Set.fromList(Map.keys(ours))),
                      starts = Map.put(pruned(held.starts, window), remote, now :: made))
             } else {
                 send(shell, Session.Unavailable);
@@ -126,26 +139,34 @@ fn pruned(starts : Map(String, List(Int)), window : Int) : Map(String, List(Int)
     })
 
 // A session whose end has begun dropped by its cookie and counted among
-// the ending; one that has already ended, its end having come first
-// (report §6.9), is not counted again.
+// the ending, with its cookie; one that has already ended, its end having
+// come first (report §6.9), is not counted again.
 fn ending(held : Held, process : Process) : Held =
-    if Map.any(held.live, fn(_, session) = Process.fromAddress(session) == process) then
-        Held(..held, live = without(held.live, process), ending = Set.put(held.ending, process))
-    else
-        held
+    match Map.find(held.live, fn(_, session) = Process.fromAddress(session) == process) {
+        Some(#(cookie, _)) ->
+            Held(..held,
+                 live = without(held.live, process),
+                 ending = Map.put(held.ending, process, cookie))
+      | None ->
+            held
+    }
 
-// A session that has ended dropped, live or ending.
+// A session that has ended dropped, live, ending or replaced; one replaced
+// was counted no more, so its end lowers nothing.
 fn ended(held : Held, process : Process) : Held =
-    Held(..held, live = without(held.live, process), ending = Set.remove(held.ending, process))
+    Held(..held,
+         live = without(held.live, process),
+         ending = Map.remove(held.ending, process),
+         replaced = Set.remove(held.replaced, process))
 
 fn without(live : Map(String, Address(Session.SessionMsg)),
            process : Process) : Map(String, Address(Session.SessionMsg)) =
     Map.filter(live, fn(_, session) = Process.fromAddress(session) != process)
 
-// The wait for each session's end, live or ending, every attach meanwhile
-// told Unavailable.
+// The wait for each session's end, live, ending or replaced, every attach
+// meanwhile told Unavailable.
 fn stopping(held : Held) : Unit receiving SessionsMsg =
-    if Map.isEmpty(held.live) && Set.isEmpty(held.ending) then
+    if Map.isEmpty(held.live) && Map.isEmpty(held.ending) && Set.isEmpty(held.replaced) then
         Unit
     else receive {
         SessionEnding(Session.Ending(process)) ->
@@ -213,7 +234,7 @@ fn attachedTo(sessions : Sessions,
                 size = Terminal.Size(rows = 24, columns = 80),
                 shell = named(name)));
     receive {
-        Heard(shell = from, told = Session.Attached(session)) when from == name -> Some(session)
+        Heard(shell = from, told = Session.Attached(=session)) when from == name -> Some(session)
       | Heard(shell = from) when from == name -> None
       | after 5000 -> None
     }
@@ -257,8 +278,10 @@ fn next(name : String) : String receiving Seen =
 
 fn shown(told : Session.Told) : String =
     match told {
-        Session.Attached(_) ->
-            "Attached"
+        Session.Attached(attachment = Session.New) ->
+            "Attached(New)"
+      | Session.Attached(attachment = Session.Joined) ->
+            "Attached(Joined)"
       | Session.Unavailable ->
             "Unavailable"
       | Session.Output(bytes) ->
@@ -287,7 +310,7 @@ let startsWithinTheCap = Test.Case(name = "starts a session within the cap", run
                 size = Terminal.Size(rows = 24, columns = 80),
                 shell = named("again")));
     let again = receive {
-        Heard(shell = "again", told = Session.Attached(session)) -> Some(session)
+        Heard(shell = "again", told = Session.Attached(=session)) -> Some(session)
       | after 5000 -> None
     };
     let takenOver = next("first");
@@ -298,7 +321,7 @@ let startsWithinTheCap = Test.Case(name = "starts a session within the cap", run
             send(session, Session.Stop);
             let stopped = next("again");
             let later = Test.until(fn() = match attach(sessions, "later", "c", "192.0.2.2") {
-                                       "Attached" -> Test.Passed
+                                       "Attached(New)" -> Test.Passed
                                      | answer -> Test.Failed(answer)
                                    },
                                    5000);
@@ -309,9 +332,9 @@ let startsWithinTheCap = Test.Case(name = "starts a session within the cap", run
     };
     let stopped = stop(sessions);
     Test.equal(#(first, takenOver, second, third, freed, stopped),
-               #("Attached",
+               #("Attached(New)",
                  "Ended(4002)",
-                 "Attached",
+                 "Attached(New)",
                  "Unavailable",
                  #("Ended(4004)", Test.Passed),
                  true))
@@ -329,14 +352,20 @@ let capsStarts = Test.Case(name = "caps a remote address's starts within the win
     let refused = attach(sessions, "three", "c", "192.0.2.1");
     let other = attach(sessions, "other", "d", "192.0.2.2");
     let later = Test.until(fn() = match attach(sessions, "later", "c", "192.0.2.1") {
-                               "Attached" -> Test.Passed
+                               "Attached(New)" -> Test.Passed
                              | answer -> Test.Failed(answer)
                            },
                            5000);
     let waited = Clock.monotonic() - begun;
     let stopped = stop(sessions);
     Test.equal(#(one, two, refused, other, later, waited >= 400, stopped),
-               #("Attached", "Attached", "Unavailable", "Attached", Test.Passed, true, true))
+               #("Attached(New)",
+                 "Attached(New)",
+                 "Unavailable",
+                 "Attached(New)",
+                 Test.Passed,
+                 true,
+                 true))
 })
 
 // design §12: the stop tells every live session End with 1001, which each
@@ -350,8 +379,8 @@ let stopsEverySession = Test.Case(name = "ends every session at the stop", run =
     let ends = #(next("one"), next("two"));
     let afterStop = attach(sessions, "after", "c", "192.0.2.3");
     Test.equal(#(one, two, stopped, ends, afterStop, stop(sessions)),
-               #("Attached",
-                 "Attached",
+               #("Attached(New)",
+                 "Attached(New)",
                  true,
                  #("Ended(1001)", "Ended(1001)"),
                  "Unavailable",
@@ -361,29 +390,68 @@ let stopsEverySession = Test.Case(name = "ends every session at the stop", run =
 // design §12: a session whose end has begun is dropped by its cookie, so
 // that an attach under the cookie starts a new session while the old one
 // waits out its hangup, its program outliving the hangup of its terminal;
-// and it is counted among the live until it has ended, so that a third
-// cookie is held off by the cap meanwhile. The stop waits for both.
+// at `most-at-once` 1 the old one is counted among the live meanwhile, so
+// that another cookie is held off by the cap, until a session is started
+// under its cookie, which counts in its place: the restart, a Stop and an
+// attach under one cookie, does not meet the cap, while another cookie
+// still does, and the old session's end lowers nothing, another cookie
+// held off after it too. The stop waits for both. A regression test of the
+// end's count where it waits for the old session's end and the sessions'
+// empty mailbox; it cannot see the order in which the sessions take that
+// end and the attach after it.
 let startsAnew = Test.Case(name = "starts anew under a cookie whose session ends", run = fn() = {
     let sessions =
-        startedWith(["sh", "-c", "trap '' HUP; echo ready; sleep 30"], 600, 2, 10, 60000);
+        startedWith(["sh", "-c", "trap '' HUP; echo ready; sleep 30"], 600, 1, 10, 60000);
     let result = match attachedTo(sessions, "old", "a", "192.0.2.1") {
         Some(old) -> {
             let ready = heard("old", "ready\r\n", "");
             send(old, Session.Stop);
             let stoppedOld = next("old");
+            let ending = attach(sessions, "ending", "b", "192.0.2.2");
             let renewed = Test.until(fn() = match attachedTo(sessions, "new", "a", "192.0.2.1") {
                                          Some(session) when Process.fromAddress(session)
                                              != Process.fromAddress(old) -> Test.Passed
                                        | _ -> Test.Failed("not attached to a new session")
                                      },
                                      5000);
-            let capped = attach(sessions, "third", "c", "192.0.2.2");
+            let capped = attach(sessions, "other", "c", "192.0.2.3");
             let oldLives = Process.status(Process.fromAddress(old)) != None;
-            Right(#(ready, stoppedOld, renewed, capped, oldLives))
+            let oldEnded = Test.until(fn() = match Process.status(Process.fromAddress(old)) {
+                                          None -> Test.Passed
+                                        | Some(_) -> Test.Failed("the old session lives")
+                                      },
+                                      5000);
+            let taken =
+                Test.until(fn() = match Process.status(Process.fromAddress(sessions.address)) {
+                               Some(Process.Status(queued = 0, activity = Process.Receiving)) ->
+                                   Test.Passed
+                             | _ ->
+                                   Test.Failed("the sessions have not taken the end")
+                           },
+                           5000);
+            let cappedAfter = attach(sessions, "after", "d", "192.0.2.4");
+            Right(#(ready,
+                    stoppedOld,
+                    ending,
+                    renewed,
+                    capped,
+                    oldLives,
+                    oldEnded,
+                    taken,
+                    cappedAfter))
         }
       | None ->
             Left("not attached")
     };
     Test.equal(#(result, stop(sessions)),
-               #(Right(#("ready\r\n", "Ended(4004)", Test.Passed, "Unavailable", true)), true))
+               #(Right(#("ready\r\n",
+                         "Ended(4004)",
+                         "Unavailable",
+                         Test.Passed,
+                         "Unavailable",
+                         true,
+                         Test.Passed,
+                         Test.Passed,
+                         "Unavailable")),
+                 true))
 })

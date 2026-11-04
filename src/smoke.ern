@@ -24,7 +24,8 @@
 /// answered 301 to `https://`, the host and `/`; `/` for a host that is
 /// neither, `elsewhere`, answered 421; and where it is given the shell's
 /// path, the path upgraded from the origin, a resize of 24 rows by 80
-/// columns attaching a session, `1 + 2` and a line feed typed as keys
+/// columns attaching a new session, `{"attached": "new"}`, `1 + 2` and a
+/// line feed typed as keys
 /// answering output that holds `3 : Int` within 5000 milliseconds, its
 /// type dimmed as the shell writes it at a terminal or plain where
 /// `NO_COLOR` is set, and a stop closing with 4004. Each check opens a
@@ -33,7 +34,7 @@
 ///
 /// The checks' client is the end-to-end tests' too: a GET's response,
 /// `get`; an upgrade's, `upgrade`; a message framed as a client frames it,
-/// `masked`; and a shell's output read until a test passes,
+/// `masked`; and a shell's attach and its output read until a test passes,
 /// `readOutput`.
 ///
 /// ## Examples
@@ -201,8 +202,9 @@ fn shell(connection : Either(String, Address(Tcp.SocketMsg)),
 
 // The shell's path upgraded from the origin, answered 101; the terminal
 // resized to 24 by 80 and `1 + 2` and a line feed typed, answered within
-// answerMs by output that holds `3 : Int`; and a stop, answered by a close
-// of 4004, the output before it passed over.
+// answerMs by the attach of a new session and output that holds `3 : Int`;
+// and a stop, answered by a close of 4004, the output before it passed
+// over.
 fn shellOver(socket : Address(Tcp.SocketMsg),
              path : String,
              host : String,
@@ -217,7 +219,11 @@ fn shellOver(socket : Address(Tcp.SocketMsg),
     // the server's messages, a piece of the terminal's output each, of at
     // most 1 MiB
     let decoder = WebSocket.decoder(WebSocket.FromServer, 1048576);
-    let #(_, rest) <- readOutput(socket, decoder, carried, answerMs, holdsTheAnswer);
+    let #(attached, _, rest) <- readOutput(socket, decoder, carried, answerMs, holdsTheAnswer);
+    let _ <- if attached == "new" then
+        Right(Unit)
+    else
+        Left("attached " <> attached <> ", not new");
     let _ <-
         Either.mapLeft(Tcp.write(socket, masked(WebSocket.Text("{\"stop\": true}")), socketMs),
                        Io.show);
@@ -306,44 +312,77 @@ export fn upgrade(socket : Address(Tcp.SocketMsg),
 export fn masked(message : WebSocket.Message) : Bytes =
     Optional.withDefault(WebSocket.encodeMasked(message, Crypto.randomBytes(4)), <<>>)
 
-/// The binary messages the socket carries, the bytes carried first,
-/// decoded with the decoder and read within the milliseconds until the
-/// test passes of what they hold together: what they hold and the decoder
-/// after them, or what came instead, the output shown and then the
-/// message, the error or the time that came before the test passed.
+/// A shell's attach and its output, the messages the socket carries after
+/// a resize that attaches it, the bytes carried first, decoded with the
+/// decoder and read within the milliseconds: the text of the attach's
+/// completion, `{"attached": word}`, first, and then binary messages until
+/// the test passes of what they hold together. It answers the word, `new`
+/// or `joined`, what the binary messages hold and the decoder after them,
+/// or what came instead, the output shown and then the message, the error
+/// or the time that came before the test passed.
 export fn readOutput(socket : Address(Tcp.SocketMsg),
                      decoder : WebSocket.Decoder,
                      carried : Bytes,
                      ms : Int,
-                     test : (Bytes) -> Bool) : Either(String, #(Bytes, WebSocket.Decoder)) =
-    outputUntil(socket, decoder, carried, test, <<>>, Clock.monotonic() + ms)
+                     test : (Bytes) -> Bool) : Either(String, #(String, Bytes, WebSocket.Decoder)) =
+    outputUntil(socket, decoder, carried, test, None, <<>>, Clock.monotonic() + ms)
 
-// The output read on until the test passes or the time, a monotonic one,
-// comes.
+// The attach's word and the output read on until the test passes or the
+// time, a monotonic one, comes.
 fn outputUntil(socket : Address(Tcp.SocketMsg),
                decoder : WebSocket.Decoder,
                carried : Bytes,
                test : (Bytes) -> Bool,
+               attached : Optional(String),
                acc : Bytes,
-               time : Int) : Either(String, #(Bytes, WebSocket.Decoder)) = {
+               time : Int) : Either(String, #(String, Bytes, WebSocket.Decoder)) = {
     let #(messages, rest) <-
         Either.mapLeft(WebSocket.decode(decoder, carried),
                        fn(error) = following(acc, Io.show(error)));
-    let output <- List.tryFold(messages, acc, fn(sofar, message) = match message {
-        WebSocket.Binary(bytes) -> Right(sofar <> bytes)
-      | other -> Left(following(sofar, Io.show(other)))
-    });
+    let #(word, output) <- List.tryFold(messages, #(attached, acc), taken);
     let left = time - Clock.monotonic();
-    if test(output) then
-        Right(#(output, rest))
-    else if left <= 0 then
-        Left(following(output, "nothing more within the time"))
-    else match Tcp.read(socket, left) {
-        Right(bytes) -> outputUntil(socket, rest, bytes, test, output, time)
-      | Left(Io.Timeout) -> Left(following(output, "nothing more within the time"))
-      | Left(error) -> Left(following(output, Io.show(error)))
+    match word {
+        Some(said) when test(output) ->
+            Right(#(said, output, rest))
+      | _ when left <= 0 ->
+            Left(following(output, "nothing more within the time"))
+      | _ ->
+            match Tcp.read(socket, left) {
+                Right(bytes) -> outputUntil(socket, rest, bytes, test, word, output, time)
+              | Left(Io.Timeout) -> Left(following(output, "nothing more within the time"))
+              | Left(error) -> Left(following(output, Io.show(error)))
+            }
     }
 }
+
+// A message taken after the attach's word and the output before it: the
+// attach's text first, and then binary messages; any other message is what
+// came instead.
+fn taken(#(attached, output) : #(Optional(String), Bytes),
+         message : WebSocket.Message) : Either(String, #(Optional(String), Bytes)) =
+    match #(attached, message) {
+        #(None, WebSocket.Text(text)) ->
+            match attachedWord(text) {
+                Some(word) -> Right(#(Some(word), output))
+              | None -> Left(following(output, Io.show(message)))
+            }
+      | #(Some(_), WebSocket.Binary(bytes)) ->
+            Right(#(attached, output <> bytes))
+      | _ ->
+            Left(following(output, Io.show(message)))
+    }
+
+// The word of the text `{"attached": word}`, read through Json.
+fn attachedWord(text : String) : Optional(String) =
+    match Json.parse(text) {
+        Right(Json.Object(members)) ->
+            match Map.toList(members) {
+                [#("attached", Json.Text(word))] -> Some(word)
+              | _ -> None
+            }
+      | _ ->
+            None
+    }
 
 // The output shown, as text where it is UTF-8, and what came after it.
 fn following(output : Bytes, came : String) : String = {
