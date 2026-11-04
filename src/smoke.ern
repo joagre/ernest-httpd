@@ -683,7 +683,14 @@ fn stopSeconds(unit : String) : Optional(Int) =
 // TimeoutStopSec above timeouts.write of config.json and, where it has a
 // shell, shell.hangup together; the shell's wrapper makes its directory
 // under /run/user, traps HUP and TERM, runs podman run with --cidfile, and
-// removes the container by its id with podman rm -f -t 0; the deploy hook
+// removes the container by its id with podman rm -f -t 0; the shell's
+// start copies a and foo into the home, keeping their modes, starts foo as
+// a bare node and reads its lines through a fifo until it listens, says
+// `foo did not start` where it ends first, and then runs ern shell on a in
+// its place; the image makes the share directory the user's, installs the
+// start, makes the two nodes listing each other, foo on 127.0.0.1:8655,
+// writes the limits into each ernest.conf, and runs the start as its
+// command; the deploy hook
 // copies fullchain.pem and privkey.pem into node/, owned by httpd, the
 // key's mode 0600, and restarts the unit; and logrotate rotates log/'s
 // access.log as httpd. A line that is missing is named.
@@ -756,6 +763,26 @@ let holdsTheDeployment = Test.Case(name = "holds the files of deploy/", run = fn
                               "trap 'end; exit 143' TERM",
                               "podman run --cidfile \"$dir/cid\" \"$@\" <&3 &",
                               "podman rm -f -t 0 --cidfile \"$dir/cid\" > /dev/null 2>&1"])
+                   <> lacked("deploy/shell-start.sh",
+                             ["share=/usr/local/share/ernest-shell",
+                              "cp -Rp \"$share/a\" \"$share/foo\" \"$HOME/\" || exit 1",
+                              "mkfifo -m 0600 \"$fifo\" || exit 1",
+                              "ern run --config-dir \"$HOME/foo\" 2>&1 | {",
+                              "no*\"listening on\"*)",
+                              "[ \"$told\" = yes ] || echo ended > \"$fifo\"",
+                              "read -r said < \"$fifo\"",
+                              "echo \"foo did not start\" >&2",
+                              "exec ern shell --config-dir \"$HOME/a\""])
+                   <> lacked("deploy/Containerfile",
+                             ["&& install -d -o shell -g shell -m 0755 /usr/local/share/ernest-shell",
+                              "COPY --chmod=0755 shell-start.sh /usr/local/bin/shell-start",
+                              "USER shell",
+                              "&& ern config --config-dir a > /dev/null \\",
+                              "&& ern config --config-dir foo --listen 127.0.0.1:8655 > /dev/null \\",
+                              "&& ern config --config-dir a --peer-dir foo \\",
+                              "&& ern config --config-dir foo --peer-dir a \\",
+                              "sed -i '1s/^{$/&\\n  \"limits\": {\"processes\": 65536, \"ports\": 4096},/' \"$node/ernest.conf\" \\",
+                              "CMD [\"shell-start\"]"])
                    <> lacked("deploy/logrotate", [home <> "/log/access.log {", "su httpd httpd"]),
                [])
 })

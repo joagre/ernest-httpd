@@ -1,10 +1,13 @@
 # The shell's image, ernest-shell (docs/design.md §13): the Erlang image of
 # the OTP release Ernest runs on, 29, with Ernest installed from its release
-# archive, given to the build as ern.tar.gz beside this file, and a user
-# shell, whose home is where a session's `ern shell` starts. It holds
-# nothing secret; the session's command runs it with no network.
+# archive, given to the build as ern.tar.gz beside this file, a user shell,
+# whose home is where a session's nodes start, the two nodes' configuration
+# directories, and the shell's start, shell-start.sh beside this file, as
+# its command. It holds nothing secret; the session's command runs it with
+# no network.
 #
-#   podman build -t ernest-shell .    in a directory of this file and ern.tar.gz
+#   podman build -t ernest-shell .    in a directory of this file,
+#                                     shell-start.sh and ern.tar.gz
 
 FROM docker.io/library/erlang:29.1.2.0-slim
 
@@ -21,8 +24,29 @@ RUN --mount=type=bind,source=ern.tar.gz,target=/tmp/ern.tar.gz \
  && apt-get purge -y --auto-remove make gcc libc6-dev \
  && rm -rf /tmp/ern /var/lib/apt/lists/*
 
-RUN useradd --create-home --home-dir /home/shell --shell /bin/sh shell
+# The user, and the directory its two nodes' configurations stand in, its
+# own, so that the nodes take them.
+RUN useradd --create-home --home-dir /home/shell --shell /bin/sh shell \
+ && install -d -o shell -g shell -m 0755 /usr/local/share/ernest-shell
+
+COPY --chmod=0755 shell-start.sh /usr/local/bin/shell-start
 
 USER shell
 WORKDIR /home/shell
-CMD ["ern", "shell"]
+
+# The two nodes, a, which only dials, and foo, listening on the loopback,
+# each listing the other, and each holding the limits that fit two in the
+# container's memory, written in at the object's opening line, the image
+# having sed and no JSON tool.
+RUN cd /usr/local/share/ernest-shell \
+ && ern config --config-dir a > /dev/null \
+ && ern config --config-dir foo --listen 127.0.0.1:8655 > /dev/null \
+ && ern config --config-dir a --peer-dir foo \
+ && ern config --config-dir foo --peer-dir a \
+ && for node in a foo; do \
+        sed -i '1s/^{$/&\n  "limits": {"processes": 65536, "ports": 4096},/' "$node/ernest.conf" \
+     && grep -q '^  "limits": {"processes": 65536, "ports": 4096},$' "$node/ernest.conf" \
+     || exit 1; \
+    done
+
+CMD ["shell-start"]

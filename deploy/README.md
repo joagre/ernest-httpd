@@ -121,7 +121,7 @@ The rest of the step is run when the configuration takes a shell, which it does 
   "origins": ["https://ernest-lang.org"],
   "command": ["/home/httpd/ernest-httpd/shell.sh", "-it", "--rm", "--network", "none", "--read-only",
               "--cap-drop=ALL", "--security-opt=no-new-privileges",
-              "--memory", "128m", "--pids-limit", "128",
+              "--memory", "128m", "--pids-limit", "128", "--cpus", "1",
               "--mount", "type=tmpfs,destination=/home/shell,tmpfs-size=64m,U=true", "ernest-shell"],
   "most-at-once": 6,
   "starts": { "count": 10, "within": 3600000 },
@@ -130,23 +130,28 @@ The rest of the step is run when the configuration takes a shell, which it does 
 }
 ```
 
-The visitor's shell runs in a container of the image `ernest-shell`, built by `httpd` from `deploy/Containerfile` with Ernest's archive beside it as `ern.tar.gz`, through the shell's wrapper, `deploy/shell.sh`, installed in the server's directory:
+The visitor's shell runs in a container of the image `ernest-shell`, built by `httpd` from `deploy/Containerfile` with the shell's start, `deploy/shell-start.sh`, and Ernest's archive beside it, the archive as `ern.tar.gz`, through the shell's wrapper, `deploy/shell.sh`, installed in the server's directory:
 
 ```console
-httpd$ mkdir image && cp ernest_httpd-0.1.0/deploy/Containerfile image/ && cp ern-0.10.0.tar.gz image/ern.tar.gz
+httpd$ mkdir image && cp ernest_httpd-0.1.0/deploy/Containerfile ernest_httpd-0.1.0/deploy/shell-start.sh image/
+httpd$ cp ern-0.10.0.tar.gz image/ern.tar.gz
 httpd$ podman build -t ernest-shell image
 httpd$ install -m 0755 ernest_httpd-0.1.0/deploy/shell.sh ernest-httpd/shell.sh
 ```
 
-The image answers a line of Ernest, here from standard input, and the shell's command, at a terminal of the operator's, runs it through the wrapper as a visitor's session does, where `1 + 2` answers `3 : Int`, `Fs.write(Path("x"), <<1>>, 1000)` answers `Right(Unit)` in the size-capped home, and `:quit` leaves; `podman ps` then lists no container, nor does it after a terminal closed before `:quit`, within a second:
+The image holds the two nodes' configuration directories under `/usr/local/share/ernest-shell/`, `a` and `foo`, and its command is the start, `/usr/local/bin/shell-start`, which copies both into the home, starts `foo` and, once it listens, runs the shell on `a`. A build whose `ernest.conf` did not take the limits stops at that `RUN` step, which exits with 1.
+
+The image answers lines of Ernest, here from standard input, and the shell's command, at a terminal of the operator's, runs it through the wrapper as a visitor's session does, where `1 + 2` answers `3 : Int`, `Peer.computeAt("foo", fn() = 3 + 4, 5000)` answers `Right(7)` from the second node, after `the peer foo connected`, `Fs.write(Path("x"), <<1>>, 1000)` answers `Right(Unit)` in the size-capped home, and `:quit` leaves; `podman ps` then lists no container, nor does it after a terminal closed before `:quit`, within a second:
 
 ```console
-httpd$ printf '1 + 2\n' | podman run -i --rm --network none ernest-shell
+httpd$ printf '1 + 2\nPeer.computeAt("foo", fn() = 3 + 4, 5000)\n' | podman run -i --rm --network none ernest-shell
 httpd$ ernest-httpd/shell.sh -it --rm --network none --read-only --cap-drop=ALL \
-      --security-opt=no-new-privileges --memory 128m --pids-limit 128 \
+      --security-opt=no-new-privileges --memory 128m --pids-limit 128 --cpus 1 \
       --mount type=tmpfs,destination=/home/shell,tmpfs-size=64m,U=true ernest-shell
 httpd$ podman ps
 ```
+
+A start whose `foo` did not listen says `foo did not start`, and the container ends with the status 1.
 
 Without the wrapper, a command of `podman run` alone, the container outlives its visitor: `podman run` leaves running a container whose terminal hangs up, so each visitor's stop leaves one `Up`, which `podman ps` shows, and `podman rm -f -t 0` and its id removes. A wrapper run without the linger exits at once, `mktemp: failed to create directory via template`, since `/run/user/` and the user's number is not there.
 
