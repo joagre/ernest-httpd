@@ -35,7 +35,9 @@
 /// The checks' client is the end-to-end tests' too: a GET's response,
 /// `get`; an upgrade's, `upgrade`; a message framed as a client frames it,
 /// `masked`; and a shell's attach and its output read until a test passes,
-/// `readOutput`.
+/// `readOutput`. So is the server they run against, started by its
+/// launcher on a configuration, `launch`, and ended by the termination
+/// signal, `terminate`.
 ///
 /// ## Examples
 ///
@@ -409,6 +411,79 @@ fn readError(error : Http.ReadError) : Io.Error =
     }
 
 //
+// The server under test
+//
+
+/// The server started by its launcher, `bin/ernest_httpd` from the
+/// repository's root, on the configuration at the path, whose listeners,
+/// the count of them, are on `127.0.0.1`: run through a shell that says its
+/// process number first and then runs the launcher in its place, each line
+/// read within 30000 milliseconds. It answers the running program, its
+/// process number, for `terminate`, and the port each listener says it
+/// listens on, in the configuration's order. A line that is not `listening
+/// on 127.0.0.1:` and a port answers `Other` naming it, and a program that
+/// exits first `Other` with its status and what it said.
+export fn launch(path : String,
+                 count : Int) : Either(Io.Error, #(Address(Os.ProgramMsg), String, List(Int))) = {
+    let program <-
+        Os.start(Os.Command(program = "sh",
+                            arguments = ["-c", "echo $$; exec bin/ernest_httpd \"$0\"", path],
+                            input = <<>>));
+    let out <- said(program, "", count + 1);
+    match String.lines(out) {
+        pid :: listening -> {
+            let ports <- List.tryMap(listening, portSaid);
+            Right(#(program, pid, ports))
+        }
+      | [] ->
+            Left(Io.Other("said nothing"))
+    }
+}
+
+// What the running program writes to standard output until its lines are
+// the count.
+fn said(program : Address(Os.ProgramMsg), acc : String, count : Int) : Either(Io.Error, String) =
+    if List.size(String.lines(acc)) >= count && String.endsWith(acc, "\n") then
+        Right(acc)
+    else match Os.read(program, 30000) {
+        Right(Os.Stdout(bytes)) ->
+            said(program, acc <> Optional.withDefault(String.fromUtf8(bytes), "?"), count)
+      | Right(Os.Stderr(_)) ->
+            said(program, acc, count)
+      | Right(Os.Exited(status)) ->
+            Left(Io.Other("exited with " <> Int.toString(status) <> " after " <> acc))
+      | Left(error) ->
+            Left(error)
+    }
+
+// The port of a line `listening on 127.0.0.1:` and the port, as the
+// launcher says it and nothing else.
+fn portSaid(line : String) : Either(Io.Error, Int) = {
+    let prefix = "listening on 127.0.0.1:";
+    match String.toInt(String.replace(line, prefix, "")) {
+        Some(port) when prefix <> Int.toString(port) == line -> Right(port)
+      | _ -> Left(Io.Other("said " <> Io.show(line)))
+    }
+}
+
+/// The server `launch` started told to end by the termination signal, by
+/// its process number, within 5000 milliseconds, and its status once it
+/// has exited, read within 30000 milliseconds, what it writes before left
+/// unread.
+export fn terminate(program : Address(Os.ProgramMsg), pid : String) : Either(Io.Error, Int) = {
+    let _ <- Os.run(Os.Command(program = "kill", arguments = ["-TERM", pid], input = <<>>), 5000);
+    exited(program)
+}
+
+// The running program's status once it has exited.
+fn exited(program : Address(Os.ProgramMsg)) : Either(Io.Error, Int) =
+    match Os.read(program, 30000) {
+        Right(Os.Exited(status)) -> Right(status)
+      | Right(_) -> exited(program)
+      | Left(error) -> Left(error)
+    }
+
+//
 // Tests
 //
 
@@ -452,59 +527,6 @@ fn written() : Either(Io.Error, String) = {
     Right(path)
 }
 
-// The server started on the configuration by its launcher through a shell
-// that says its process number first, the launcher running in its place:
-// the running program, its number, and the ports it says it listens on.
-fn served(path : String) : Either(Io.Error, #(Address(Os.ProgramMsg), String, List(Int))) = {
-    let program <-
-        Os.start(Os.Command(program = "sh",
-                            arguments = ["-c", "echo $$; exec bin/ernest_httpd \"$0\"", path],
-                            input = <<>>));
-    let out <- said(program, "", 3);
-    match String.lines(out) {
-        pid :: listening ->
-            Right(#(program,
-                    pid,
-                    List.filterMap(listening,
-                                   fn(line) =
-                                       String.toInt(String.replace(line,
-                                                                   "listening on 127.0.0.1:",
-                                                                   "")))))
-      | [] ->
-            Left(Io.Other("said nothing"))
-    }
-}
-
-// What the running program writes to standard output until its lines are
-// the count.
-fn said(program : Address(Os.ProgramMsg), acc : String, count : Int) : Either(Io.Error, String) =
-    if List.size(String.lines(acc)) >= count && String.endsWith(acc, "\n") then
-        Right(acc)
-    else match Os.read(program, 30000) {
-        Right(Os.Stdout(bytes)) ->
-            said(program, acc <> Optional.withDefault(String.fromUtf8(bytes), "?"), count)
-      | Right(Os.Stderr(_)) ->
-            said(program, acc, count)
-      | Right(Os.Exited(status)) ->
-            Left(Io.Other("exited with " <> Int.toString(status) <> " after " <> acc))
-      | Left(error) ->
-            Left(error)
-    }
-
-// The server told to end by the termination signal, by its number, and its
-// status once it has exited.
-fn stopped(program : Address(Os.ProgramMsg), pid : String) : Either(Io.Error, Int) = {
-    let _ <- Os.run(Os.Command(program = "kill", arguments = ["-TERM", pid], input = <<>>), 5000);
-    exited(program)
-}
-
-fn exited(program : Address(Os.ProgramMsg)) : Either(Io.Error, Int) =
-    match Os.read(program, 30000) {
-        Right(Os.Exited(status)) -> Right(status)
-      | Right(_) -> exited(program)
-      | Left(error) -> Left(error)
-    }
-
 // design §13: the checks against a site, the scratch site served by the
 // launcher over plain HTTP: every check passes and says `: ok` against the
 // site whose host, redirect host, listeners and shell they check, the
@@ -514,11 +536,12 @@ fn exited(program : Address(Os.ProgramMsg)) : Either(Io.Error, Int) =
 // fails and says what came, the 403, while the rest pass; and against a
 // port where nothing listens every check fails and says `Io.Refused`, each in
 // a connection of its own. get, upgrade, masked and readOutput are the
-// client they run with.
+// client they run with, and launch and terminate start and end the server
+// they run against.
 let checksASite = Test.Case(name = "checks a site and says what came", run = fn() = {
     let result = {
         let path <- written();
-        let #(program, pid, ports) <- served(path);
+        let #(program, pid, ports) <- launch(path, 2);
         let #(plainPort, redirectPort) = match ports {
             [one, two] -> #(one, two)
           | _ -> #(0, 0)
@@ -535,7 +558,7 @@ let checksASite = Test.Case(name = "checks a site and says what came", run = fn(
         Tcp.closeListener(closed);
         let unanswered =
             checks("http", "localhost", nothing, nothing, shellPath, "http://localhost");
-        let status <- stopped(program, pid);
+        let status <- terminate(program, pid);
         Right(#(List.map(passing, line),
                 List.map(withoutShell, line),
                 List.map(refused, line),

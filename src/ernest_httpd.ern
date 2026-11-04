@@ -373,31 +373,6 @@ let saysListenFailures = Test.Case(name = "says what a listen that fails needs",
                 "0.0.0.0:443: Io.Other(\"address already in use\")"])
 })
 
-// What a running program writes to standard output until its lines are
-// the count, and the text so far.
-fn lines(program : Address(Os.ProgramMsg), acc : String, count : Int) : Either(Io.Error, String) =
-    if List.size(String.lines(acc)) >= count && String.endsWith(acc, "\n") then
-        Right(acc)
-    else match Os.read(program, 30000) {
-        Right(Os.Stdout(bytes)) ->
-            lines(program, acc <> Optional.withDefault(String.fromUtf8(bytes), "?"), count)
-      | Right(Os.Stderr(_)) ->
-            lines(program, acc, count)
-      | Right(Os.Exited(status)) ->
-            Left(Io.Other("exited with " <> Int.toString(status) <> " after " <> acc))
-      | Left(error) ->
-            Left(error)
-    }
-
-// A running program's status once it has exited, what it writes before
-// left unread.
-fn exited(program : Address(Os.ProgramMsg)) : Either(Io.Error, Int) =
-    match Os.read(program, 30000) {
-        Right(Os.Exited(status)) -> Right(status)
-      | Right(_) -> exited(program)
-      | Left(error) -> Left(error)
-    }
-
 // The response to a GET of the target naming the host, written to the
 // socket: its status, and its Location where it has one or else its body
 // as text.
@@ -425,11 +400,6 @@ fn connecting(port : Int) : String =
         Right(_) -> "connected"
       | Left(error) -> Io.show(error)
     }
-
-// The ports the program says it listens on, in its listeners' order.
-fn ports(listening : List(String)) : List(Int) =
-    List.filterMap(listening,
-                   fn(line) = String.toInt(String.replace(line, "listening on 127.0.0.1:", "")))
 
 // The program's answers on its plain, its TLS and its redirect listener,
 // each over one connection kept alive: the site's file on the plain one,
@@ -561,18 +531,8 @@ let servesAndEnds = Test.Case(name = "serves the site and ends in order", run = 
             Right(Unit) or Left(Io.NotFound) -> Right(Unit)
           | Left(error) -> Left(error)
         };
-        // the shell's process number is the server's, the shell and the
-        // launcher each running the next in its place
-        let program <-
-            Os.start(Os.Command(program = "sh",
-                                arguments = ["-c", "echo $$; exec bin/ernest_httpd \"$0\"", path],
-                                input = <<>>));
-        let out <- lines(program, "", 4);
-        let #(pid, listening) = match String.lines(out) {
-            first :: rest -> #(first, rest)
-          | [] -> #("", [])
-        };
-        let #(plainPort, tlsPort, redirectPort) = match ports(listening) {
+        let #(program, pid, ports) <- Smoke.launch(path, 3);
+        let #(plainPort, tlsPort, redirectPort) = match ports {
             [one, two, three] -> #(one, two, three)
           | _ -> #(0, 0, 0)
         };
@@ -581,19 +541,14 @@ let servesAndEnds = Test.Case(name = "serves the site and ends in order", run = 
             shellClient(plainPort);
         let #(_, _, unattached) <- upgraded(plainPort, "/shell", "http://localhost");
         let start = Clock.monotonic();
-        let _ <-
-            Os.run(Os.Command(program = "kill", arguments = ["-TERM", pid], input = <<>>), 5000);
-        let status <- exited(program);
+        let status <- Smoke.terminate(program, pid);
         let took = Clock.monotonic() - start;
         let shellEnd = closing(shellSocket, decoder);
         let unattachedEnd = closing(unattached, WebSocket.decoder(WebSocket.FromServer, 65536));
         let kept = List.map(sockets, next);
         let later = List.map([plainPort, tlsPort, redirectPort], connecting);
         let text <- Fs.read(Path(scratch <> "/access.log"), 5000);
-        Right(#(listening
-                    == List.map([plainPort, tlsPort, redirectPort],
-                                fn(port) = "listening on 127.0.0.1:" <> Int.toString(port)),
-                answers,
+        Right(#(answers,
                 #(upgradeStatus, cookieSet, attached, typed, shellEnd, unattachedEnd),
                 status,
                 took < 3000,
@@ -602,8 +557,7 @@ let servesAndEnds = Test.Case(name = "serves the site and ends in order", run = 
                 Optional.map(String.fromUtf8(text), logged)))
     };
     Test.equal(result,
-               Right(#(true,
-                       ["200 alpha",
+               Right(#(["200 alpha",
                         "421 421 Misdirected Request\n",
                         "200 alpha",
                         "301 https://localhost/docs?page=2",
@@ -685,17 +639,8 @@ let servesTheExample = Test.Case(name = "serves the example site", run = fn() = 
         let text <- example("config.json");
         let path <-
             written("example.json", portsZeroed(Optional.withDefault(String.fromUtf8(text), "")));
-        // the shell's process number is the server's, as in servesAndEnds
-        let program <-
-            Os.start(Os.Command(program = "sh",
-                                arguments = ["-c", "echo $$; exec bin/ernest_httpd \"$0\"", path],
-                                input = <<>>));
-        let out <- lines(program, "", 3);
-        let #(pid, listening) = match String.lines(out) {
-            first :: rest -> #(first, rest)
-          | [] -> #("", [])
-        };
-        let #(plainPort, redirectPort) = match ports(listening) {
+        let #(program, pid, ports) <- Smoke.launch(path, 2);
+        let #(plainPort, redirectPort) = match ports {
             [one, two] -> #(one, two)
           | _ -> #(0, 0)
         };
@@ -722,9 +667,7 @@ let servesTheExample = Test.Case(name = "serves the example site", run = fn() = 
                          Optional.map(config.shell, fn(shell) = shell.path),
                          "http://localhost:8080")
                 |> List.filter(fn(check) = check.result != Right(Unit));
-        let _ <-
-            Os.run(Os.Command(program = "kill", arguments = ["-TERM", pid], input = <<>>), 5000);
-        let status <- exited(program);
+        let status <- Smoke.terminate(program, pid);
         let shellEnd = closing(shell, WebSocket.decoder(WebSocket.FromServer, 65536));
         let index <- example("root/index.html");
         let style <- example("root/style.css");

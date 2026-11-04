@@ -56,9 +56,10 @@ type Connected =
               timeouts : Config.Timeouts,
               told : Address(Session.Told))
 
-// Whether a session is attached: none, an attach under way with what is
-// for the session meanwhile, the latest first, or the session attached.
-type Attachment =
+// The state of the shell's attach: no session, an attach under way with
+// what is for the session meanwhile, the latest first, or the session
+// attached.
+type AttachState =
     Unattached
   | Attaching(List(Session.SessionMsg))
   | AttachedTo(Address(Session.SessionMsg))
@@ -247,57 +248,57 @@ fn reading(socket : Address(Tcp.SocketMsg),
 // The shell waiting on its mailbox: each message taken as it comes, until
 // the connection closes. `reader` is the reader's process while it lives.
 fn serving(connected : Connected,
-           attachment : Attachment,
+           attachState : AttachState,
            reader : Optional(Process)) : Unit receiving ShellMsg =
     receive {
         Received(message) ->
-            received(connected, attachment, reader, message)
+            received(connected, attachState, reader, message)
       | Failed(error) ->
-            closedWith(connected, attachment, reader, WebSocket.closeCode(error))
+            closedWith(connected, attachState, reader, WebSocket.closeCode(error))
       | Closed ->
-            closed(connected, attachment, reader)
+            closed(connected, attachState, reader)
       | Idle ->
-            match attachment {
-                AttachedTo(_) -> serving(connected, attachment, reader)
-              | Unattached or Attaching(_) -> closed(connected, attachment, reader)
+            match attachState {
+                AttachedTo(_) -> serving(connected, attachState, reader)
+              | Unattached or Attaching(_) -> closed(connected, attachState, reader)
             }
       | ReaderEnded(down) ->
             // a reader that returned has told its last message, which may
             // come after its end (report §6.9)
             match down.reason {
-                Returned -> serving(connected, attachment, None)
-              | _ -> closed(connected, attachment, None)
+                Returned -> serving(connected, attachState, None)
+              | _ -> closed(connected, attachState, None)
             }
       | Told(told) ->
-            toldBy(connected, attachment, reader, told)
+            toldBy(connected, attachState, reader, told)
       | SessionEnded(_) ->
-            closedWith(connected, attachment, reader, 1011)
+            closedWith(connected, attachState, reader, 1011)
     }
 
 // A message the client sent: a text of the page's, the visitor's keys, a
 // ping answered with its pong, a pong dropped, and a close answered with
 // its code.
 fn received(connected : Connected,
-            attachment : Attachment,
+            attachState : AttachState,
             reader : Optional(Process),
             message : WebSocket.Message) : Unit receiving ShellMsg =
     match message {
         WebSocket.Text(text) ->
             match asked(text) {
-                Some(Resize(size)) -> resized(connected, attachment, reader, size)
-              | Some(Extend) -> serving(connected, toSession(attachment, Session.Extend), reader)
-              | Some(Stop) -> serving(connected, toSession(attachment, Session.Stop), reader)
-              | None -> closedWith(connected, attachment, reader, 1008)
+                Some(Resize(size)) -> resized(connected, attachState, reader, size)
+              | Some(Extend) -> serving(connected, toSession(attachState, Session.Extend), reader)
+              | Some(Stop) -> serving(connected, toSession(attachState, Session.Stop), reader)
+              | None -> closedWith(connected, attachState, reader, 1008)
             }
       | WebSocket.Binary(bytes) ->
-            serving(connected, toSession(attachment, Session.Keys(bytes)), reader)
+            serving(connected, toSession(attachState, Session.Keys(bytes)), reader)
       | WebSocket.Ping(payload) ->
-            written(connected, attachment, reader, WebSocket.Pong(payload))
+            written(connected, attachState, reader, WebSocket.Pong(payload))
       | WebSocket.Pong(_) ->
-            serving(connected, attachment, reader)
+            serving(connected, attachState, reader)
       | WebSocket.Close(=code) -> {
             let _ = write(connected, WebSocket.Close(=code, reason = ""));
-            closed(connected, attachment, reader)
+            closed(connected, attachState, reader)
         }
     }
 
@@ -331,10 +332,10 @@ fn resize(rows : Int, columns : Int) : Optional(Asked) =
 // A resize: the shell attached where no session is, and otherwise the
 // session told it.
 fn resized(connected : Connected,
-           attachment : Attachment,
+           attachState : AttachState,
            reader : Optional(Process),
            size : Terminal.Size) : Unit receiving ShellMsg =
-    match attachment {
+    match attachState {
         Unattached -> {
             send(connected.sessions.address,
                  Sessions.Attach(cookie = connected.cookie,
@@ -344,16 +345,16 @@ fn resized(connected : Connected,
             serving(connected, Attaching([]), reader)
         }
       | Attaching(_) or AttachedTo(_) ->
-            serving(connected, toSession(attachment, Session.Resize(size)), reader)
+            serving(connected, toSession(attachState, Session.Resize(size)), reader)
     }
 
 // The message sent to the attached session, held while the attach is under
 // way, and dropped where no session is.
-fn toSession(attachment : Attachment, message : Session.SessionMsg) : Attachment =
-    match attachment {
+fn toSession(attachState : AttachState, message : Session.SessionMsg) : AttachState =
+    match attachState {
         AttachedTo(session) -> {
             send(session, message);
-            attachment
+            attachState
         }
       | Attaching(held) ->
             Attaching(message :: held)
@@ -367,18 +368,18 @@ fn toSession(attachment : Attachment, message : Session.SessionMsg) : Attachment
 // the program's output written as a binary message; the warning as a text;
 // and the session's end with its close code.
 fn toldBy(connected : Connected,
-          attachment : Attachment,
+          attachState : AttachState,
           reader : Optional(Process),
           told : Session.Told) : Unit receiving ShellMsg =
     match told {
-        Session.Attached(=session, attachment = attachedAs) -> {
+        Session.Attached(=session, =attachment) -> {
             monitor(Process.fromAddress(session), SessionEnded);
-            let held = match attachment {
+            let held = match attachState {
                 Attaching(held) -> List.reverse(held)
               | Unattached or AttachedTo(_) -> []
             };
             List.forEach(held, fn(message) = send(session, message));
-            let word = match attachedAs {
+            let word = match attachment {
                 Session.New -> "new"
               | Session.Joined -> "joined"
             };
@@ -386,27 +387,27 @@ fn toldBy(connected : Connected,
             written(connected, AttachedTo(session), reader, WebSocket.Text(text))
         }
       | Session.Unavailable ->
-            closedWith(connected, attachment, reader, 4003)
+            closedWith(connected, attachState, reader, 4003)
       | Session.Output(bytes) ->
-            written(connected, attachment, reader, WebSocket.Binary(bytes))
+            written(connected, attachState, reader, WebSocket.Binary(bytes))
       | Session.Warning(seconds) -> {
             let text =
                 Json.format(Json.Object(Map.fromList([#("warning", Json.Integer(seconds))])));
-            written(connected, attachment, reader, WebSocket.Text(text))
+            written(connected, attachState, reader, WebSocket.Text(text))
         }
       | Session.Ended(code) ->
-            closedWith(connected, attachment, reader, code)
+            closedWith(connected, attachState, reader, code)
     }
 
 // The message written as a frame within the write deadline; a write that
 // fails or does not end in time closes the connection.
 fn written(connected : Connected,
-           attachment : Attachment,
+           attachState : AttachState,
            reader : Optional(Process),
            message : WebSocket.Message) : Unit receiving ShellMsg =
     match write(connected, message) {
-        Right(Unit) -> serving(connected, attachment, reader)
-      | Left(_) -> closed(connected, attachment, reader)
+        Right(Unit) -> serving(connected, attachState, reader)
+      | Left(_) -> closed(connected, attachState, reader)
     }
 
 fn write(connected : Connected, message : WebSocket.Message) : Either(Io.Error, Unit) =
@@ -419,18 +420,18 @@ fn write(connected : Connected, message : WebSocket.Message) : Either(Io.Error, 
 // The close with the code: a close of the code and no reason written, and
 // the connection closed.
 fn closedWith(connected : Connected,
-              attachment : Attachment,
+              attachState : AttachState,
               reader : Optional(Process),
               code : Int) : Unit receiving ShellMsg = {
     let _ = write(connected, WebSocket.Close(code = Some(code), reason = ""));
-    closed(connected, attachment, reader)
+    closed(connected, attachState, reader)
 }
 
 // The connection closed: the reader ended and waited for where it lives,
 // the socket closed, which sends what it holds, and the attached session
 // told the shell is detached.
 fn closed(connected : Connected,
-          attachment : Attachment,
+          attachState : AttachState,
           reader : Optional(Process)) : Unit receiving ShellMsg = {
     match reader {
         Some(process) -> {
@@ -441,7 +442,7 @@ fn closed(connected : Connected,
             Unit
     };
     Tcp.close(connected.socket);
-    match attachment {
+    match attachState {
         AttachedTo(session) -> send(session, Session.Detach(connected.told))
       | Unattached or Attaching(_) -> Unit
     }

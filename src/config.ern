@@ -601,13 +601,13 @@ let withoutShell : String =
     "{\n"
         <> "  \"listeners\": [\n"
         <> "    { \"kind\": \"tls\", \"address\": \"0.0.0.0\", \"port\": 443,\n"
-        <> "      \"certificate\": \"/etc/ernest-httpd/fullchain.pem\",\n"
-        <> "      \"key\": \"/etc/ernest-httpd/privkey.pem\" },\n"
+        <> "      \"certificate\": \"/home/httpd/ernest-httpd/node/fullchain.pem\",\n"
+        <> "      \"key\": \"/home/httpd/ernest-httpd/node/privkey.pem\" },\n"
         <> "    { \"kind\": \"redirect\", \"address\": \"::\", \"port\": 80,\n"
-        <> "      \"acme-challenge\": \"/srv/ernest-httpd/acme\" },\n"
+        <> "      \"acme-challenge\": \"/home/httpd/ernest-httpd/acme\" },\n"
         <> "    { \"kind\": \"plain\", \"address\": \"127.0.0.1\", \"port\": 8080 }\n"
         <> "  ],\n"
-        <> "  \"root\": \"/srv/ernest-lang.org/site\",\n"
+        <> "  \"root\": \"/home/httpd/ernest-httpd/site\",\n"
         <> "  \"canonical-host\": \"ernest-lang.org\",\n"
         <> "  \"redirect-hosts\": [\"www.ernest-lang.org\", \"ernest-lang.se\"],\n"
         <> "  \"timeouts\": { \"head\": 10000, \"idle\": 60000, \"write\": 30000, \"file\": 5000 },\n"
@@ -616,13 +616,13 @@ let withoutShell : String =
         <> "  \"content-types\": { \".wasm\": \"application/wasm\" },\n"
         <> "  \"headers\": { \"X-Content-Type-Options\": \"nosniff\",\n"
         <> "               \"Strict-Transport-Security\": \"max-age=31536000\" },\n"
-        <> "  \"access-log\": \"/var/log/ernest-httpd/access.log\"\n"
+        <> "  \"access-log\": \"/home/httpd/ernest-httpd/log/access.log\"\n"
         <> "}\n"
 
 let example : String =
     String.replace(withoutShell,
-                   "\"/var/log/ernest-httpd/access.log\"\n",
-                   "\"/var/log/ernest-httpd/access.log\",\n"
+                   "\"/home/httpd/ernest-httpd/log/access.log\"\n",
+                   "\"/home/httpd/ernest-httpd/log/access.log\",\n"
                        <> "  \"shell\": {\n"
                        <> "    \"path\": \"/shell/session\",\n"
                        <> "    \"origins\": [\"https://ernest-lang.org\"],\n"
@@ -660,11 +660,11 @@ let readsTheExample =
                          config.accessLog,
                          config.shell),
                        #([443, 80, 8080],
-                         Some(Listener(kind = Tls(certificate = Path("/etc/ernest-httpd/fullchain.pem"),
-                                                  key = Path("/etc/ernest-httpd/privkey.pem")),
+                         Some(Listener(kind = Tls(certificate = Path("/home/httpd/ernest-httpd/node/fullchain.pem"),
+                                                  key = Path("/home/httpd/ernest-httpd/node/privkey.pem")),
                                        address = "0.0.0.0",
                                        port = 443)),
-                         Path("/srv/ernest-lang.org/site"),
+                         Path("/home/httpd/ernest-httpd/site"),
                          ["www.ernest-lang.org", "ernest-lang.se"],
                          Timeouts(head = 10000, idle = 60000, write = 30000, file = 5000),
                          Limits(requestLine = 8192,
@@ -675,7 +675,7 @@ let readsTheExample =
                          [Http.Header(name = "Strict-Transport-Security",
                                       value = "max-age=31536000"),
                           Http.Header(name = "X-Content-Type-Options", value = "nosniff")],
-                         Path("/var/log/ernest-httpd/access.log"),
+                         Path("/home/httpd/ernest-httpd/log/access.log"),
                          Some(Shell(path = "/shell/session",
                                     origins = ["https://ernest-lang.org"],
                                     command = ["podman", "run", "-it", "--rm", "ernest-shell"],
@@ -731,7 +731,7 @@ let refusesTypes =
               run = fn() =
                   Test.equal([broken(edited("\"port\": 443", "\"port\": \"443\"")),
                               broken(edited("\"port\": 443", "\"port\": 443.0")),
-                              broken(edited("\"root\": \"/srv/ernest-lang.org/site\"",
+                              broken(edited("\"root\": \"/home/httpd/ernest-httpd/site\"",
                                             "\"root\": 1")),
                               broken(edited("\"redirect-hosts\": [\"www.ernest-lang.org\", \"ernest-lang.se\"]",
                                             "\"redirect-hosts\": [\"www.ernest-lang.org\", 2]")),
@@ -844,7 +844,7 @@ let checksInOrder =
     Test.Case(name = "answers the first rule broken",
               run = fn() =
                   Test.equal([broken(String.replace(edited("\"port\": 443", "\"port\": -1"),
-                                                    "\"root\": \"/srv/ernest-lang.org/site\"",
+                                                    "\"root\": \"/home/httpd/ernest-httpd/site\"",
                                                     "\"root\": 1")),
                               broken(String.replace(edited("\"port\": 443", "\"port\": -1"),
                                                     "\"port\": 80",
@@ -950,10 +950,11 @@ fn prepared() : Either(Io.Error, String) = {
     let _ <- Fs.write(Path(scratch <> "/privkey.pem"), <<>>, 5000);
     let _ <- Fs.setMode(Path(scratch <> "/privkey.pem"), 0o600, 5000);
     Right(example
-              |> String.replace("/etc/ernest-httpd", scratch)
-              |> String.replace("/srv/ernest-httpd/acme", scratch <> "/acme")
-              |> String.replace("/srv/ernest-lang.org/site", scratch <> "/site")
-              |> String.replace("/var/log/ernest-httpd/access.log", scratch <> "/access.log"))
+              |> String.replace("/home/httpd/ernest-httpd/node", scratch)
+              |> String.replace("/home/httpd/ernest-httpd/acme", scratch <> "/acme")
+              |> String.replace("/home/httpd/ernest-httpd/site", scratch <> "/site")
+              |> String.replace("/home/httpd/ernest-httpd/log/access.log",
+                                scratch <> "/access.log"))
 }
 
 // The first field that breaks a rule when the text is written to the
