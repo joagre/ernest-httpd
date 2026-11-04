@@ -30,7 +30,7 @@ What the first release's readers found and the milestone's own items, each a ste
 
 6. **Three cleanups**: done 2026-11-04, the log's *Three cleanups*.
 7. **The code reader**: done 2026-11-04, the log's *The code reader's findings*.
-8. **The listener's retry**: §7's retry after an accept that fails otherwise than by `Closed` or its time, untested since item 2, tested by the server run as a child process under a low limit of open files, `ulimit -n`, so that an accept fails with too many open files; dropped to a gap again if it cannot be made steady (the same entry).
+8. **The listener's retry, waiting on Ernest (2026-11-04)**: the test is written and steady, 20 runs in 20, the server run as a child under `ulimit -n 64` with connections held until an accept fails, the line `cannot accept: Io.Other("too many open files")` read, the held ones closed and the unserved one answered at the next retry; but only where the runtime has met its error path once, since it loads its own modules on first use and cannot when the descriptors are spent, `language_feedback.md` line 26. Built with the archive that answers it, `Smoke.launch` taking the limit as an `Optional(Int)` and the test in `src/listener.ern` (the log's *The listener's retry*).
 
 **A refused value over lines (2026-11-03).** A configuration's refusal quotes a long array or object over the lines `Json.format` lays it on, until Ernest's one-line writer, `Json.encode`, Ernest's 224, planned in its MVP 4.15; `Config.reason` then writes the value on one line, in the release that follows.
 
