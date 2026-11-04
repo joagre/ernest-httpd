@@ -257,3 +257,7 @@ The smaller ones: the smoke test checks the configuration's first redirect host;
 ## The listener's retry
 
 *2026-11-04.* The retry's test stands steady, 20 runs in 20, but only against a server whose runtime has met its error path once. Under `ulimit -n 64` the server holds 18 descriptors and accepts about 46 connections, and the next accept meets the host's `emfile`; the runtime, which loads its own modules on first use, cannot then load the ones that make the error a value, so the acceptor wedges and nothing is served again. §7 is right and takes one sentence it lacked, the failed accept's connection waiting in the host's backlog for a later one; the test waits on Ernest's answer to line 26 (principle 3). The deployed caps, four listeners of 80, stay well under systemd's default of 1024 descriptors.
+
+## The twelfth sweep: the signal and the descriptors
+
+*2026-11-04.* Ernest took line 25 as its 233 and line 26 as its 234, both planned in its MVP 4.15 and neither built, its answer coming by a message as Ernest's clean room now has it. 233, in item 9, reads against E.0's admission rules whether `Os` ends a program it started by the termination signal, so that the tests' `sh` and `kill` can go; 234, item 20, has the runtime load every module it may call at its start, the host's among them, so that an error met when the descriptors are spent is still answered. Each gets its log entry in Ernest's when built; the lines go as 18, 20, 21 and 24 went, the plan carrying what waits, and the feedback file goes, empty.
