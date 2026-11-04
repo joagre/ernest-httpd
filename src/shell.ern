@@ -13,12 +13,13 @@
 /// resize attaches the shell to the session its cookie names, or to one the
 /// sessions start for it, and from then on the visitor's keys go to the
 /// session and the program's output comes back, each as a binary message,
+/// the session told each piece is written so that it reads its program on,
 /// with the page's resizes, extensions and stop beside them as small JSON
 /// texts, and the attach's completion, whether it started the session or
-/// joined it, and the session's warning as two more. A shell closes with a close
-/// code that says why: 4001 its session expired, 4002 another shell took it
-/// over, 4003 no session was to be had and 4004 it was stopped, or a code
-/// of RFC 6455's.
+/// joined it, and the session's warning as two more. A shell closes with a
+/// close code that says why: 4001 its session expired, 4002 another shell
+/// took it over, 4003 no session was to be had and 4004 it was stopped, or
+/// a code of RFC 6455's.
 
 //
 // Types
@@ -365,8 +366,9 @@ fn toSession(attachState : AttachState, message : Session.SessionMsg) : AttachSt
 // What the session, or the sessions, told: the session attached and
 // monitored, told what was held for it meanwhile, in order, and the
 // attachment written as a text, before any output; no session to be had;
-// the program's output written as a binary message; the warning as a text;
-// and the session's end with its close code.
+// the program's output written as a binary message, and the session told
+// it is written; the warning as a text; and the session's end with its
+// close code.
 fn toldBy(connected : Connected,
           attachState : AttachState,
           reader : Optional(Process),
@@ -389,7 +391,7 @@ fn toldBy(connected : Connected,
       | Session.Unavailable ->
             closedWith(connected, attachState, reader, 4003)
       | Session.Output(bytes) ->
-            written(connected, attachState, reader, WebSocket.Binary(bytes))
+            outputWritten(connected, attachState, reader, bytes)
       | Session.Warning(seconds) -> {
             let text =
                 Json.format(Json.Object(Map.fromList([#("warning", Json.Integer(seconds))])));
@@ -408,6 +410,26 @@ fn written(connected : Connected,
     match write(connected, message) {
         Right(Unit) -> serving(connected, attachState, reader)
       | Left(_) -> closed(connected, attachState, reader)
+    }
+
+// The program's output written as a binary message within the write
+// deadline, and the session told it is written once it is on the socket,
+// so that it reads its program on; a write that fails or does not end in
+// time closes the connection.
+fn outputWritten(connected : Connected,
+                 attachState : AttachState,
+                 reader : Optional(Process),
+                 bytes : Bytes) : Unit receiving ShellMsg =
+    match write(connected, WebSocket.Binary(bytes)) {
+        Right(Unit) -> {
+            match attachState {
+                AttachedTo(session) -> send(session, Session.Written(connected.told))
+              | Unattached or Attaching(_) -> Unit
+            };
+            serving(connected, attachState, reader)
+        }
+      | Left(_) ->
+            closed(connected, attachState, reader)
     }
 
 fn write(connected : Connected, message : WebSocket.Message) : Either(Io.Error, Unit) =
@@ -458,8 +480,9 @@ fn readerEnded() : Unit receiving ShellMsg =
 //
 
 // What a test's process takes: the end of the process that serves the
-// shell.
-type Seen = Ended(Down)
+// shell; a shell's address, which the sessions' stand-in was given at its
+// attach; and what the session's stand-in is told.
+type Seen = Ended(Down) | ShellAttached(Address(Session.Told)) | ToSession(Session.SessionMsg)
 
 // The shell's configuration of the tests, with the most sessions at once,
 // the lifetime, the warning and the message limit given.
@@ -907,3 +930,122 @@ let warnsAndExpires = Test.Case(name = "writes the warning and closes at the exp
                #(Right(#(attachedText("new"), expected, ["Close(4001)", "closed"], "Returned")),
                  true))
 })
+
+// A stand-in for the sessions, which attaches each shell to the session
+// given, `New`, and tells the test's process the shell's address.
+fn attachingTo(test : Address(Seen),
+               session : Address(Session.SessionMsg)) : Unit receiving Sessions.SessionsMsg =
+    receive {
+        Sessions.Attach(=shell) -> {
+            send(shell, Session.Attached(=session, attachment = Session.New));
+            send(test, ShellAttached(shell));
+            attachingTo(test, session)
+        }
+      | _ ->
+            attachingTo(test, session)
+    }
+
+// A stand-in for a session, which tells the test's process each message
+// it takes, until it is ended.
+fn telling(test : Address(Seen)) : Unit receiving Session.SessionMsg =
+    receive {
+        message -> {
+            send(test, ToSession(message));
+            telling(test)
+        }
+    }
+
+// Stand-ins for the sessions and for the one session they attach a shell
+// to, with the shell's configuration of the tests.
+fn standingIn() : #(Sessions.Sessions, Address(Session.SessionMsg)) receiving Seen = {
+    let me = self();
+    let session = spawn(fn() = telling(me));
+    let address = spawn(fn() = attachingTo(me, session));
+    #(Sessions.Sessions(shell = configured(1, 60000, 30000, 1024), =address), session)
+}
+
+// design §11: a session that ends otherwise than by Ended, its process
+// ended, closes the shell with 1011.
+let closesAtItsSessionsEnd =
+    Test.Case(name = "closes with 1011 where its session ends otherwise", run = fn() = {
+        let #(sessions, session) = standingIn();
+        let result = {
+            let client <-
+                opened(sessions,
+                       deadlines(60000),
+                       [],
+                       Smoke.masked(page("{\"resize\": [24, 80]}")));
+            let #(attached, client) = nextMessage(client);
+            kill(session);
+            Right(#(attached, messages(client, 2), ended()))
+        };
+        kill(sessions.address);
+        Test.equal(result, Right(#(attachedText("new"), ["Close(1011)", "closed"], "Returned")))
+    })
+
+// The message a session's stand-in took, as a test compares it, a Written
+// by whether it names the shell.
+fn toldSession(message : Session.SessionMsg, shell : Process) : String =
+    match message {
+        Session.Keys(bytes) -> "Keys(" <> Optional.withDefault(String.fromUtf8(bytes), "?") <> ")"
+      | Session.Written(by) when Process.fromAddress(by) == shell -> "Written by the shell"
+      | Session.Detach(by) when Process.fromAddress(by) == shell -> "Detach of the shell"
+      | Session.Extend -> "Extend"
+      | Session.Stop -> "Stop"
+      | Session.Resize(_) -> "Resize"
+      | _ -> "another"
+    }
+
+// design §11: before the first resize keys, extend and stop are dropped,
+// and keys after it are held while the attach is under way and told once
+// Attached comes; the program's output is written as a binary message, and
+// the session then told Written with the shell's address, and at the close
+// Detach.
+let dropsBeforeTheResize =
+    Test.Case(name = "drops what comes before the first resize", run = fn() = {
+        let #(sessions, session) = standingIn();
+        let early =
+            Smoke.masked(WebSocket.Binary(String.toUtf8("early")))
+                <> Smoke.masked(page("{\"extend\": true}"))
+                <> Smoke.masked(page("{\"stop\": true}"))
+                <> Smoke.masked(page("{\"resize\": [24, 80]}"))
+                <> Smoke.masked(WebSocket.Binary(String.toUtf8("late")));
+        let result = {
+            let client <- opened(sessions, deadlines(60000), [], early);
+            let #(attached, client) = nextMessage(client);
+            let shell = receive {
+                ShellAttached(shell) -> Some(shell)
+              | after 5000 -> None
+            };
+            let #(output, client) = match shell {
+                Some(told) -> {
+                    send(told, Session.Output(String.toUtf8("out")));
+                    nextMessage(client)
+                }
+              | None ->
+                    #("no shell", client)
+            };
+            let _ = sent(client, WebSocket.Close(code = Some(1000), reason = ""));
+            let closing = messages(client, 2);
+            let end = ended();
+            let process = Optional.map(shell, Process.fromAddress);
+            let taken = List.map([1, 2, 3], fn(_) = receive {
+                ToSession(message) ->
+                    match process {
+                        Some(by) -> toldSession(message, by)
+                      | None -> "no shell"
+                    }
+              | after 5000 ->
+                    "nothing"
+            });
+            Right(#(attached, output, closing, end, taken))
+        };
+        kill(session);
+        kill(sessions.address);
+        Test.equal(result,
+                   Right(#(attachedText("new"),
+                           "Binary(out)",
+                           ["Close(1000)", "closed"],
+                           "Returned",
+                           ["Keys(late)", "Written by the shell", "Detach of the shell"])))
+    })

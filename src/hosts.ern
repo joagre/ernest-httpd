@@ -3,7 +3,7 @@
 /// answered 301, a host that is neither 421, and the ACME challenge served
 /// on the redirect listener (design §9).
 ///
-/// A connection asks `answer` for each request it does not refuse itself,
+/// A connection asks `decide` for each request it does not refuse itself,
 /// and serves the request from the site where the answer is `Served`;
 /// otherwise it writes the answer's response, as it writes the site's. The
 /// connection is given the challenge site where it is the redirect
@@ -35,7 +35,7 @@
 ///                  target = "/docs?page=2",
 ///                  version = Http.Version(major = 1, minor = 1),
 ///                  headers = [Http.Header(name = "Host", value = "WWW.ernest-lang.org:80")]);
-/// Either.map(Config.parse(text), fn(config) = Hosts.answer(config, None, request, 1000))
+/// Either.map(Config.parse(text), fn(config) = Hosts.decide(config, None, request, 1000))
 /// // => Right(Hosts.Answered(#(Http.Response(version = Http.Version(major = 1, minor = 1), status = 301, headers = [Http.Header(name = "Location", value = "https://ernest-lang.org/docs?page=2")]), <<>>)))
 /// ```
 
@@ -118,7 +118,7 @@ fn named(config : Config.Config, request : Http.Request) : Named = {
 /// path and query as written, and it has no body; where the target is in
 /// neither origin nor absolute form, it answers 400 instead. A `HEAD`'s
 /// response has its body dropped, as `Static.withoutBody` drops it.
-export fn answer(config : Config.Config,
+export fn decide(config : Config.Config,
                  challenge : Optional(Static.Site),
                  request : Http.Request,
                  ms : Int) : Answer =
@@ -262,8 +262,8 @@ type Compared =
     BySite
   | Responded(status : Int, headers : List(Http.Header), body : Optional(String))
 
-fn compared(answer : Answer) : Compared =
-    match answer {
+fn compared(decided : Answer) : Compared =
+    match decided {
         Served ->
             BySite
       | Answered(#(response, body)) ->
@@ -287,7 +287,7 @@ fn decidedUnder(text : String, checks : List(Check)) : Test.Result =
         Right(config) ->
             Test.equal(List.map(checks,
                                 fn(check) =
-                                    compared(answer(config, check.challenge, check.request, 5000))),
+                                    compared(decide(config, check.challenge, check.request, 5000))),
                        List.map(checks, fn(check) = check.expected))
       | Left(error) ->
             Test.Failed(error)

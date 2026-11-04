@@ -29,7 +29,7 @@ What the first release's readers found and the milestone's own items, each a ste
    Ernest's plan holds its side as its MVP 4.4's item 6, beside its 1.0.0 release. The site comes as Ernest's session hands it over at its MVP 4.15's close: `make site TAG=` that release's tag and `CONFIG=` the configuration this session names, which holds the shell's member, since the shell page states its limits from it; it writes the site to Ernest's `build/site/`, copied out as an archive is, every page's footer naming the release.
 
 6. **Three cleanups**: done 2026-11-04, the log's *Three cleanups*.
-7. **The code reader**: `docs/release.md`'s second reader, on Opus 5.5 at its highest effort, the user's Fable tokens being spent, reads `src/` against the design, the report's §0 and Appendix E.0's shape rules, ahead of the release on Ernest 1.0, so that its findings are fixed between Ernest's archives; the findings stand in `docs/findings.md` until each is fixed, planned or dropped (the same entry).
+7. **The code reader**: done 2026-11-04, the log's *The code reader's findings*.
 8. **The listener's retry**: §7's retry after an accept that fails otherwise than by `Closed` or its time, untested since item 2, tested by the server run as a child process under a low limit of open files, `ulimit -n`, so that an accept fails with too many open files; dropped to a gap again if it cannot be made steady (the same entry).
 
 **A refused value over lines (2026-11-03).** A configuration's refusal quotes a long array or object over the lines `Json.format` lays it on, until Ernest's one-line writer, `Json.encode`, Ernest's 224, planned in its MVP 4.15; `Config.reason` then writes the value on one line, in the release that follows.

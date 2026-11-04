@@ -10,11 +10,13 @@
 /// A visitor is so counted by the remote address, which clearing a cookie
 /// does not reset.
 ///
-/// A session tells the sessions as its end begins, `SessionEnding`: its
+/// A session calls the sessions as its end begins, `SessionEnding`: its
 /// cookie names it no more, so that an attach under that cookie starts a new
-/// session, and it is counted among the live until it has ended or a
-/// session is started under its cookie, which then counts in its place, so
-/// that a visitor's restart never meets the cap.
+/// session, and the call is then answered, so that every attach passed to
+/// the session before stands in its mailbox, told its end's code. The
+/// session is counted among the live until it has ended or a session is
+/// started under its cookie, which then counts in its place, so that a
+/// visitor's restart never meets the cap.
 ///
 /// `Stop` ends every session with 1001, which closes every shell attached,
 /// and answers once each has ended; after it every attach is told
@@ -29,8 +31,8 @@
 export type Sessions = Sessions(shell : Config.Shell, address : Address(SessionsMsg))
 
 /// What the sessions take: a shell's attach, with its cookie, its remote
-/// address, the page's size and the shell's address; the beginning of a
-/// session's end, and the end; and the request to stop, which the
+/// address, the page's size and the shell's address; a session's call as
+/// its end begins, and its end; and the request to stop, which the
 /// program's end sends.
 export type SessionsMsg =
     Attach(cookie : String, remote : String, size : Terminal.Size, shell : Address(Session.Told))
@@ -74,8 +76,11 @@ fn serving(held : Held) : Unit receiving SessionsMsg =
     receive {
         Attach(=cookie, =remote, =size, =shell) ->
             serving(attached(held, cookie, remote, size, shell))
-      | SessionEnding(Session.Ending(process)) ->
-            serving(ending(held, process))
+      | SessionEnding(Session.Ending(=process, =reply)) -> {
+            let dropped = ending(held, process);
+            answer(reply, Unit);
+            serving(dropped)
+        }
       | SessionEnded(down) ->
             serving(ended(held, down.process))
       | Stop(reply) -> {
@@ -139,8 +144,9 @@ fn pruned(starts : Map(String, List(Int)), window : Int) : Map(String, List(Int)
     })
 
 // A session whose end has begun dropped by its cookie and counted among
-// the ending, with its cookie; one that has already ended, its end having
-// come first (report §6.9), is not counted again.
+// the ending, with its cookie, before its call is answered; one that has
+// already ended, its call gone past and its end come first (report §6.9),
+// is not counted again.
 fn ending(held : Held, process : Process) : Held =
     match Map.find(held.live, fn(_, session) = Process.fromAddress(session) == process) {
         Some(#(cookie, _)) ->
@@ -169,8 +175,11 @@ fn stopping(held : Held) : Unit receiving SessionsMsg =
     if Map.isEmpty(held.live) && Map.isEmpty(held.ending) && Set.isEmpty(held.replaced) then
         Unit
     else receive {
-        SessionEnding(Session.Ending(process)) ->
-            stopping(ending(held, process))
+        SessionEnding(Session.Ending(=process, =reply)) -> {
+            let dropped = ending(held, process);
+            answer(reply, Unit);
+            stopping(dropped)
+        }
       | SessionEnded(down) ->
             stopping(ended(held, down.process))
       | Attach(=shell) -> {
@@ -322,7 +331,7 @@ let startsWithinTheCap = Test.Case(name = "starts a session within the cap", run
             let stopped = next("again");
             let later = Test.until(fn() = match attach(sessions, "later", "c", "192.0.2.2") {
                                        "Attached(New)" -> Test.Passed
-                                     | answer -> Test.Failed(answer)
+                                     | told -> Test.Failed(told)
                                    },
                                    5000);
             #(stopped, later)
@@ -353,7 +362,7 @@ let capsStarts = Test.Case(name = "caps a remote address's starts within the win
     let other = attach(sessions, "other", "d", "192.0.2.2");
     let later = Test.until(fn() = match attach(sessions, "later", "c", "192.0.2.1") {
                                "Attached(New)" -> Test.Passed
-                             | answer -> Test.Failed(answer)
+                             | told -> Test.Failed(told)
                            },
                            5000);
     let waited = Clock.monotonic() - begun;

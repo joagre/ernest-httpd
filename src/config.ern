@@ -271,18 +271,32 @@ fn headers(top : Map(String, Json.Value)) : Either(Error, List(Http.Header)) =
         else
             Left(invalid(field, "be a token", Json.Text(name)));
         let _ <- if List.contains(written, String.toLower(name)) then
-            Left(invalid(field,
-                         "be none of Content-Length, Date, Connection and Transfer-Encoding",
-                         Json.Text(name)))
+            Left(invalid(field, writtenRule, Json.Text(name)))
         else
             Right(Unit);
         let text <- stringValue(field, value);
         Right(Http.Header(=name, value = text))
     })
 
-// The headers the server writes itself, which the configuration's may not
-// name, in lower case.
-let written : List(String) = ["content-length", "date", "connection", "transfer-encoding"]
+// The headers the server writes itself, a response's of design §5, §6, §9
+// and §11, which the configuration's may not name, in lower case, and the
+// rule that says so.
+let written : List(String) =
+    ["allow",
+     "connection",
+     "content-length",
+     "content-type",
+     "date",
+     "last-modified",
+     "location",
+     "sec-websocket-accept",
+     "set-cookie",
+     "transfer-encoding",
+     "upgrade"]
+
+let writtenRule : String =
+    "be none of Allow, Connection, Content-Length, Content-Type, Date, Last-Modified, Location, "
+        <> "Sec-WebSocket-Accept, Set-Cookie, Transfer-Encoding and Upgrade"
 
 // A character of a token, RFC 9110's: a letter, a digit, or one of
 // !#$%&'*+-.^_`|~.
@@ -760,8 +774,9 @@ let refusesTypes =
 // and an empty array, an empty redirect host and one that is the canonical
 // host, its port dropped and in any case, a control character, a content
 // type's dot, a header's token and a header the server writes itself, in
-// any case, the shell's path, its warning, and its hangup, a value and
-// one that is absent.
+// any case, a framing header's, a response's own and an upgrade's, the
+// shell's path, its warning, and its hangup, a value and one that is
+// absent.
 let refusesValues =
     Test.Case(name = "refuses a value that breaks a rule",
               run = fn() =
@@ -790,6 +805,10 @@ let refusesValues =
                               broken(edited("\"X-Content-Type-Options\"", "\"\"")),
                               broken(edited("\"X-Content-Type-Options\"", "\"date\"")),
                               broken(edited("\"X-Content-Type-Options\"", "\"Transfer-ENCODING\"")),
+                              broken(edited("\"X-Content-Type-Options\"", "\"content-TYPE\"")),
+                              broken(edited("\"X-Content-Type-Options\"", "\"Set-Cookie\"")),
+                              broken(edited("\"X-Content-Type-Options\"",
+                                            "\"sec-websocket-accept\"")),
                               broken(edited("\"path\": \"/shell/session\"", "\"path\": \"shell\"")),
                               broken(edited("\"warning\": 60000", "\"warning\": 300000")),
                               broken(edited("\"hangup\": 5000", "\"hangup\": 0")),
@@ -824,16 +843,28 @@ let refusesValues =
                                      Some("\".w\\tasm\""))),
                               Some(#("headers.X Content", "be a token", Some("\"X Content\""))),
                               Some(#("headers.", "be a token", Some("\"\""))),
-                              Some(#("headers.date",
-                                     "be none of Content-Length, Date, Connection and Transfer-Encoding",
-                                     Some("\"date\""))),
+                              Some(#("headers.date", writtenByTheServer, Some("\"date\""))),
                               Some(#("headers.Transfer-ENCODING",
-                                     "be none of Content-Length, Date, Connection and Transfer-Encoding",
+                                     writtenByTheServer,
                                      Some("\"Transfer-ENCODING\""))),
+                              Some(#("headers.content-TYPE",
+                                     writtenByTheServer,
+                                     Some("\"content-TYPE\""))),
+                              Some(#("headers.Set-Cookie",
+                                     writtenByTheServer,
+                                     Some("\"Set-Cookie\""))),
+                              Some(#("headers.sec-websocket-accept",
+                                     writtenByTheServer,
+                                     Some("\"sec-websocket-accept\""))),
                               Some(#("shell.path", "begin with /", Some("\"shell\""))),
                               Some(#("shell.warning", "be below the lifetime", Some("300000"))),
                               Some(#("shell.hangup", "be above 0", Some("0"))),
                               Some(#("shell.hangup", "is required", None))]))
+
+// The rule of design §4's table on a header the server writes itself, as
+// the table writes it.
+let writtenByTheServer : String =
+    "be none of Allow, Connection, Content-Length, Content-Type, Date, Last-Modified, Location, Sec-WebSocket-Accept, Set-Cookie, Transfer-Encoding and Upgrade"
 
 // design §4: the fields are checked in the table's order, a row's rules in
 // theirs: a bad port before a bad root, a listener before the next, an

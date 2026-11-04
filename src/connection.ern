@@ -4,7 +4,7 @@
 /// `serve` is the connection's whole life. It waits for a request within the
 /// idle deadline, reads its head within the head deadline, refuses what the
 /// server does not serve, a version, a host, a body, and answers the rest as
-/// its host decides, `Hosts.answer`, from the static site where the host is
+/// its host decides, `Hosts.decide`, from the static site where the host is
 /// served, or by the shell where the server has sessions and the target's
 /// path is the shell's. Every response carries `Date` and the
 /// configuration's headers, and is written within the write deadline; the
@@ -147,7 +147,7 @@ fn answered(connection : Connection,
                       headed(request, Static.error(server.site, status, ms)),
                       Close)
       | None ->
-            match Hosts.answer(server.config, server.challenge, request, ms) {
+            match Hosts.decide(server.config, server.challenge, request, ms) {
                 Hosts.Served ->
                     match shellOf(server, request) {
                         Some(sessions) ->
@@ -339,11 +339,13 @@ fn header(name : String, value : String) : Http.Header =
 //
 
 // What a test's process takes: the entries its connection tells the log,
-// what it tells its listener, its end, and a client's socket a process of
-// its own connected.
+// what it tells its listener, the word of the connection's process that its
+// serve has returned, its end, and a client's socket a process of its own
+// connected.
 type Seen =
     Logged(AccessLog.LogMsg)
   | Heard(Told)
+  | Finished(Process)
   | Ended(Down)
   | Connected(Either(Io.Error, Address(Tcp.SocketMsg)))
 
@@ -425,11 +427,21 @@ fn serverOf(text : String) : Either(String, Server) receiving Seen = {
 }
 
 // The socket given to a connection served in a process of its own, whose
-// listener is the test's process and whose end it is told.
+// listener is the test's process, which it tells once its serve has
+// returned, and whose end the test's process is told.
 fn serving(socket : Address(Tcp.SocketMsg), server : Server) : Unit receiving Seen = {
     let me = self();
-    let connection = spawnMonitored(fn() = serve(socket, server, adapted(me, Heard)), Ended);
+    let connection = spawnMonitored(fn() = servedThenFinished(socket, server, me), Ended);
     Tcp.give(socket, Process.fromAddress(connection))
+}
+
+// The connection served, the test's process its listener, and then told
+// that its serve has returned, after everything it told.
+fn servedThenFinished(socket : Address(Tcp.SocketMsg),
+                      server : Server,
+                      test : Address(Seen)) : Unit receiving Shell.ShellMsg = {
+    serve(socket, server, adapted(test, Heard));
+    send(test, Finished(Process.current()))
 }
 
 // A self-signed certificate for localhost, EC P-256, made once with openssl
@@ -509,8 +521,8 @@ fn exchanged(client : Address(Tcp.SocketMsg),
         List.foldLeft(requests, <<>>, fn(acc, request) = acc <> Http.renderRequest(request, <<>>));
     let _ <- Either.mapLeft(Tcp.write(client, bytes, 5000), Io.show);
     let #(_, answers) <- List.tryFold(requests, #(<<>>, []), fn(#(carried, acc), request) = {
-        let #(answer, rest) <- received(client, carried, request.method);
-        Right(#(rest, answer :: acc))
+        let #(response, rest) <- received(client, carried, request.method);
+        Right(#(rest, response :: acc))
     });
     Right(List.reverse(answers))
 }
@@ -677,9 +689,9 @@ fn written(idle : Int,
            bytes : Bytes) : Either(String, #(Answer, String, List(String))) receiving Seen = {
     let client <- connected(idle, head);
     let _ <- Either.mapLeft(Tcp.write(client, bytes, 5000), Io.show);
-    let #(answer, _) <- received(client, <<>>, "GET");
+    let #(response, _) <- received(client, <<>>, "GET");
     let #(entries, _) = told(1);
-    Right(#(answer, next(client), entries))
+    Right(#(response, next(client), entries))
 }
 
 // design §6: a 1.0 request closes the connection, and one that lists
@@ -782,16 +794,27 @@ let answersSlowHeads =
                   Test.equal(written(5000, 200, String.toUtf8("GET /a.txt HTTP/1.1\r\n")),
                              Right(#(refused(408), "closed", ["127.0.0.1 - 408 20"]))))
 
-// The connection's end, and then whether it told anything before it.
+// A connection's end: whether it told anything the test has not taken,
+// which its word that its serve has returned follows, from the one sender
+// (report §6.4), and then its end's reason; a connection whose serve did
+// not return is shown by its end's reason alone.
 fn ended() : String receiving Seen =
     receive {
-        Ended(down) ->
+        Finished(process) -> {
+            let told = receive {
+                Logged(_) or Heard(_) -> ", told"
+              | after 0 -> ", told nothing"
+            };
             receive {
-                Logged(_) or Heard(_) -> Io.show(down.reason) <> ", told"
-              | after 0 -> Io.show(down.reason) <> ", told nothing"
+                Ended(down) when down.process == process -> Io.show(down.reason) <> told
+              | after 5000 -> "no end"
             }
+        }
       | after 5000 ->
-            "no end"
+            receive {
+                Ended(down) -> Io.show(down.reason) <> ", unfinished"
+              | after 0 -> "no end"
+            }
     }
 
 // design §6: a connection that sends nothing within the idle deadline, and
@@ -826,7 +849,7 @@ let servesOverTls = Test.Case(name = "serves a connection over TLS", run = fn() 
                       [request("GET", "/a.txt", 1, [host]),
                        request("GET", "/a.txt", 1, [host, closing])]);
         let #(entries, _) = told(2);
-        Right(#(answers, next(client), entries))
+        Right(#(answers, next(client), entries, ended()))
     };
     let plainText = {
         let client <- tlsConnected(PlainClient);
@@ -839,7 +862,8 @@ let servesOverTls = Test.Case(name = "serves a connection over TLS", run = fn() 
                           file([closing, header("Content-Length", "5")])],
                          "closed",
                          ["127.0.0.1 GET /a.txt HTTP/1.1 200 5",
-                          "127.0.0.1 GET /a.txt HTTP/1.1 200 5"])),
+                          "127.0.0.1 GET /a.txt HTTP/1.1 200 5"],
+                         "Returned, told nothing")),
                  Right("Returned, told nothing")))
 })
 
@@ -968,7 +992,7 @@ let upgrades = Test.Case(name = "upgrades a request on the shell's path", run = 
         let close = framed(client, decoder, <<>>, 1);
         let upgradeEnd = next(client);
         let upgradeTold = told(1);
-        let end = ended();
+        let ends = [ended(), ended(), ended()];
         let stopped = match server.sessions {
             Some(sessions) -> Address.call(sessions.address, Sessions.Stop, 5000) == Some(Unit)
           | None -> false
@@ -990,7 +1014,7 @@ let upgrades = Test.Case(name = "upgrades a request on the shell's path", run = 
                 close,
                 upgradeEnd,
                 upgradeTold,
-                end,
+                ends,
                 stopped))
     };
     let upgradeRequired = "426 Upgrade Required\n";
@@ -1017,7 +1041,9 @@ let upgrades = Test.Case(name = "upgrades a request on the shell's path", run = 
                          "closed",
                          #(["127.0.0.1 GET /shell?page=1 HTTP/1.1 101 0"],
                            ["RequestRead", "Upgraded"]),
-                         "Returned, told nothing",
+                         ["Returned, told nothing",
+                          "Returned, told nothing",
+                          "Returned, told nothing"],
                          true)),
                  Right(#([plain(404, [closing, length("404 Not Found\n")])],
                          "closed",

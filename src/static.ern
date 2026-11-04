@@ -481,7 +481,7 @@ fn request(method : String, target : String, headers : List(Http.Header)) : Http
 fn getting(site : Site, target : String, expected : Answer) : Check =
     Check(=site, request = request("GET", target, []), =expected)
 
-fn answer(#(response, body) : #(Http.Response, Bytes)) : Answer =
+fn compared(#(response, body) : #(Http.Response, Bytes)) : Answer =
     Answer(status = response.status, headers = response.headers, body = String.fromUtf8(body))
 
 // Each check's request served once the scratch sites are prepared, and the
@@ -489,7 +489,8 @@ fn answer(#(response, body) : #(Http.Response, Bytes)) : Answer =
 fn served(checks : List(Check)) : Test.Result =
     match prepared() {
         Right(Unit) ->
-            Test.equal(List.map(checks, fn(check) = answer(serve(check.site, check.request, 5000))),
+            Test.equal(List.map(checks,
+                                fn(check) = compared(serve(check.site, check.request, 5000))),
                        List.map(checks, fn(check) = check.expected))
       | Left(error) ->
             Test.Failed("cannot prepare " <> scratch <> ": " <> Io.show(error))
@@ -580,9 +581,9 @@ let refusesMethods = Test.Case(name = "refuses a method other than GET and HEAD"
 let answersHead = Test.Case(name = "answers a HEAD", run = fn() = {
     fn head(site : Site, target : String, headers : List(Http.Header), expected : Answer) : Check =
         Check(=site, request = request("HEAD", target, headers), =expected);
-    fn sized(answer : Answer, size : String) : Answer =
-        Answer(..answer,
-               headers = answer.headers <> [header("Content-Length", size)],
+    fn sized(expected : Answer, size : String) : Answer =
+        Answer(..expected,
+               headers = expected.headers <> [header("Content-Length", size)],
                body = Some(""));
     served([head(withPage, "/a.txt", [], sized(textFile("alpha"), "5")),
             head(withPage, "/docs", [], sized(redirect("/docs/"), "0")),
@@ -598,8 +599,8 @@ let answersHead = Test.Case(name = "answers a HEAD", run = fn() = {
 let dropsBodies =
     Test.Case(name = "drops a body for a HEAD",
               run = fn() =
-                  Test.equal([answer(withoutBody(plain(404))),
-                              answer(withoutBody(#(response(304, []), <<>>)))],
+                  Test.equal([compared(withoutBody(plain(404))),
+                              compared(withoutBody(#(response(304, []), <<>>)))],
                              [Answer(..plainError(404),
                                      headers = plainError(404).headers
                                          <> [header("Content-Length", "14")],
@@ -797,9 +798,9 @@ let answersRefused = Test.Case(name = "answers a file it cannot read with 500", 
 // for a 404.
 let writesErrors = Test.Case(name = "writes an error's response", run = fn() = match prepared() {
     Right(Unit) ->
-        Test.equal([answer(error(bare, 400, 5000)),
-                    answer(error(bare, 404, 5000)),
-                    answer(error(withPage, 404, 5000))],
+        Test.equal([compared(error(bare, 400, 5000)),
+                    compared(error(bare, 404, 5000)),
+                    compared(error(withPage, 404, 5000))],
                    [plainError(400), plainError(404), notFoundPage])
   | Left(cause) ->
         Test.Failed("cannot prepare " <> scratch <> ": " <> Io.show(cause))

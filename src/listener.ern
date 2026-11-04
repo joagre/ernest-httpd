@@ -281,6 +281,7 @@ type Seen =
     Logged(AccessLog.LogMsg)
   | Ended(Down)
   | Spawned(idle : Process, serving : Process)
+  | ServingSpawned(Process)
   | ShellSpawned(Address(Shell.ShellMsg))
   | ShellTold(Session.Told)
   | Watched(Down)
@@ -355,10 +356,12 @@ fn got(socket : Address(Tcp.SocketMsg),
                      version = Http.Version(major = 1, minor = 1),
                      headers = Http.Header(name = "Host", value = "localhost") :: headers);
     let _ <- Either.mapLeft(Tcp.write(socket, Http.renderRequest(request, <<>>), 5000), Io.show);
-    answer(socket, ms)
+    response(socket, ms)
 }
 
-fn answer(socket : Address(Tcp.SocketMsg), ms : Int) : Either(String, #(Int, Int)) = {
+// The status of the next response the socket carries, read within the
+// milliseconds, and the size of its body, or the error.
+fn response(socket : Address(Tcp.SocketMsg), ms : Int) : Either(String, #(Int, Int)) = {
     let #(response, rest) <- Either.mapLeft(Http.readResponse(socket, <<>>, limits, ms), Io.show);
     let #(body, _) <-
         Either.mapLeft(Http.readResponseBody(socket, rest, response, 4096, 5000), Io.show);
@@ -418,7 +421,7 @@ let capsConnections =
             let second <- client(port);
             let held = got(second, "/a.txt", [], 300);
             let two <- got(first, "/a.txt", [close], 5000);
-            let three <- answer(second, 5000);
+            let three <- response(second, 5000);
             let four <- got(second, "/a.txt", [close], 5000);
             Right(#(one, held, two, three, four, prompt(stopped(listener))))
         };
@@ -673,3 +676,72 @@ let endsAShell = Test.Case(name = "closes a shell at its end", run = fn() = {
     };
     Test.equal(result, Right(#("Ended(1001)", true, "Returned", "Returned")))
 })
+
+// A listener at its stop with an acceptor asked for nothing and a stand-in
+// for a connection serving a request, which it tells the test's process
+// of; it takes its Stop before anything else in its mailbox, so that a
+// socket given it before the Stop has not been placed.
+fn stoppingFirst(me : Address(Seen),
+                 socket : Address(Tcp.ListenerMsg),
+                 server : Connection.Server) : Unit receiving ListenerMsg = {
+    let serving = Process.fromAddress(spawnMonitored(standing, ConnectionEnded));
+    let listener = self();
+    let acceptor = spawnMonitored(fn() = accepting(socket, listener, 60000), AcceptorEnded);
+    send(me, ServingSpawned(serving));
+    receive {
+        Stop ->
+            ending(Listening(=socket, =server, told = adapted(listener, Told), =acceptor),
+                   Map.fromList([#(serving, Open(remote = "192.0.2.7", doing = ServingRequest))]))
+    }
+}
+
+// A client's socket and the socket of its connection, accepted on a
+// listening socket of the loopback that is then closed.
+fn connectedPair() : Either(Io.Error, #(Address(Tcp.SocketMsg), Address(Tcp.SocketMsg))) = {
+    let listening <- Tcp.listen("127.0.0.1", 0);
+    let port <- Tcp.port(listening);
+    let client <- Tcp.connect("127.0.0.1", port, 5000);
+    let accepted <- Tcp.accept(listening, 5000);
+    Tcp.closeListener(listening);
+    Right(#(client, accepted))
+}
+
+// design §7: at the end a socket the acceptor gave that the listener had
+// not yet placed is closed at once, while a connection serving a request
+// holds the listener, no connection served on it: the test's process gives
+// a socket and tells Accepted as the acceptor does, and then Stop, which
+// the listener takes first; once the connection tells ResponseWritten the
+// listener returns.
+let closesAnUnplacedSocket =
+    Test.Case(name = "closes a socket given at the stop and not yet placed", run = fn() = {
+        let me = self();
+        let result = {
+            let _ <- Either.mapLeft(prepared(), Io.show);
+            let config <- Either.mapLeft(Config.parse(configuration(5000, 4, 4)), Config.reason);
+            let socket <- Either.mapLeft(Tcp.listen("127.0.0.1", 0), Io.show);
+            let server =
+                Connection.Server(=config,
+                                  site = Static.site(config.root, config.contentTypes),
+                                  challenge = None,
+                                  log = adapted(me, Logged),
+                                  sessions = None);
+            let listener = spawnMonitored(fn() = stoppingFirst(me, socket, server), Ended);
+            let serving <- receive {
+                ServingSpawned(serving) -> Right(serving)
+              | after 5000 -> Left("no stand-in")
+            };
+            let #(client, given) <- Either.mapLeft(connectedPair(), Io.show);
+            Tcp.give(given, Process.fromAddress(listener));
+            send(listener, Accepted(Right(given)));
+            send(listener, Stop);
+            let closed = next(client);
+            let listenerWaits = Process.status(Process.fromAddress(listener)) != None;
+            send(listener, Told(Connection.ResponseWritten(serving)));
+            let end = receive {
+                Ended(down) -> Io.show(down.reason)
+              | after 5000 -> "no end"
+            };
+            Right(#(closed, listenerWaits, end, logged([])))
+        };
+        Test.equal(result, Right(#("closed", true, "Returned", [])))
+    })

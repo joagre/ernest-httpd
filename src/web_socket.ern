@@ -344,8 +344,8 @@ fn limited(decoder : Decoder, header : Header, frame : Frame) : Either(Error, Fr
 fn payload(header : Header, bytes : Bytes) : Optional(#(Bytes, Bytes)) = {
     let length = header.length;
     match #(header.isMasked, bytes) {
-        #(true, <<key:size(4)-bytes, payload:size(length)-bytes, rest:bytes>>) ->
-            Some(#(masked(payload, key), rest))
+        #(true, <<first, second, third, fourth, payload:size(length)-bytes, rest:bytes>>) ->
+            Some(#(masked(payload, first, second, third, fourth), rest))
       | #(false, <<payload:size(length)-bytes, rest:bytes>>) ->
             Some(#(payload, rest))
       | _ ->
@@ -489,13 +489,16 @@ export fn encode(message : Message) : Bytes = {
 /// // => [Some("818537FA213D7F9F4D5158"), None]
 /// ```
 export fn encodeMasked(message : Message, key : Bytes) : Optional(Bytes) =
-    if Bytes.size(key) == 4 then {
-        let #(opcode, payload) = opcodeAndPayload(message);
-        Some(<<(frameHead(opcode, 1, Bytes.size(payload))):bytes,
-               key:bytes,
-               (masked(payload, key)):bytes>>)
-    } else
-        None
+    match key {
+        <<first, second, third, fourth>> -> {
+            let #(opcode, payload) = opcodeAndPayload(message);
+            Some(<<(frameHead(opcode, 1, Bytes.size(payload))):bytes,
+                   key:bytes,
+                   (masked(payload, first, second, third, fourth)):bytes>>)
+        }
+      | _ ->
+            None
+    }
 
 // A message's opcode and its payload, a close's its code and reason where
 // it has a code.
@@ -524,18 +527,22 @@ fn frameHead(opcode : Int, mask : Int, length : Int) : Bytes =
 // Masking
 //
 
-// The bytes masked with the four-byte key, each byte XORed with the key's
-// byte at its index modulo 4, RFC 6455's §5.3, which unmasks them too: four
-// bytes at a time, and the last one at a time, the key turned past each.
-fn masked(bytes : Bytes, key : Bytes) : Bytes =
-    maskedFrom(bytes, key, <<>>)
+// The bytes masked with the four-byte key, given by its bytes in order,
+// each byte XORed with the key's byte at its index modulo 4, RFC 6455's
+// §5.3, which unmasks them too: one byte at a time, the key's bytes passed
+// on turned, the next one first.
+fn masked(bytes : Bytes, first : Int, second : Int, third : Int, fourth : Int) : Bytes =
+    maskedFrom(bytes, first, second, third, fourth, <<>>)
 
-fn maskedFrom(bytes : Bytes, key : Bytes, acc : Bytes) : Bytes =
-    match #(bytes, key) {
-        #(<<word:size(32), rest:bytes>>, <<keyWord:size(32)>>) ->
-            maskedFrom(rest, key, <<acc:bytes, Int.bitXor(word, keyWord):size(32)>>)
-      | #(<<byte, rest:bytes>>, <<keyByte, keyRest:bytes>>) ->
-            maskedFrom(rest, <<keyRest:bytes, keyByte>>, <<acc:bytes, Int.bitXor(byte, keyByte)>>)
+fn maskedFrom(bytes : Bytes,
+              first : Int,
+              second : Int,
+              third : Int,
+              fourth : Int,
+              acc : Bytes) : Bytes =
+    match bytes {
+        <<byte, rest:bytes>> ->
+            maskedFrom(rest, second, third, fourth, first, <<acc:bytes, Int.bitXor(byte, first)>>)
       | _ ->
             acc // the end of the bytes
     }
@@ -605,7 +612,7 @@ fn maskedFrame(first : Int, payload : Bytes) : Bytes =
       1:size(1),
       (Bytes.size(payload)):size(7),
       rfcKey:bytes,
-      (masked(payload, rfcKey)):bytes>>
+      (masked(payload, 0x37, 0xfa, 0x21, 0x3d)):bytes>>
 
 // design §10: accept is the SHA-1 of the key and
 // 258EAFA5-E914-47DA-95CA-C5AB0DC85B11 in base64: RFC 6455's key of
