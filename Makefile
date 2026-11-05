@@ -210,7 +210,7 @@ format:
 # dependency.
 release: test
 	@case "$$($(ERN) --version)" in \
-	    *-dev) echo "a release is not made with a development build of ern"; exit 1 ;; esac
+	    *-dev|*+*) echo "a release is not made with a development build of ern"; exit 1 ;; esac
 	rm -rf build/$(NAME)-$(VERSION) && mkdir -p build/$(NAME)-$(VERSION)
 	cp -R src build/$(NAME)-$(VERSION)/src
 	mkdir -p build/$(NAME)-$(VERSION)/build && \
