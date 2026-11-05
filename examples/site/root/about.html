@@ -17,19 +17,22 @@
 </header>
 <main>
 <h1>About</h1>
-<p>Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit,
-sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt.
-Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet.</p>
-<h2>Consectetur</h2>
-<p>Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis
-suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur. Quis autem vel
-eum iure reprehenderit qui in ea voluptate velit esse quam nihil molestiae
-consequatur.</p>
-<h2>Adipisci velit</h2>
-<p>At vero eos et accusamus et iusto odio dignissimos ducimus qui blanditiis
-praesentium voluptatum deleniti atque corrupti quos dolores et quas molestias
-excepturi sint occaecati cupiditate non provident. Back to the <a
-href="./">home page</a>, or on to the <a href="guide/">guide</a>.</p>
+<p>This site shows what ernest-httpd does, on your own machine. The same server
+serves ernest-lang.org; here it runs with a configuration of its own, on
+localhost over plain HTTP.</p>
+<h2>What it answers</h2>
+<p>It serves the files under <code>examples/site/root/</code> to GET and HEAD,
+and answers any other method 405. A directory is served as its
+<code>index.html</code>, and without its slash it answers 301 first. A file not
+changed since the browser last asked answers 304, and a path that leads nowhere
+answers 404 with the site's own <code>404.html</code>. The host decides too:
+<code>localhost</code> is served, <code>www.localhost</code> is redirected, and
+any other answers 421.</p>
+<h2>Where to look</h2>
+<p>A browser hides most of this. <code>examples/README.md</code> gives a curl
+command for each answer, and the access log,
+<code>build/examples/site/access.log</code>, has a line for each response. Back
+to the <a href="./">home page</a>, or on to the <a href="guide/">guide</a>.</p>
 </main>
 <footer>
 <p>Served by ernest-httpd from its example site.</p>

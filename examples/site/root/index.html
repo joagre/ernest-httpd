@@ -17,19 +17,21 @@
 </header>
 <main>
 <h1>An example site</h1>
-<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod
-tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam,
-quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo
-consequat.</p>
+<p>This small site is served by ernest-httpd, an HTTP/1.1 server written in
+Ernest, from one directory of files and one configuration. Its pages and
+pictures are plain files; its shell is a program on the server, which a browser
+reaches over a WebSocket.</p>
 <figure>
 <img src="images/listeners.svg" width="480" height="180"
      alt="A browser reaching the plain listener on port 8080 and the redirect listener on port 8081">
 <figcaption>The two listeners: the plain one serves the pages and the shell,
 the redirect one answers 301 and the challenge.</figcaption>
 </figure>
-<p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore
-eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt
-in culpa qui officia deserunt mollit anim id est laborum. Read <a
+<p>This page came from the plain listener on port 8080. The redirect listener
+on port 8081 serves no page: it answers 301, sending the browser to the same
+path on <code>https://localhost/</code>, and it serves the ACME challenge, the
+file a certificate authority reads to check who holds a name. This example has
+no TLS listener, so nothing answers at that address. Read <a
 href="about.html">about</a> the site, follow the <a href="guide/">guide</a>, or
 open the <a href="shell.html">shell</a>.</p>
 <figure>
@@ -39,9 +41,13 @@ open the <a href="shell.html">shell</a>.</p>
 connection for each socket accepted, and a session for each visitor, with its
 program.</figcaption>
 </figure>
-<p>Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium
-doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore
-veritatis et quasi architecto beatae vitae dicta sunt explicabo.</p>
+<p>The entry process starts the others and stops them at the end. A connection
+reads a socket's requests and writes its responses, and the access log writes a
+line for each response. The sessions, there because this configuration has a
+shell, hold a session for each visitor to the shell page. The dashed box is not
+one of the server's processes: <code>ern shell</code> is a program of its own,
+run under a terminal. The smaller processes that only read and write for these
+are left out of the picture.</p>
 </main>
 <footer>
 <p>Served by ernest-httpd from its example site.</p>
