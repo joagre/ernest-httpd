@@ -261,3 +261,9 @@ The smaller ones: the smoke test checks the configuration's first redirect host;
 ## The twelfth sweep: the signal and the descriptors
 
 *2026-11-04.* Ernest took line 25 as its 233 and line 26 as its 234, both planned in its MVP 4.15 and neither built, its answer coming by a message as Ernest's clean room now has it. 233, in item 9, reads against E.0's admission rules whether `Os` ends a program it started by the termination signal, so that the tests' `sh` and `kill` can go; 234, item 20, has the runtime load every module it may call at its start, the host's among them, so that an error met when the descriptors are spent is still answered. Each gets its log entry in Ernest's when built; the lines go as 18, 20, 21 and 24 went, the plan carrying what waits, and the feedback file goes, empty.
+
+## The site on Ernest's next minor
+
+*2026-11-05.* Ernest stays at 0.x: its MVP 4.4's release is its next minor, 0.11.0 or 0.12.0, the site goes live with it, and 1.0 has no date (Ernest's log, *Ernest Stays at 0.x*, at `8a0d9f9a`). Item 5's release and its floor follow to that release. The rehearsal on the archive of MVP 4.15's release stands, as *The release before the site* argues it.
+
+That entry's reason falls with 1.0: the floor the switch stands on makes no promise that the next will not refuse this program. What the reason wanted still holds. The machine runs the archive it is given and moves only by a release of this program, so it changes once, on a path already walked (principle 1). A later floor that refuses something here is met when this repository raises its floor, in `make test`, with the live site untouched.
