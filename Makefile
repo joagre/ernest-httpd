@@ -19,9 +19,8 @@
 #   make xterm    fills the example site's xterm/: each archive XTERM names
 #                 fetched and unpacked where its script is not there
 #   make doc      the documentation of every module, as CommonMark under build/
-#   make man      the pages copied into docs/man/, which a library's release
-#                 commits, its index the directory's README; this program,
-#                 not a library, commits none
+#   make man      the pages copied into docs/man/, which each release commits,
+#                 its index the directory's README
 #   make format   lays every module out
 #   make release  the archive, build/NAME-VERSION.tar.gz, tests first
 #   make install  installs what stands built under PREFIX, /usr/local by

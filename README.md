@@ -24,8 +24,7 @@ make install    installs what stands built under PREFIX, /usr/local by default, 
                 checkout or an unpacked archive: make install PREFIX=/home/httpd/opt/local
 make uninstall  removes from PREFIX what make install put there, then share/doc, share,
                 lib and bin under it, each where it is empty, and nothing else
-make man        the template's target for a library's manual pages into docs/man/,
-                committed with its release; this program has none
+make man        each module's page into docs/man/, committed with each release
 ```
 
 `make lib` fills `lib/` with each dependency `DEPS` names by the URL of its release archive, fetched and unpacked once, and each Erlang application `ERL_DEPS` names, a git submodule under `erl/` built by its own `make` and linked.
@@ -54,6 +53,7 @@ The server runs on its machine as [`deploy/README.md`](deploy/README.md) says, s
 - [`docs/plan.md`](docs/plan.md): where the program stands and what comes next.
 - [`docs/log.md`](docs/log.md): the dated rationale, never normative.
 - [`docs/release.md`](docs/release.md): what a release runs to be ready.
+- [`docs/man/README.md`](docs/man/README.md): each module's page, as `make man` wrote it at the last release.
 - [`examples/README.md`](examples/README.md): the example site, what it shows and how it is run.
 - [`deploy/README.md`](deploy/README.md): the deployment, the operator's steps in their order.
 - `language_feedback.md`, under `docs/` from its first line and gone when it is empty: what writing Ernest felt against the principles, carried to Ernest by copy.
