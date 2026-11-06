@@ -277,3 +277,11 @@ The order leans on `make release` refusing a development build, and it did not: 
 ## The module pages
 
 *2026-11-05.* The pages `make man` writes are committed under `docs/man/` and written again at every release, as a library's are, so that a module's contract can be read without building it. No principle asks for this. The argument against is principle 5: no program outside this one calls these modules, so each release commits generated text no caller needs, where `make doc` already writes it under `build/`. It was decided against that argument, and costs only that text. The first set names the development build it came from, `ern 0.10.0+612faac8`, and stays as it is until the next release, so between releases the pages may lag the code. Only the step in `docs/release.md` keeps them current; nothing refuses a release whose pages are old.
+
+## The ern that ERN names
+
+*2026-11-06.* `ERN=path/to/ern make test` failed two cases where no `ern` stood on `PATH`: the launcher takes `ERN`, while `Smoke`'s test and the example's `shell.command` name `ern` by its name. Where another `ern` stood on `PATH` the same runs took that one, status 97 from a stand-in, so the line was never only about a missing `ern`: the tests could run a build other than the one that compiled them.
+
+`make` now stands the directory of an `ERN` that is a path first on `PATH`, for every target (design §13). Principle 1 decided: the README says `ERN=` names another `ern`, and a reader predicts that every `ern` of the run is that one. The other way was the test reading `Os.environment("ERN")`, as the launcher does. It leaves the example's command, which a configuration can only name as a word and which the test promises to change no further than its ports, so it would take a second rule for the same `ern` (principle 2).
+
+`make run` gains the same, and the example's README says so. A launcher run by hand keeps §13's rule, since the shell's command is the configuration's and stands on the `PATH` it is given. An `ERN` whose file is not called `ern` is not reached this way, and the README's `path/to/ern` names none. No test holds this: `make test` shows it only when run with no other `ern` first, which the commit's check did by hand, with none on `PATH` and with a stand-in.

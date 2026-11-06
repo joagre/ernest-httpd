@@ -48,8 +48,10 @@ EXAMPLE_SUFFIX =
 # The configuration make run serves.
 CONFIG     ?= examples/site/config.json
 
-# The ern on PATH, or ERN=path/to/ern.
+# The ern on PATH, or ERN=path/to/ern, whose directory then stands first on
+# PATH, so that what names ern by its name finds that one too (design §13).
 ERN        ?= ern
+export PATH := $(if $(findstring /,$(ERN)),$(abspath $(dir $(ERN))):)$(PATH)
 # Where make install puts the program and make uninstall removes it from.
 PREFIX     ?= /usr/local
 

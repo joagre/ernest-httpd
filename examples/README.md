@@ -16,7 +16,7 @@ The shell runs `ern shell` under a terminal, at most four at once and ten starts
 make run
 ```
 
-builds the server, fetches xterm.js and its fit addon into `root/xterm/` the first time, each script's MIT license beside it as `xterm.js.LICENSE.txt` and `addon-fit.js.LICENSE.txt`, and serves the site until it is ended: Ctrl-C ends it at once, and `kill -TERM` of its process ends it in order. `ern` must be on `PATH`, since the shell's command names it.
+builds the server, fetches xterm.js and its fit addon into `root/xterm/` the first time, each script's MIT license beside it as `xterm.js.LICENSE.txt` and `addon-fit.js.LICENSE.txt`, and serves the site until it is ended: Ctrl-C ends it at once, and `kill -TERM` of its process ends it in order. `ern` must be on `PATH`, since the shell's command names it; `ERN=path/to/ern make run` puts that one first.
 
 The example's shell is `ern shell` run as the server's own user, with no container around it: it is for a look at one's own machine over localhost, and never for the internet, where the site's command starts a podman container instead.
 
