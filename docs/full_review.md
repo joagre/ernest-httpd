@@ -37,6 +37,10 @@ A reader's letter names its findings: C12 is the code reader's twelfth.
 
 A copy of the template adds below these the readers its program alone needs, and changes nothing above them.
 
+- **L, the live shell reader.** Reads what a visitor's session stands on: the design's §10 to §13, `src/web_socket.ern`, `src/shell.ern`, `src/sessions.ern` and `src/session.ern`, and of `deploy/` the image, the shell's start, the wrapper, the unit and step 7 of its `README.md`. It tries the session on localhost, and the container where podman stands, and nothing against the deployed site. What it could not run, it says.
+
+  "A visitor types what they like and the session's program runs it: that is the shell's work and no finding. Report each way a visitor gets past what the shell grants: out of the container, into another visitor's session by its cookie or its socket, past a cap or a deadline, or to something that outlives the session, a container, a process or memory. Give what shows it. A limit the design states and no flag or check holds counts." Real exposures stand apart from hardening.
+
 ## The findings
 
 - The lists become `findings.md` beside this file, a line per finding, each naming its reader's letter and number. Each reader's whole list is kept below the lines, since a line is too short to fix from.
