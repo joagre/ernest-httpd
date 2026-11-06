@@ -15,7 +15,9 @@ Each fact has one owner. Every other document points at the owner and does not r
 
 | Owner | Owns |
 |---|---|
-| [`README.md`](README.md) | what the program is, how it is built, tested and run, and what each document is |
+| [`README.md`](README.md) | what the program is, and how it is built, tested and run |
+| [`docs/README.md`](docs/README.md) | what each document is |
+| [`SECURITY.md`](SECURITY.md) | where to report a security hole |
 | [`docs/design.md`](docs/design.md) | how the program is arranged: its processes, its types, what each module owns, and the glossary of its names |
 | [`docs/plan.md`](docs/plan.md) | the roadmap and where we are; a finished milestone is a row of its table, naming the log entries that argue it |
 | [`docs/log.md`](docs/log.md) | the rationale: why the design and the plan say what they say. Never normative |
@@ -25,7 +27,7 @@ Each fact has one owner. Every other document points at the owner and does not r
 | `examples/README.md`, where `examples/` exists | the example programs, by topic, with what each shows and how each is run |
 | Ernest's `guide/style.md`, installed as `share/doc/ernest/guide/style.md` beside `ern` | the rules an Ernest program is written by, Ernest's own, read from the installation and not copied here |
 | the code and its tests | what is built |
-| `language_feedback.md`, under `docs/` from its first line | what writing Ernest felt against the principles, a line each, in the shape of Ernest's file of that name, a queue: a line is carried to Ernest, the log here cites Ernest's answer, and the line then goes; the file goes when it is empty |
+| `language_feedback.md`, under `docs/` from its first line | what writing Ernest felt against the principles, a line each, in the shape of Ernest's file of that name, a queue: a line is carried to Ernest by its issue tracker, or, for an application built in Ernest's clean room, by a message to Ernest's session, the log here cites Ernest's answer, and the line then goes; the file goes when it is empty |
 | `findings.md`, under `docs/` while a review's findings are open | the findings, each line until a plan item decides it; it goes when every line is done, dropped or planned |
 
 **Proposals.** [`docs/proposals/`](docs/proposals/) holds what is designed, a directory for each: the proposal, its reasons, what other systems do, and its experiments or programs. Each directory's `README.md` says what its files are and which is current.
