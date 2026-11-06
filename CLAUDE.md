@@ -83,7 +83,7 @@ A `scratch/` directory inside a proposal's own directory, untracked, is the user
 - **The program is beautiful, inside and out.** Keep no code only to make it go faster. Measure first, and where the plain form is fast enough it stays plain.
 - **A measurement ends when its number stops deciding anything.** A number that confirms the plain form goes to the log once, and its item closes. Following it further is an item of its own, planned with the decision it would change.
 - **No fixed sleep, in the code or in a test.** A process waits on what it means: a message, a monitor, a port that answers, a process's end, or a deadline the design states.
-- **The program is Ernest.** `foreign` is only what the host alone can do, and nothing is written in Erlang meanwhile: a function the library lacks is written in Ernest or waits, as *Defects and gaps* says.
+- **The program is Ernest.** `foreign` is only what the host alone can do, and nothing is written in Erlang meanwhile. A function the library lacks is written in Ernest where Ernest can express it, and waits where only the host can, as *Defects and gaps* says.
 - **A shim is written with the host's page open.** Where the program wraps a host library, an operation a host function does exactly is a `foreign fn` over it. Where one almost does, Ernest closes the difference around the call. The function's arguments, edge cases and errors are carried into the Ernest contract, and what its page leaves unsaid is tried against the host before the design states it. The prose is the program's own; nothing is copied.
 
 ## Defects and gaps
@@ -91,7 +91,9 @@ A `scratch/` directory inside a proposal's own directory, untracked, is the user
 - **No warts.** Never leave an approximation, a silent deviation from the design, or an unstated semantic choice in the code.
 - **Fix a known defect when found.** A gap too large to fix now, or a defect not yet diagnosed, goes in the plan with a date and the shape of its fix, never in a comment.
 - **Memory that no collection reclaims is a defect, fixed at its cause.** Never fix it by capping a list, a table or a cache.
-- **Nothing routes around a defect or a gap of Ernest's.** A gap the program meets in Ernest goes to Ernest first and is fixed there, in its next release. Where writing Ernest feels against a principle, a workaround, a second way, something invisible, a function the library lacks, a refusal, a line the tool should say or a defect of the toolchain, say so at once. Write the line in `language_feedback.md` as a change request: the finding, the program that shows it, the principle, and the ask. Meanwhile what needed the line waits, in the plan, and nothing here goes around it.
+- **Nothing routes around a defect or a gap of Ernest's.** A gap the program meets in Ernest goes to Ernest first and is fixed there, in its next release. Where writing Ernest feels against a principle, a workaround, a second way, something invisible, a function the library lacks, a refusal, a line the tool should say or a defect of the toolchain, say so at once. Write the line in `language_feedback.md` as a change request: the finding, the program that shows it, the principle, and the ask.
+
+  One gap does not wait. A function the library lacks, which Ernest can express over what the library has, is written in the program, and its line names it. It goes when a release brings the library's own. Every other gap waits: what needed the line stands in the plan, and nothing here goes around it.
 
   The user carries a line to Ernest by its issue tracker. For an application built in Ernest's clean room, the session carries it by a message to Ernest's session. Ernest's verdict comes with its next release, which the session installs and checks each verdict against. A line the release answers goes, the log citing Ernest's number. One not answered, or not agreed with, stays, the verdict and the reason beneath it. The file goes when it is empty.
 - **A refusal is a decision, and a workaround in prose is a gap.** A refusal the design states is weighed on the principles in its log entry. One whose only reason is how the code was built was never decided, and is weighed when found. A sentence that teaches a way around the program or Ernest, "the shortest way to", "write it as ... instead", is a gap with its workaround beside it, and goes as the rule above says.
@@ -129,7 +131,7 @@ A `scratch/` directory inside a proposal's own directory, untracked, is the user
 **Closing an item.** Each line names a rule of this file.
 
 1. The design changed first, and every question decided, every gap and needed decision in the plan with its log entry.
-2. What writing Ernest felt against a principle in `language_feedback.md`, said at once, and no code gone around it.
+2. What writing Ernest felt against a principle in `language_feedback.md`, said at once, and nothing gone around a gap that waits.
 3. Every section the item built cited by a test, and a test written after the code called a regression test.
 4. A new name in `docs/design.md`'s glossary, used as the glossary has it.
 5. The result read back, and every surprise decided.
