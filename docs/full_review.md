@@ -1,6 +1,6 @@
 # The full review
 
-Four readers, each over the whole of its area. Between them they read the documents, the log and the proposals aside, and all the code. It is expensive and runs seldom. What every release runs is [`release.md`](release.md)'s.
+The template's four readers, and any a copy adds below them, each over the whole of its area. Between them they read the documents, the log and the proposals aside, and all the code. It is expensive and runs seldom. What every release runs is [`release.md`](release.md)'s.
 
 ## When it runs
 
