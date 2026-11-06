@@ -10,9 +10,9 @@ It needs [Ernest](https://github.com/joagre/ernest) on your `PATH`, the floor th
 
 ```
 make            builds: lib/ filled, each dependency and then the program compiled
-make test       the layout, every module's tests, the documents and the design's citations,
-                failing any paragraph past 150 words, test/ where it exists, and each
-                Ernest program of examples/
+make test       the layout, every module's tests, test/ where it exists, each Ernest
+                program of examples/, then the documents and the design's citations,
+                failing any paragraph past 150 words
 make run        runs the example site through the launcher, bin/ernest_httpd, on
                 examples/site/config.json; CONFIG=path make run serves another configuration
 make smoke      the smoke test against the deployed site whose canonical host HOST

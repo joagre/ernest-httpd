@@ -291,3 +291,9 @@ The order leans on `make release` refusing a development build, and it did not: 
 *2026-11-06.* `docs/full_review.md` gains a reader of this program's own, L, below the template's four. S asks where untrusted input reaches something it should not, and on the live shell a visitor's keys reaching a program is the point, so S's question stops at the boundary that matters here: the container, another visitor's session, the caps and deadlines, and what outlives a session. Stretching S was not open, since a copy changes nothing above its own readers; and one reader, one question keeps each list readable (principle 2).
 
 L tries the container only where podman stands, which is not every machine a review runs on, so it says what it could not run. It runs nothing against the deployed site, which serves real visitors. The page's opening, "Four readers", went false with L; it was the template's, so it went there by a message to Ernest's session, and the template's d79ba79 opens the page with no count a copy can make false, which this copy takes again.
+
+## The documents' check runs last
+
+*2026-11-06.* The documents' check runs last in `make test`, as the template's 814f413 has it, from `ernest-epx`'s 0fb5eb3: a document naming by its full path what an example writes was refused on a clean tree, and `make test` stopped before the example could write it (principle 1: one command on one tree gives one answer).
+
+It was decided against the argument that it changes nothing here, since this repository has no `test/` and no program under `examples/`, so nothing yet runs after the check. The user chose to keep this Makefile in step with the template, so that a program added later meets the order the template's copies have. Only the order is taken: the template's `make examples` target stays out, this Makefile keeping the examples' steps in `make test`.

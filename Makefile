@@ -5,9 +5,9 @@
 #
 #   make          builds: the floor checked, lib/ filled, each dependency and
 #                 then the program compiled
-#   make test     the layout, the tests of every module, the documents and
-#                 the design's citations, test/ where it exists, and each
-#                 program of examples/ where there is one, built and run
+#   make test     the layout, the tests of every module, test/ where it
+#                 exists, each program of examples/ where there is one, built
+#                 and run, and then the documents and the design's citations
 #   make run      runs the example site through the launcher, or the
 #                 configuration CONFIG names, CONFIG=path make run
 #   make smoke    the smoke test against the deployed site whose canonical
@@ -149,12 +149,12 @@ build:
 	done
 	$(ERN) build --source-root src --build-root build $(LOAD_PATH) src
 
+# The documents come last, since one may name what the examples wrote.
 test: all
 	$(ERN) format --check src tools $(wildcard test) $(if $(EXAMPLES),examples)
 	$(ERN) test $(RUN_LOAD_PATH) build
 	$(ERN) build --source-root tools --build-root tools/build tools
 	$(ERN) test tools/build
-	$(ERN) run tools/build/docs.erc
 	@if test -d test; then \
 	    $(ERN) build --source-root test --build-root test/build --load-path build \
 	        $(LOAD_PATH) test && \
@@ -171,6 +171,7 @@ test: all
 	        echo "examples/$$name.ern wrote build/examples/$$name$(EXAMPLE_SUFFIX)"; \
 	    done; \
 	fi
+	$(ERN) run tools/build/docs.erc
 
 # The directory of the example site's access log is made first, since the
 # configuration's access-log stands in a directory that exists.
