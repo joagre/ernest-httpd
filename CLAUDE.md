@@ -1,6 +1,6 @@
 # ernest-httpd — Claude Instructions
 
-ernest-httpd is an Ernest program, the HTTP/1.1 server that serves ernest-lang.org; `README.md` says what it does.
+ernest-httpd is an Ernest program, the HTTP/1.1 server that serves ernest-lang.org; `README.md` says what it does. It builds against Ernest installed from a release archive, as a user installs it, and never against Ernest's source tree, and what the installation's documents leave opaque or unsaid is a line of `language_feedback.md`, never looked up in Ernest's source.
 
 This file is the way of working, cut from Ernest's own. It is the template's, and *The repository* says how it changes.
 
@@ -23,7 +23,7 @@ Each fact has one owner. Every other document points at the owner and does not r
 | [`docs/design.md`](docs/design.md) | how the program is arranged: its processes, its types, what each module owns, and the glossary of its names |
 | [`docs/plan.md`](docs/plan.md) | the roadmap and where we are |
 | [`docs/log.md`](docs/log.md) | the rationale: why the design and the plan say what they say. Never normative |
-| [`CHANGES.md`](CHANGES.md) | each release's note, newest first: what the release is, and one line a change naming where it is read, restating nothing. The release step writes it and copies it to the release on GitHub |
+| [`CHANGES.md`](CHANGES.md) | each release's note, newest first: what the release is, what a program or an operator of the release before changes, and one line a change naming the design's section where it is read, restating nothing. The date stands in the heading alone. The release step writes it and copies it to the release on GitHub |
 | `deploy/README.md`, where `deploy/` exists | the operator's steps, from a machine to the smoke test passing, with the files of `deploy/` as each is installed |
 | `examples/README.md`, where `examples/` exists | the example programs, by topic, with what each shows and how each is run |
 | Ernest's `guide/style.md`, installed as `share/doc/ernest/guide/style.md` beside `ern` | the rules an Ernest program is written by, Ernest's own, read from the installation and not copied here |
@@ -31,7 +31,7 @@ Each fact has one owner. Every other document points at the owner and does not r
 | `language_feedback.md`, under `docs/` from its first line | what writing Ernest felt against the principles, a queue of lines; *Defects and gaps* says how a line is written and when it goes |
 | `findings.md`, under `docs/` while a review's findings are open | the findings, each line until a plan item decides it; it goes when every line is done, dropped or planned |
 
-**Proposals.** [`docs/proposals/`](docs/proposals/) holds what is designed, a directory for each: the proposal, its reasons, what other systems do, and its experiments or programs. Each directory's `README.md` says what its files are and which is current.
+**Proposals.** `docs/proposals/` holds what is designed, a directory for each: the proposal, its reasons, what other systems do, and its experiments or programs. Each directory's `README.md` says what its files are and which is current.
 
 Until a proposal is decided all of it is tentative, and nothing flows from it into the design, the plan or the log.
 
@@ -113,6 +113,8 @@ A `scratch/` directory inside a proposal's own directory, untracked, is the user
 ## Writing
 
 - **`docs/design.md` is tight, in a Wirth language report's register.** State the rule; no rationale, no restating. Clear before short.
+- **User-facing text has no project timeline.** The README, the manual pages and every text the program prints name no milestone, no plan item and no date of the project's history. They say what the program is at the release they ship with. The one exception is a library's `since` line, the release a part arrived in. The history is `CHANGES.md`'s, the log's and the plan's.
+- **A comment names no milestone, plan item, review finding or date**, since each points into a document that deletes it. It cites the design's section, and the log entry by its title where the history matters. A regression test still says it is one.
 - **Every other document is plain and short**, the plan, the log, a proposal, a commit message and this file among them. One point to a sentence, in the order a reader needs it.
 - **A paragraph is one turn of the text**, in every document and in a message to the user. A paragraph past about a hundred words is read again for a turn it may hide, and left whole where it holds one thing. One past 150 words no reader takes in whole, so `make test` refuses it, the log, a proposal and a manual page aside, and the writer splits it at its turn.
 - **An edit to a set a document names reads the whole page first**, a list, a count or the sections that restate it, and changes every place that enumerates the set, the README's and the plan's among them, in the same commit.

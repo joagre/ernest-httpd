@@ -297,3 +297,13 @@ L tries the container only where podman stands, which is not every machine a rev
 *2026-11-06.* The documents' check runs last in `make test`, as the template's 814f413 has it, from `ernest-epx`'s 0fb5eb3: a document naming by its full path what an example writes was refused on a clean tree, and `make test` stopped before the example could write it (principle 1: one command on one tree gives one answer).
 
 It was decided against the argument that it changes nothing here, since this repository has no `test/` and no program under `examples/`, so nothing yet runs after the check. The user chose to keep this Makefile in step with the template, so that a program added later meets the order the template's copies have. Only the order is taken: the template's `make examples` target stays out, this Makefile keeping the examples' steps in `make test`.
+
+## The release cleanup
+
+*2026-11-07.* A session of Ernest's read the four repositories as a stranger reads them before Ernest's launch, and carried each decision here on the user's word, the clean room waived for the job (Ernest's log, *The Release Cleanup*). It refreshed `CLAUDE.md`, the Makefile's shared lines and `docs/release.md` from the template's `44e3637`, with its issue form.
+
+From the template: user-facing text and comments name no milestone, plan item or date; the archive carries the user's documents alone, the README, the license, `CHANGES.md`, the design, the pages, the examples and `deploy/`, and its checksum stands beside it; a release tag is signed.
+
+Here: the README links no proposal of Ernest's that is gone and points at no log, and its rule that the repository builds against an installed Ernest moves to `CLAUDE.md`'s opening, the README keeping `ERN=<prefix>/bin/ern make`. The deployment guide writes Ernest's archive as `ern-VERSION.tar.gz`, which `CHANGES.md` names, drops the privbind paragraph, whose address is not Yaws', says that `deploy/config.json` as shipped holds no `shell`, and writes the user's number as `<uid>`. `docs/README.md` says the pages are written at a release. `CHANGES.md` follows the template's note, and a test's comment cites no line of Ernest's feedback by number.
+
+The same session added milestone 2's item 9, *A reset under load*, which the links' check found on the live site (Ernest's log, *The Release Cleanup*).

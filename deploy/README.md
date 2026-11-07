@@ -6,7 +6,7 @@ A line whose prompt is `$` is typed by the operator, `sudo` before what the supe
 
 ## 1. The machine
 
-The machine runs Debian 13 with systemd, podman and certbot, `sudo apt install podman certbot git curl`, its ports 80 and 443 open, and the four names in DNS: `ernest-lang.org`, `www.ernest-lang.org`, `ernest-lang.se` and `www.ernest-lang.se`. The operator brings the server's release archive, `ernest_httpd-0.1.0.tar.gz`, which `make release` writes, and Ernest's, `ern-0.10.0.tar.gz`, the one the release was built with.
+The machine runs Debian 13 with systemd, podman and certbot, `sudo apt install podman certbot git curl`, its ports 80 and 443 open, and the four names in DNS: `ernest-lang.org`, `www.ernest-lang.org`, `ernest-lang.se` and `www.ernest-lang.se`. The operator brings the server's release archive, `ernest_httpd-0.1.0.tar.gz`, which `make release` writes, and Ernest's, `ern-VERSION.tar.gz`, the one the release was built with, which its section of `CHANGES.md` names; `VERSION` stands for that version below.
 
 Each of the two ports has a listener on `0.0.0.0` and one on `::`, since a listener takes connections of its address's family alone, and the four names resolve to the machine's address of each family it serves.
 
@@ -17,7 +17,7 @@ The server runs as its own user, `httpd`, whose home, `/home/httpd`, holds every
 ```console
 $ sudo useradd --create-home --home-dir /home/httpd --shell /usr/sbin/nologin httpd
 $ grep httpd /etc/subuid /etc/subgid
-$ sudo install -o httpd -g httpd -m 0644 ern-0.10.0.tar.gz ernest_httpd-0.1.0.tar.gz /home/httpd/
+$ sudo install -o httpd -g httpd -m 0644 ern-VERSION.tar.gz ernest_httpd-0.1.0.tar.gz /home/httpd/
 ```
 
 `grep` prints a line of each file; where it prints none, `useradd` gave the user no range, and podman later says `potentially insufficient UIDs or GIDs available in user namespace`: give one of 65536 that no other line of the files holds, `sudo usermod --add-subuids 300000-365535 --add-subgids 300000-365535 httpd`. A user made before is refused, `useradd: user 'httpd' already exists`.
@@ -42,10 +42,10 @@ $ erl -noshell -eval 'io:format("~s~n", [erlang:system_info(otp_release)]), halt
 Ernest is installed under the server's prefix, `/home/httpd/opt/local`, from the archive the release was built with, since a node runs only what its own build of `ern` compiled and refuses another's, `ern run: /home/httpd/opt/local/lib/ernest_httpd/build/ernest_httpd.erc: compiled by another build of ern`; then the server, from its unpacked release archive, which `make install` installs as it was compiled:
 
 ```console
-httpd$ tar -xzf ern-0.10.0.tar.gz && cd ern-0.10.0
+httpd$ tar -xzf ern-VERSION.tar.gz && cd ern-VERSION
 httpd$ make && make install PREFIX=/home/httpd/opt/local
 httpd$ cd && ern --version
-ern 0.10.0+<commit>
+ern VERSION
 httpd$ tar -xzf ernest_httpd-0.1.0.tar.gz && cd ernest_httpd-0.1.0
 httpd$ make install PREFIX=/home/httpd/opt/local
 httpd$ cd && command -v ernest_httpd
@@ -108,12 +108,12 @@ The linger and podman's directories are made whether or not the configuration ta
 ```console
 $ sudo loginctl enable-linger httpd
 httpd$ podman info --format '{{.Store.GraphRoot}} {{.Store.RunRoot}}'
-/home/httpd/.local/share/containers/storage /run/user/1001/containers
+/home/httpd/.local/share/containers/storage /run/user/<uid>/containers
 ```
 
 A podman without the linger says `The cgroupv2 manager is set to systemd but there is no systemd user session available`, and a container it starts takes no `--memory`.
 
-The rest of the step is run when the configuration takes a shell, which it does once the site's page has one: `deploy/config.json` then holds the member `shell`, as the design's §13 gives it, and step 6 installs it again:
+The rest of the step is run when the configuration takes a shell. `deploy/config.json` as shipped holds no `shell`; a configuration that takes one holds the member `shell`, as the design's §13 gives it, and step 6 installs it again:
 
 ```json
 "shell": {
@@ -134,7 +134,7 @@ The visitor's shell runs in a container of the image `ernest-shell`, built by `h
 
 ```console
 httpd$ mkdir image && cp ernest_httpd-0.1.0/deploy/Containerfile ernest_httpd-0.1.0/deploy/shell-start.sh image/
-httpd$ cp ern-0.10.0.tar.gz image/ern.tar.gz
+httpd$ cp ern-VERSION.tar.gz image/ern.tar.gz
 httpd$ podman build -t ernest-shell image
 httpd$ install -m 0755 ernest_httpd-0.1.0/deploy/shell.sh ernest-httpd/shell.sh
 ```
@@ -169,8 +169,6 @@ $ sudo journalctl -u ernest-httpd
 An operator in the group `adm` or `systemd-journal` reads the journal without `sudo`. The journal says `listening on 127.0.0.1:8654`, the node's own listener, then `listening on 0.0.0.0:443`, `listening on :::443`, `listening on 0.0.0.0:80` and `listening on :::80`, in the configuration's order. A configuration the server refuses is said with its field, `/home/httpd/ernest-httpd/node/config.json: listeners[0].key must be readable by the program's user alone: "/home/httpd/ernest-httpd/node/privkey.pem"`, a port another server holds as `:::443: Io.Other("address already in use")`, and a directory of `ReadWritePaths` that does not exist, step 7's `podman info` not yet run, by systemd: `Failed to set up mount namespacing`, the status `226/NAMESPACE`.
 
 The unit binds 80 and 443 as no root by `AmbientCapabilities=CAP_NET_BIND_SERVICE`, a capability that goes with systemd; a server without it says `0.0.0.0:443: Io.Denied: a port below 1024 needs CAP_NET_BIND_SERVICE`. A server run without systemd binds the two ports by `setcap cap_net_bind_service=+ep` on the BEAM binary `erl` runs, `/usr/local/lib/erlang/erts-*/bin/beam.smp`, the binary itself and not a link to it, redone at each install of OTP, a file capability putting the binary in secure-exec mode, which drops `LD_LIBRARY_PATH` and the like; authbind and privbind, root's helpers in front of `ern`, are not used.
-
-Yaws' privbind page, https://upload.int.onexglobal.io/privbind.yaws, lists the ways a server that is not root binds a port below 1024, `setcap` on the binary, authbind, privbind and a sysctl among them, of which the unit's `AmbientCapabilities=CAP_NET_BIND_SERVICE` is systemd's own and `setcap` the fallback.
 
 The unit's `ExecStartPre` runs `podman system migrate` as `httpd`, which ends podman's pause process of the instance before, whose private `/tmp` the restart deleted; without it a visitor's shell after a restart fails with `container create failed (no logs from conmon)`, and the journal has conmon's `Failed to generate random path for console-socket`. `systemctl reload ernest-httpd` reads the node's peers again, `ern reload`, and nothing of `config.json`, whose change is `systemctl restart ernest-httpd`; `systemctl stop ernest-httpd` ends the server in order, each shell closed with 1001.
 
@@ -223,19 +221,19 @@ The operator's shell attaches to the server's node from the operator's directory
 
 ```console
 $ cd && export PATH=$HOME/opt/local/bin:$PATH
-$ sudo install -o $USER -g $USER -m 0644 /home/httpd/ern-0.10.0.tar.gz ~/
-$ tar -xzf ern-0.10.0.tar.gz && cd ern-0.10.0
+$ sudo install -o $USER -g $USER -m 0644 /home/httpd/ern-VERSION.tar.gz ~/
+$ tar -xzf ern-VERSION.tar.gz && cd ern-VERSION
 $ make && make install PREFIX=$HOME/opt/local
 $ cd && ern --version
-ern 0.10.0+<commit>
+ern VERSION
 ```
 
-`ern --version` prints step 4's line, the same commit. Each command fails as step 4's do, and `install` without the archive says `cannot stat '/home/httpd/ern-0.10.0.tar.gz': No such file or directory`. A shell begun later exports the `PATH` again, or puts `PATH=$HOME/opt/local/bin:$PATH` in front of the `ern` line. Then the attach:
+`ern --version` prints step 4's line, the same version. Each command fails as step 4's do, and `install` without the archive says `cannot stat '/home/httpd/ern-VERSION.tar.gz': No such file or directory`. A shell begun later exports the `PATH` again, or puts `PATH=$HOME/opt/local/bin:$PATH` in front of the `ern` line. Then the attach:
 
 ```console
 $ ern shell --config-dir ~/ops --attach node
 the peer node connected
-Ernest 0.10.0+<commit>, session 1. :help for the commands, :quit to leave.
+Ernest VERSION, session 1. :help for the commands, :quit to leave.
 > :processes
 > :quit
 ```

@@ -1,0 +1,49 @@
+name: Defect
+description: The program breaks a rule its design states, or fails where it should not.
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The program's release, or its commit.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: ern
+    attributes:
+      label: ern --version
+      description: What `ern --version` prints, and the OTP release Ernest runs on.
+      placeholder: ern 0.10.0, OTP 29
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: The operating system and its release.
+      placeholder: Debian 13
+    validations:
+      required: true
+  - type: textarea
+    id: shown
+    attributes:
+      label: What shows it
+      description: The smallest input, program or commands that show the defect.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: What the program did, with what it wrote.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What was expected
+      description: What you expected, and the design's section that states the rule, where one does.
+    validations:
+      required: true

@@ -2,11 +2,11 @@
 
 *The Importance of Being Ernest, a Trivial Comedy for Serious People*
 
-ernest-httpd serves one site, ernest-lang.org: static pages, and one WebSocket per visitor that connects a terminal in the browser to a shell on the server. It implements what that needs of HTTP/1.1 and nothing more, and is written in Ernest against an installed Ernest. Its design is [`docs/design.md`](docs/design.md), argued in [`docs/log.md`](docs/log.md); what it asks of Ernest is Ernest's own proposal, https://github.com/joagre/ernest/blob/main/docs/proposals/httpd/proposal.md. This repository was begun from [`ernest-template`](https://github.com/joagre/ernest-template).
+ernest-httpd serves one site, ernest-lang.org: static pages, and one WebSocket per visitor that connects a terminal in the browser to a shell on the server. It implements what that needs of HTTP/1.1 and nothing more, and is written in Ernest against an installed Ernest. Its design is [`docs/design.md`](docs/design.md). This repository was begun from [`ernest-template`](https://github.com/joagre/ernest-template).
 
 ## Building
 
-It needs [Ernest](https://github.com/joagre/ernest) on your `PATH`, the floor the Makefile names, `ern 0.10`; `make` says so where another is found. `ERN=path/to/ern make` names another `ern`, which every target then runs, the tests and the example's shell among them. This repository builds against Ernest installed from its release archive, as a user installs it, and never against Ernest's source tree: `make release` in an Ernest checkout writes `ern-VERSION.tar.gz`, which unpacks and installs with `make install PREFIX=<prefix>` into a directory of your own, and `ERN=<prefix>/bin/ern make` builds against it. What the installation's documents leave opaque or unsaid is a line of `language_feedback.md`, carried to Ernest, and never looked up in its source.
+It needs [Ernest](https://ernest-lang.org) on your `PATH`, the floor the Makefile names, `ern 0.10`; `make` says so where another is found. `ERN=path/to/ern make` names another `ern`, which every target then runs, the tests and the example's shell among them. An Ernest installed under a prefix of your own, `make install PREFIX=<prefix>` in its unpacked archive, builds it with `ERN=<prefix>/bin/ern make`.
 
 ```
 make            builds: lib/ filled, each dependency and then the program compiled

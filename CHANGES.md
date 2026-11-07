@@ -1,10 +1,10 @@
 # Changes
 
-Each release's note, newest first, from the first release on; the release step writes a release's section before its tag and copies it to the release on GitHub, so that the note is written once (`docs/release.md`). A section says what the release is and lists each change on one line naming where it is read, the design's section or the log's entry that owns it, and restates nothing.
+Each release's note, newest first, from the first release on; the release step writes a release's section before its tag and copies it to the release on GitHub, so that the note is written once (`docs/release.md`). A section says what the release is, what a program or an operator of the previous release changes, and each change on one line naming the design's section where it is read; it restates nothing, and its date stands in its heading alone.
 
 ## 0.1.0, 2026-11-02
 
-The first release: the HTTP/1.1 server of ernest-lang.org, an Ernest program on `ern 0.9`, serving a static site over plain HTTP and TLS with a redirect listener and its hosts, a live shell over a WebSocket, an example site, and its deployment under systemd, installed on its machine on 2026-11-02 and serving https://ernest-lang.org. There is no previous release, so nothing changes for anyone.
+The first release: the HTTP/1.1 server of ernest-lang.org, an Ernest program built with `ern 0.9`, serving a static site over plain HTTP and TLS with a redirect listener and its hosts, a live shell over a WebSocket, an example site, and its deployment under systemd, serving https://ernest-lang.org. There is no previous release, so nothing changes for anyone.
 
 - The configuration, one JSON file, each field with its rule and its error: design §4.
 - The static site, its files and types, the conditional request, the directory's slash and the 404 page: §5.
@@ -17,4 +17,4 @@ The first release: the HTTP/1.1 server of ernest-lang.org, an Ernest program on 
 - The deployment, `deploy/` as installed, `make install`, `make uninstall`, `make smoke` and the operator's steps: §13 and `deploy/README.md`.
 - The example site `make run` serves, with its shell page: `examples/README.md`.
 
-The design is `docs/design.md` whole, there being no earlier tag to diff against, and the log's entries are all of `docs/log.md`, *Begun from the template* through *The wrapper and the smoke test's configuration*.
+The design is `docs/design.md` whole, there being no earlier tag to diff against.

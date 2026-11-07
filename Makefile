@@ -22,7 +22,8 @@
 #   make man      the pages copied into docs/man/, which each release commits,
 #                 its index the directory's README
 #   make format   lays every module out
-#   make release  the archive, build/NAME-VERSION.tar.gz, tests first
+#   make release  the archive, build/NAME-VERSION.tar.gz, and its checksum
+#                 beside it, tests first
 #   make install  installs what stands built under PREFIX, /usr/local by
 #                 default, from a checkout or an unpacked archive alike:
 #                 the launcher in bin/, build/'s and lib/'s in lib/NAME/,
@@ -70,16 +71,17 @@ EXAMPLES      = $(wildcard examples/*.ern)
 # What the build and make xterm write under examples/, which git ignores,
 # make clean removes and the documents leave out.
 EXAMPLES_MADE = examples/build examples/site/root/xterm
-# The documents make install and make release take: README.md, LICENSE,
-# CHANGES.md, CLAUDE.md, and under docs/, deploy/ and examples/ the files git
-# tracks in a checkout, so that no untracked file goes in, read as whoever installs,
-# whose checkout it need not be, which git refuses unless told it is safe; or
-# in an unpacked archive every file there but EXAMPLES_MADE's, which make
-# release wrote with those.
-DOCS          = README.md LICENSE CHANGES.md CLAUDE.md \
+# The documents make install and make release take, the user's alone:
+# README.md, LICENSE, THIRD_PARTY_LICENSES, CHANGES.md and docs/design.md,
+# each where it exists, and under docs/man/, examples/ and deploy/ the files
+# git tracks in a checkout, so that no untracked file goes in, read as
+# whoever installs, whose checkout it need not be, which git refuses unless
+# told it is safe; or in an unpacked archive every file there but
+# EXAMPLES_MADE's, which make release wrote with those.
+DOCS          = $(wildcard README.md LICENSE THIRD_PARTY_LICENSES CHANGES.md docs/design.md) \
                 $(if $(wildcard .git),\
-                    $(shell git -c safe.directory=$(CURDIR) ls-files docs deploy examples),\
-                    $(shell find docs deploy examples -type f \
+                    $(shell git -c safe.directory=$(CURDIR) ls-files docs/man examples deploy),\
+                    $(shell find docs/man examples deploy -type f \
                         $(foreach dir,$(EXAMPLES_MADE),! -path '$(dir)/*') 2>/dev/null))
 # An installation's own directories under PREFIX, beside its launcher.
 TREE          = $(PREFIX)/lib/$(NAME)
@@ -206,10 +208,10 @@ format:
 # The archive unpacks to NAME-VERSION/: the launcher where there is one, the
 # source and the compiled modules, lib/ with each link copied through, the
 # documents of DOCS, the README, the license, deploy/ and examples/ among
-# them, the third parties' licenses where there are any, and the Makefile
-# with VERSION, so that make install and make run run in it. One shape
-# for an application and a library, so that any archive can be a
-# dependency.
+# them, and the Makefile with VERSION, so that make install and make run
+# run in it. One shape for an application and a library, so that any
+# archive can be a dependency. Its checksum stands beside it, for
+# `sha256sum -c`.
 release: test
 	@case "$$($(ERN) --version)" in \
 	    *-dev|*+*) echo "a release is not made with a development build of ern"; exit 1 ;; esac
@@ -223,8 +225,8 @@ release: test
 	    cp bin/$(NAME) build/$(NAME)-$(VERSION)/bin/ || true
 	tar cf - $(DOCS) Makefile VERSION | \
 	    tar xf - -C build/$(NAME)-$(VERSION)
-	test -f THIRD_PARTY_LICENSES && cp THIRD_PARTY_LICENSES build/$(NAME)-$(VERSION)/ || true
 	tar -czf build/$(NAME)-$(VERSION).tar.gz -C build $(NAME)-$(VERSION)
+	cd build && sha256sum $(NAME)-$(VERSION).tar.gz > $(NAME)-$(VERSION).tar.gz.sha256
 	rm -rf build/$(NAME)-$(VERSION)
 
 # What stands built, installed as design §13 lays it out: an installation
