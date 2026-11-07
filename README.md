@@ -12,14 +12,15 @@ It needs [Ernest](https://ernest-lang.org) on your `PATH`, the floor the Makefil
 make            builds: lib/ filled, each dependency and then the program compiled
 make test       the layout, every module's tests, test/ where it exists, each Ernest
                 program of examples/, then the documents and the design's citations,
-                failing any paragraph past 150 words
+                failing any paragraph past 150 words and any comment or text a
+                user reads that names the project's history
 make run        runs the example site through the launcher, bin/ernest_httpd, on
                 examples/site/config.json; CONFIG=path make run serves another configuration
 make smoke      the smoke test against the deployed site whose canonical host HOST
                 names, make smoke HOST=ernest-lang.org, the checks its configuration,
                 deploy/config.json, takes
 make xterm      fetches xterm.js and its fit addon into the example site, once
-make release    the archive, build/ernest_httpd-VERSION.tar.gz
+make release    the archive, build/ernest_httpd-VERSION.tar.gz, and its checksum beside it
 make install    installs what stands built under PREFIX, /usr/local by default, from a
                 checkout or an unpacked archive: make install PREFIX=/home/httpd/opt/local
 make uninstall  removes from PREFIX what make install put there, then share/doc, share,

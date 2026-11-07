@@ -22,6 +22,20 @@
 // them; a line on standard error names each that does not, and the program
 // ends with status 1. Where no design is tracked, nothing is held.
 //
+// The project's history stays out of the code and of what a user reads
+// (CLAUDE.md, *Writing*), read by words. A comment, a line of a tracked
+// module under src/, test/, examples/ or tools/ that begins with `//`, names
+// no step of the plan or item of it, no review's finding or the findings'
+// file, no feedback line by its number and no date of this century; a log
+// entry's title, `the log's *Title*`, is cut out first, and a comment after
+// code or a block comment is not read. A line of the README, of CHANGES.md or
+// of a module under src/ names no step by its short name and a number, or by
+// the plan's word for one. A line of CHANGES.md from its first `## ` heading
+// on, a heading aside, holds no date, no `; *Title*`, and names neither the
+// plan nor a review, its reader or a newcomer. Each finding is a line on
+// standard error naming the file and the line, and the program ends with
+// status 1.
+//
 //     make test    runs it, as ern run tools/build/docs.erc
 //
 
@@ -51,6 +65,8 @@ type Citation = Citation(line : Int, section : Int)
 
 let design : String = "docs/design.md"
 
+let changes : String = "CHANGES.md"
+
 let measure : Int = 150
 
 let notice : String =
@@ -58,6 +74,8 @@ let notice : String =
 
 export fn main() : Unit = {
     let files = tracked("*.md");
+    let modules =
+        List.map(tracked("*.ern"), fn(module) = #(module, String.lines(contents(module))));
     let tops = directories();
     let long = List.flatMap(List.filter(files, isMeasured), paragraphsIn);
     if List.isEmpty(long) then
@@ -68,7 +86,7 @@ export fn main() : Unit = {
     };
     let missing =
         List.unique(List.flatMap(List.filter(files, isChecked), fn(file) = missingIn(file, tops)));
-    let failures = missing <> uncited(files);
+    let failures = missing <> uncited(files, modules) <> timeline(files, modules);
     List.forEach(failures, Io.printlnError);
     if List.isEmpty(failures) && List.isEmpty(long) then Unit else Os.exit(1)
 }
@@ -307,14 +325,12 @@ fn shown(paragraph : Paragraph) : String =
 
 // Each citation that names no section of the design, and each section no
 // test cites, as lines for standard error; none where there is no design.
-fn uncited(files : List(String)) : List(String) =
+fn uncited(files : List(String), modules : List(#(String, List(String)))) : List(String) =
     if List.contains(files, design) then {
         let sections = sectionsOf(contents(design));
-        let modules =
-            List.map(List.filter(tracked("*.ern"), isProgram),
-                     fn(module) = #(module, contents(module)));
-        let tested = List.flatMap(modules, fn(#(_, text)) = testedIn(text));
-        List.flatMap(modules, fn(#(module, text)) = unknownIn(module, text, sections))
+        let programs = List.filter(modules, fn(#(module, _)) = isProgram(module));
+        let tested = List.flatMap(programs, fn(#(_, lines)) = testedIn(lines));
+        List.flatMap(programs, fn(#(module, lines)) = unknownIn(module, lines, sections))
             <> List.filterMap(sections, fn(section) = untested(section, tested))
     } else
         []
@@ -334,9 +350,9 @@ fn sectionsOf(text : String) : List(Int) =
 
 // Each citation of the module that names no section, as a line for standard
 // error.
-fn unknownIn(module : String, text : String, sections : List(Int)) : List(String) = {
+fn unknownIn(module : String, lines : List(String), sections : List(Int)) : List(String) = {
     let unknown =
-        List.filter(citationsIn(commentWords(text)),
+        List.filter(citationsIn(commentWords(lines)),
                     fn(citation) = List.contains(sections, citation.section) == false);
     List.map(unknown, fn(citation) = shownUnknown(module, citation))
 }
@@ -359,8 +375,7 @@ fn untested(section : Int, tested : List(Int)) : Optional(String) =
 // The sections the module's tests cite: the citations of each test's
 // comment, the lines of "//" directly above it, a doc block's "///" not
 // among them, since a doc block puts the test on the module's page.
-fn testedIn(text : String) : List(Int) = {
-    let lines = String.lines(text);
+fn testedIn(lines : List(String)) : List(Int) = {
     let withNext = List.indexed(List.zip(lines, List.drop(lines, 1) <> [""]));
     let #(_, tested) = List.foldLeft(withNext, #([], []), testedStep);
     tested
@@ -395,8 +410,8 @@ fn isTest(line : String, next : String) : Bool =
                         && String.startsWith(String.trimStart(next), "Test.Case(")))
 
 // The words of the module's comments, each with its line.
-fn commentWords(text : String) : List(Word) =
-    List.flatMap(List.indexed(String.lines(text)), fn(#(index, line)) = wordsAt(index, line))
+fn commentWords(lines : List(String)) : List(Word) =
+    List.flatMap(List.indexed(lines), fn(#(index, line)) = wordsAt(index, line))
 
 // The words of the line at the index, from 0, where it is a comment, the
 // slashes that begin it left out; none where it is not.
@@ -448,6 +463,179 @@ fn cited(text : String) : Optional(Int) =
         String.toInt(String.fromList(digits))
     } else
         None
+
+//
+// The project's history
+//
+
+// What the history's checks find, as lines for standard error.
+fn timeline(files : List(String), modules : List(#(String, List(String)))) : List(String) = {
+    let read = List.filter(["README.md", changes], fn(file) = List.contains(files, file));
+    let documents = List.map(read, fn(file) = #(file, String.lines(contents(file))));
+    let sources =
+        List.filter(modules,
+                    fn(#(module, _)) = isProgram(module) || String.startsWith(module, "tools/"));
+    let printed = List.filter(modules, fn(#(module, _)) = String.startsWith(module, "src/"));
+    List.flatMap(sources,
+                 fn(#(module, lines)) = naming(module, commentsOf(lines), "a comment", historyAt))
+        <> List.flatMap(printed <> documents,
+                        fn(#(file, lines)) = naming(file, List.indexed(lines), "the line", stepAt))
+        <> List.flatMap(List.filter(documents, fn(#(file, _)) = file == changes),
+                        fn(#(_, lines)) = naming(changes, sectionsIn(lines), "the note", noteAt))
+}
+
+// Each kind a line names, once, as a line for standard error: what its
+// words name from each word on, each word as written and bare.
+fn naming(file : String,
+          lines : List(#(Int, String)),
+          what : String,
+          kindAt : (List(#(String, String))) -> Optional(String)) : List(String) =
+    List.flatMap(lines, fn(#(index, line)) = {
+        let words = List.map(String.words(line), fn(word) = #(word, bare(word)));
+        let place = file <> ":" <> Int.toString(index + 1) <> ": " <> what <> " names ";
+        List.map(List.unique(List.filterMap(tailsOf(words), kindAt)), fn(kind) = place <> kind)
+    })
+
+fn tailsOf(words : List(#(String, String))) : List(List(#(String, String))) =
+    match words {
+        _ :: rest -> words :: tailsOf(rest)
+      | [] -> []
+    }
+
+// The module's comment lines by index, each without `the log's *Title*`, a
+// title that runs on cut to the line's end.
+fn commentsOf(lines : List(String)) : List(#(Int, String)) =
+    List.map(List.filter(List.indexed(lines),
+                         fn(#(_, line)) = String.startsWith(String.trimStart(line), "//")),
+             fn(#(index, line)) = #(index, untitled(line)))
+
+fn untitled(line : String) : String =
+    match String.splitOnce(line, "the log's *") {
+        Some(#(before, title)) ->
+            before
+                <> match String.splitOnce(title, "*") {
+                    Some(#(_, rest)) -> untitled(rest)
+                  | None -> ""
+                }
+      | None ->
+            line
+    }
+
+// The lines of the changes from the first heading "## " on, the headings
+// left out.
+fn sectionsIn(lines : List(String)) : List(#(Int, String)) = {
+    let isProse = fn(#(_, line) : #(Int, String)) = String.startsWith(line, "## ") == false;
+    let #(_, sections) = List.span(List.indexed(lines), isProse);
+    List.filter(sections, isProse)
+}
+
+// What a comment names from its word on: a step of the plan or an item of
+// it, a review's finding or the findings' file, a feedback line or a date.
+fn historyAt(words : List(#(String, String))) : Optional(String) =
+    match words {
+        #(_, word) :: _ when word == "MVP" || isMilestone(word) ->
+            Some("a milestone")
+      | #(_, word) :: #(_, next) :: _ when List.contains(["plan", "plan's"], word)
+            && List.contains(["item", "items"], next) ->
+            Some("a plan item")
+      | #(raw, word) :: _ when raw == "plan,"
+            || (String.startsWith(raw, "(plan") && word == "plan")
+            || String.contains(raw, "docs/plan.md") ->
+            Some("a plan item")
+      | #(_, word) :: #(_, name) :: _ when List.contains(["finding", "findings", "review's"], word)
+            && isFindingName(name) ->
+            Some("a review's finding")
+      | #(raw, word) :: _ when (String.startsWith(raw, "(")
+                                    && (String.endsWith(raw, ",") || String.endsWith(raw, ")"))
+                                    && isFindingName(word))
+            || String.contains(raw, "findings.md") ->
+            Some("a review's finding")
+      | #(_, "feedback") :: #(_, "line") :: #(number, _) :: _ when isNumber(number) ->
+            Some("a feedback line")
+      | #(_, "feedback") :: #(number, _) :: _ when isNumber(number) ->
+            Some("a feedback line")
+      | #(_, word) :: _ when isDate(word) ->
+            Some("a date")
+      | _ ->
+            None
+    }
+
+// What a user reads names of the plan from a word on: "MVP" and a number, a
+// space between or not, or the plan's word for a step.
+fn stepAt(words : List(#(String, String))) : Optional(String) =
+    match words {
+        #(_, "MVP") :: #(number, _) :: _ when isNumber(number) -> Some("a milestone")
+      | #(_, word) :: _ when isMilestone(word)
+            || (String.startsWith(word, "MVP")
+                    && isNumber(String.slice(word, 3, String.size(word)))) -> Some("a milestone")
+      | _ -> None
+    }
+
+// What a release's note names from a word on that it leaves out, since its
+// reader is a user.
+fn noteAt(words : List(#(String, String))) : Optional(String) =
+    match words {
+        #(_, word) :: _ when isDate(word) -> Some("a date outside its heading")
+      | #(raw, _) :: #(next, _) :: _ when String.endsWith(raw, ";")
+            && String.startsWith(next, "*") -> Some("a log entry's title")
+      | #(raw, _) :: #(_, "plan") :: _ when raw == "the" || raw == "The" -> Some("the plan")
+      | #(_, word) :: #(_, next) :: _ when isReader(word, next) -> Some("a reader")
+      | #(_, word) :: _ when String.startsWith(word, "review")
+            || String.startsWith(word, "Review") -> Some("a review")
+      | #(_, word) :: _ when String.startsWith(word, "newcomer")
+            || String.startsWith(word, "Newcomer") -> Some("a newcomer")
+      | _ -> None
+    }
+
+// Whether the two words name a review's reader, after an article or the
+// reader's kind, as "the reader" and "a cold reader" do.
+fn isReader(word : String, next : String) : Bool =
+    List.contains(["a", "the", "cold", "code", "independent"], word)
+        && List.contains(["reader", "readers"], next)
+
+// The word without the punctuation around it.
+fn bare(word : String) : String = {
+    let isMark = fn(char : Char) = List.contains(['(', ')', ',', ';', ':', '.', '*', '`'], char);
+    let #(_, rest) = List.span(String.toList(word), isMark);
+    let #(_, kept) = List.span(List.reverse(rest), isMark);
+    String.fromList(List.reverse(kept))
+}
+
+fn isMilestone(word : String) : Bool =
+    List.contains(["milestone", "milestones", "Milestone", "Milestones"], word)
+
+// A finding's name: one capital or two, a dash or none, and a number, as E4
+// and S-2 are.
+fn isFindingName(word : String) : Bool = {
+    let #(capitals, rest) =
+        List.span(String.toList(word),
+                  fn(char) = Char.isUpper(char) && Char.toCodePoint(char) < 128);
+    let number = match rest {
+        '-' :: digits -> digits
+      | _ -> rest
+    };
+    List.contains([1, 2], List.size(capitals))
+        && List.isEmpty(number) == false
+        && List.all(number, Char.isAsciiDigit)
+}
+
+// A date of this century: four digits beginning 20, two and two, joined by
+// dashes.
+fn isDate(word : String) : Bool =
+    match String.split(word, "-") {
+        [year, month, day] ->
+            String.startsWith(year, "20")
+                && List.map([year, month, day], String.size) == [4, 2, 2]
+                && List.all(String.toList(year <> month <> day), Char.isAsciiDigit)
+      | _ ->
+            false
+    }
+
+fn isNumber(word : String) : Bool =
+    match String.toList(word) {
+        char :: _ -> Char.isAsciiDigit(char)
+      | [] -> false
+    }
 
 //
 // Tests
@@ -510,9 +698,9 @@ let findsCitations = Test.Case(name = "finds the design's citations", run = fn()
             <> "let value = 1 // design §9\n"
             <> "/// as the design\n"
             <> "/// §5, report §6, says\n";
-    Test.equal(#(List.map(citationsIn(commentWords(text)),
+    Test.equal(#(List.map(citationsIn(commentWords(String.lines(text))),
                           fn(citation) = #(citation.line, citation.section)),
-                 unknownIn("src/a.ern", text, [2, 3, 4])),
+                 unknownIn("src/a.ern", String.lines(text), [2, 3, 4])),
                #([#(1, 2), #(2, 3), #(2, 4), #(5, 5)],
                  ["src/a.ern:5: design §5 is no section of docs/design.md"]))
 })
@@ -538,5 +726,65 @@ let findsTested = Test.Case(name = "finds the sections the tests cite", run = fn
             <> "/// design §4: a doc block.\n"
             <> "let third = Test.Case(name = \"c\", =run)\n\n"
             <> "// design §5: no test.\nlet value = 5\n";
-    Test.equal(testedIn(text), [1, 2, 3])
+    Test.equal(testedIn(String.lines(text)), [1, 2, 3])
+})
+
+/// A comment line names no step of the plan or item of it, no review's
+/// finding, no feedback line and no date; a string, a comment after code,
+/// a date a time follows, the epoch, a log entry's title and a word that
+/// holds a refused one are let through. A regression test, written after the
+/// check; it does not cover each form in each position.
+let findsHistory = Test.Case(name = "finds the history a comment names", run = fn() = {
+    let refused =
+        "// as the MVP had it, the Milestones ahead\n"
+            <> "    /// the plan item, (plan, step 2) and the plan, the log\n"
+            <> "// review's E4 and (T3, T13), feedback 209, findings.md\n"
+            <> "// finding S-2, feedback line 4, written 2026-11-07.\n";
+    let allowed =
+        "let y = \"MVP 4, 2026-11-07\" // milestone\n"
+            <> "// at 2026-11-07T10:00:00Z, the MVPs, planned (planning) and (E)\n"
+            <> "/// since the epoch, 1970-01-01, the log's *A Day, 2026-11-07*, as said\n"
+            <> "// feedback lines, findings (ABC1), a review's Ernest, the plans\n";
+    Test.equal(#(naming("m.ern", commentsOf(String.lines(refused)), "a comment", historyAt),
+                 naming("m.ern", commentsOf(String.lines(allowed)), "a comment", historyAt)),
+               #(["m.ern:1: a comment names a milestone",
+                  "m.ern:2: a comment names a plan item",
+                  "m.ern:3: a comment names a review's finding",
+                  "m.ern:3: a comment names a feedback line",
+                  "m.ern:4: a comment names a review's finding",
+                  "m.ern:4: a comment names a feedback line",
+                  "m.ern:4: a comment names a date"],
+                 []))
+})
+
+/// A line a user reads names no step of the plan by its short name and a
+/// number, or by the plan's word for one; the short name alone is let
+/// through. A regression test, written after the check.
+let findsSteps = Test.Case(name = "finds a step of the plan a user reads", run = fn() = {
+    let text = "as MVP 4 has it\nbuilt in MVP4.\nthe milestones\nan MVP, the MVPs 4\n";
+    Test.equal(naming("README.md", List.indexed(String.lines(text)), "the line", stepAt),
+               ["README.md:1: the line names a milestone",
+                "README.md:2: the line names a milestone",
+                "README.md:3: the line names a milestone"])
+})
+
+/// A release's note holds a date in its heading alone, no log entry's title,
+/// and names neither the plan nor a review, its reader or a newcomer; the
+/// file's own paragraph is not read, nor a heading, a date a time follows,
+/// or a library's readers. A regression test, written after the check.
+let findsNotes = Test.Case(name = "finds what a release's note leaves out", run = fn() = {
+    let text =
+        "# Changes\n\nEach note; the plan, a review and its readers, 2026-11-07.\n\n"
+            <> "## 0.2.0, 2026-11-07\n\nThe release a newcomer reads.\n\n"
+            <> "- A change: §3; *A Log Entry*\n"
+            <> "- Done 2026-11-06, as the plan says.\n"
+            <> "- Read by the reader of the Review: §4.\n"
+            <> "- `Time.parse(\"2026-11-07T10:00:00Z\")`, the response readers, preview: §5.\n";
+    Test.equal(naming(changes, sectionsIn(String.lines(text)), "the note", noteAt),
+               ["CHANGES.md:7: the note names a newcomer",
+                "CHANGES.md:9: the note names a log entry's title",
+                "CHANGES.md:10: the note names a date outside its heading",
+                "CHANGES.md:10: the note names the plan",
+                "CHANGES.md:11: the note names a reader",
+                "CHANGES.md:11: the note names a review"])
 })

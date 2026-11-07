@@ -7,7 +7,9 @@
 #                 then the program compiled
 #   make test     the layout, the tests of every module, test/ where it
 #                 exists, each program of examples/ where there is one, built
-#                 and run, and then the documents and the design's citations
+#                 and run, and then the documents, the design's citations, and
+#                 the project's history kept out of the comments and what a
+#                 user reads
 #   make run      runs the example site through the launcher, or the
 #                 configuration CONFIG names, CONFIG=path make run
 #   make smoke    the smoke test against the deployed site whose canonical
