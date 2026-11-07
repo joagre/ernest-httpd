@@ -75,15 +75,17 @@ EXAMPLES      = $(wildcard examples/*.ern)
 EXAMPLES_MADE = examples/build examples/site/root/xterm
 # The documents make install and make release take, the user's alone:
 # README.md, LICENSE, THIRD_PARTY_LICENSES, CHANGES.md and docs/design.md,
-# each where it exists, and under docs/man/, examples/ and deploy/ the files
-# git tracks in a checkout, so that no untracked file goes in, read as
-# whoever installs, whose checkout it need not be, which git refuses unless
-# told it is safe; or in an unpacked archive every file there but
-# EXAMPLES_MADE's, which make release wrote with those.
+# each where it exists, and under docs/man/, examples/, deploy/ and assets/,
+# whose pictures the documents show, the files git tracks in a checkout, so
+# that no untracked file goes in, read as whoever installs, whose checkout
+# it need not be, which git refuses unless told it is safe; or in an
+# unpacked archive every file there but EXAMPLES_MADE's, which make release
+# wrote with those.
 DOCS          = $(wildcard README.md LICENSE THIRD_PARTY_LICENSES CHANGES.md docs/design.md) \
                 $(if $(wildcard .git),\
-                    $(shell git -c safe.directory=$(CURDIR) ls-files docs/man examples deploy),\
-                    $(shell find docs/man examples deploy -type f \
+                    $(shell git -c safe.directory=$(CURDIR) ls-files \
+                        docs/man examples deploy assets),\
+                    $(shell find docs/man examples deploy assets -type f \
                         $(foreach dir,$(EXAMPLES_MADE),! -path '$(dir)/*') 2>/dev/null))
 # An installation's own directories under PREFIX, beside its launcher.
 TREE          = $(PREFIX)/lib/$(NAME)
