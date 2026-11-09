@@ -80,6 +80,7 @@ A `scratch/` directory inside a proposal's own directory, untracked, is the user
 - **Prefer minimal, direct implementations** over speculative abstraction. A feature enters or stays out by the five principles, and the log names the principle that decided (§0, principle 5).
 - **Bring options, not defenses.** When a simplification seems to conflict with a principle, first check whether the principle is being applied too dogmatically.
 - **The tools are fast.** A test or a tool that costs more than its work is a defect: measure it, and fix it at its cause or plan it with a date. Every run is timed against its work, and one that costs more is named to the user in the same message.
+- **The program is lean.** Memory counts as much as time. A run and each resource it opens hold only what their work needs. What would be held in every run for a rare case is a cost every run pays, and is weighed as one.
 - **The program is beautiful, inside and out.** Keep no code only to make it go faster. Measure first, and where the plain form is fast enough it stays plain.
 - **A measurement ends when its number stops deciding anything.** A number that confirms the plain form goes to the log once, and its item closes. Following it further is an item of its own, planned with the decision it would change.
 - **No fixed sleep, in the code or in a test.** A process waits on what it means: a message, a monitor, a port that answers, a process's end, or a deadline the design states.
