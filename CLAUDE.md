@@ -129,7 +129,7 @@ A `scratch/` directory inside a proposal's own directory, untracked, is the user
 - **A step forward sweeps what it leaves behind.** What a step makes redundant goes in the step's own commit, never left for a review to find: a sentence, a file or a directory, a built proposal, a decided finding, a citation of what went. A done item's paragraph goes too, one line naming its log entry in its place until the milestone's row takes it.
 - **Commit only after the checks pass**, on make's own exit status read in a call of its own, never chained after them with `;` and never on a pipe's, which a `grep` of the output would give. A deletion of tracked files is committed by path at once, or stays staged until the test has run. Push only when the user says so, a proposal's pause excepted.
 - **Every message that reports an item that touched the design, the plan or an error's text ends with a "Design conformance" section**: the sections of the design applied; every place the design was silent and what was done, or "none"; every deliberate omission, with the plan item that lifts it; and every line added to `language_feedback.md`, or "none". A report of any other item says in one line that the design was not touched.
-- **Stop after each plan item.** Finish it whole, report it, and wait.
+- **Stop after each plan item.** Finish it whole, report it, and wait. The next step the report names is the plan's next item, in the order the plan gives.
 
 **Closing an item.** Each line names a rule of this file.
 
@@ -140,7 +140,7 @@ A `scratch/` directory inside a proposal's own directory, untracked, is the user
 5. The result read back, and every surprise decided.
 6. `make test` green, and the conformance section written where it is due.
 7. A commit that names its paths. It sweeps what the item made redundant, every sentence elsewhere that says the item still waits among it.
-8. The report to the user, ending with *Design conformance* where it is due, then a stop until the user's word.
+8. The report to the user, naming the plan's next item as the next step and ending with *Design conformance* where it is due, then a stop until the user's word.
 
 ## Style
 
