@@ -4,12 +4,12 @@
 // Every backticked path in a tracked document that begins with a directory
 // of the repository names something that is there, or the program says
 // which does not, on standard error, and ends with status 1; the plan and
-// the findings are left out, and so is a path under docs/man/, which make
-// man writes at a release. Every prose paragraph past 150 words, which no
-// reader takes in whole, is listed on standard error for its writer to split
-// at its turn, and the program ends with status 1 (CLAUDE.md, *Writing*);
-// the log, the proposals and the manual pages are left out. Fenced code is
-// read as neither.
+// the findings are left out, and so is a path under docs/man/, which a
+// library's archive alone holds. Every prose paragraph past 150 words, which
+// no reader takes in whole, is listed on standard error for its writer to
+// split at its turn, and the program ends with status 1 (CLAUDE.md,
+// *Writing*); the log and the proposals are left out. Fenced code is read as
+// neither.
 //
 // The design's sections are held both ways, as CLAUDE.md's *Tests* asks. A
 // section is a heading of docs/design.md, `## n. Title`; a citation is a
@@ -163,7 +163,7 @@ fn missingIn(file : String, tops : List(String)) : List(String) =
 // piece that ends with "/" names a directory the writer did not mean to pin,
 // one that holds a space is a command line, whose first word is the program
 // the line runs and not a path the document pins, and a manual page is
-// there only once a release has written it.
+// there only in a library's archive.
 fn pathsIn(text : String, tops : List(String)) : List(String) = {
     let pieces = String.split(unfenced(text), "`");
     List.filterMap(List.indexed(pieces), fn(indexed) = match indexed {
@@ -205,20 +205,15 @@ fn isFence(line : String) : Bool = {
 // The paragraphs
 //
 
-// Whether a file is the repository's own writing: a manual page is written
-// by ern doc, and what it names is the module's.
-fn isOwn(file : String) : Bool =
-    String.startsWith(file, "docs/man/") == false
-
 // Whether a file's paths are checked: the plan names paths not yet written,
 // and the findings the paths of the tree their readers read.
 fn isChecked(file : String) : Bool =
-    isOwn(file) && file != "docs/plan.md" && file != "docs/findings.md"
+    file != "docs/plan.md" && file != "docs/findings.md"
 
 // Whether a file's paragraphs are measured: the log is history and a
 // proposal is thinking.
 fn isMeasured(file : String) : Bool =
-    isOwn(file) && file != "docs/log.md" && String.startsWith(file, "docs/proposals/") == false
+    file != "docs/log.md" && String.startsWith(file, "docs/proposals/") == false
 
 fn paragraphsIn(file : String) : List(Paragraph) =
     paragraphsOf(file, contents(file))

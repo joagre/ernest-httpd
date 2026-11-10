@@ -22,13 +22,13 @@ It does not run while `findings.md` stands, a release's findings or a review's.
 
 A reader's letter names its findings: C12 is the code reader's twelfth.
 
-- **K, the cold reader.** Reads `README.md`, and of what it links only what a user of the program reads: the manual pages, `examples/` and `deploy/README.md`, where they exist. It reads no working document.
+- **K, the cold reader.** Reads `README.md`, and of what it links only what a user of the program reads: the manual pages `make doc` writes under `build/`, `examples/` and `deploy/README.md`, where they exist. It reads no working document.
 
   "You know Ernest from its guide, and not this program. Build the program and use it as the README says: run it, or, where it is a library, call it from a program of your own. Report every step that failed or that you had to guess, every message you did not understand, everything you wanted and could not find, and every claim of the page that the program did not keep."
 - **C, the code reader.** Reads `src/`, `test/`, `examples/`, `tools/` and the files of `deploy/` whole, where they exist, with the Makefile and the launcher, against `docs/design.md`, the report's §0, Appendix E.0's shape rules and the installed `guide/style.md`.
 
   "Report defects, every section of the design the code does not keep, code that no section states, comments that no longer hold, code that could be shorter and clearer, every name that does not say what its value or its work is, every `foreign fn` whose work Ernest could do, and every test that would pass with what it tests broken."
-- **D, the documents reader.** Reads every tracked Markdown document but the log, the proposals and the pages `make man` wrote under `docs/man/`.
+- **D, the documents reader.** Reads every tracked Markdown document but the log and the proposals.
 
   "Read each document against the design and the code it describes. Report every statement that is false or stale, every fact restated outside its owner or owned by no document (`CLAUDE.md`'s *Who owns each fact*), and every list that lives in two places."
 - **S, the security reader**, where the program takes input from a party other than whoever runs it: a socket, a request, a file another wrote. Reads the code that input reaches, with the design's sections for it.

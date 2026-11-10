@@ -21,11 +21,10 @@
 #   make xterm    fills the example site's xterm/: each archive XTERM names
 #                 fetched and unpacked where its script is not there
 #   make doc      the documentation of every module, as CommonMark under build/
-#   make man      the pages copied into docs/man/, which each release commits,
-#                 its index the directory's README
 #   make format   lays every module out
 #   make release  the archive, build/NAME-VERSION.tar.gz, and its checksum
-#                 beside it, tests first
+#                 beside it, tests first; a library's carries the pages of
+#                 make doc under docs/man/
 #   make install  installs what stands built under PREFIX, /usr/local by
 #                 default, from a checkout or an unpacked archive alike:
 #                 the launcher in bin/, build/'s and lib/'s in lib/NAME/,
@@ -75,7 +74,7 @@ EXAMPLES      = $(wildcard examples/*.ern)
 EXAMPLES_MADE = examples/build examples/site/root/xterm
 # The documents make install and make release take, the user's alone:
 # README.md, LICENSE, THIRD_PARTY_LICENSES, CHANGES.md and docs/design.md,
-# each where it exists, and under docs/man/, examples/, deploy/ and assets/,
+# each where it exists, and under examples/, deploy/ and assets/,
 # whose pictures the documents show, the files git tracks in a checkout, so
 # that no untracked file goes in, read as whoever installs, whose checkout
 # it need not be, which git refuses unless told it is safe; or in an
@@ -84,15 +83,14 @@ EXAMPLES_MADE = examples/build examples/site/root/xterm
 DOCS          = $(wildcard README.md LICENSE THIRD_PARTY_LICENSES CHANGES.md docs/design.md) \
                 $(if $(wildcard .git),\
                     $(shell git -c safe.directory=$(CURDIR) ls-files \
-                        docs/man examples deploy assets),\
-                    $(shell find docs/man examples deploy assets -type f \
+                        examples deploy assets),\
+                    $(shell find examples deploy assets -type f \
                         $(foreach dir,$(EXAMPLES_MADE),! -path '$(dir)/*') 2>/dev/null))
 # An installation's own directories under PREFIX, beside its launcher.
 TREE          = $(PREFIX)/lib/$(NAME)
 DOC_DIR       = $(PREFIX)/share/doc/$(NAME)
 
-.PHONY: all version lib xterm build test run smoke doc man format release install uninstall \
-        clean
+.PHONY: all version lib xterm build test run smoke doc format release install uninstall clean
 
 all: version lib build
 
@@ -127,8 +125,7 @@ lib:
 # xterm/, fetched and unpacked under build/, and its license, as
 # NAME.js.LICENSE.txt, its stylesheets, css/*.css, and last its script,
 # lib/NAME.js, copied there; NAME is the archive's name without its version.
-# The unpacked archive is then removed, so that make man finds none of its
-# pages.
+# The unpacked archive is then removed, since nothing reads it after.
 xterm:
 	@mkdir -p examples/site/root/xterm
 	@for url in $(XTERM); do \
@@ -197,15 +194,6 @@ smoke: $(if $(HOST),all)
 doc: all
 	$(ERN) doc --source-root src --build-root build $(LOAD_PATH) src
 
-# The pages ern doc wrote under build/, mirrored into docs/man/ as Ernest's
-# make man mirrors its own; the release archive's staging directory is left
-# out, and the index becomes the README.
-man: doc
-	@rm -rf docs/man && mkdir -p docs/man
-	@cd build && find . -name '*.md' ! -name index.md ! -path './$(NAME)-*/*' | \
-	    tar cf - -T - | (cd ../docs/man && tar xf -)
-	@cp build/index.md docs/man/README.md
-
 format:
 	$(ERN) format src tools $(wildcard test) $(if $(EXAMPLES),examples)
 
@@ -213,10 +201,13 @@ format:
 # source and the compiled modules, lib/ with each link copied through, the
 # documents of DOCS, the README, the license, deploy/ and examples/ among
 # them, and the Makefile with VERSION, so that make install and make run
-# run in it. One shape for an application and a library, so that any
-# archive can be a dependency. Its checksum stands beside it, for
+# run in it. A library's carries its pages as well: those ern doc wrote
+# under build/, the one copy a checkout holds, mirrored into docs/man/ with
+# the index as its README, and neither the staging directory nor what the
+# examples wrote among them. One shape for an application and a library, so
+# that any archive can be a dependency. Its checksum stands beside it, for
 # `sha256sum -c`.
-release: test
+release: test doc
 	@case "$$($(ERN) --version)" in \
 	    *-dev|*+*) echo "a release is not made with a development build of ern"; exit 1 ;; esac
 	rm -rf build/$(NAME)-$(VERSION) && mkdir -p build/$(NAME)-$(VERSION)
@@ -229,6 +220,10 @@ release: test
 	    cp bin/$(NAME) build/$(NAME)-$(VERSION)/bin/ || true
 	tar cf - $(DOCS) Makefile VERSION | \
 	    tar xf - -C build/$(NAME)-$(VERSION)
+	test -x bin/$(NAME) || { mkdir -p build/$(NAME)-$(VERSION)/docs/man && cd build && \
+	    find . -name '*.md' ! -name index.md ! -path './$(NAME)-*/*' ! -path './examples/*' | \
+	    tar cf - -T - | tar xf - -C $(NAME)-$(VERSION)/docs/man && \
+	    cp index.md $(NAME)-$(VERSION)/docs/man/README.md; }
 	tar -czf build/$(NAME)-$(VERSION).tar.gz -C build $(NAME)-$(VERSION)
 	cd build && sha256sum $(NAME)-$(VERSION).tar.gz > $(NAME)-$(VERSION).tar.gz.sha256
 	rm -rf build/$(NAME)-$(VERSION)
