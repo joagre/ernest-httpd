@@ -411,3 +411,9 @@ A cold reading of the design's sentences before the build found six, each fixed 
 *2026-11-10.* The lines the design has the program say in four of its cases leave the run. Each case runs under `Test.capture`, Ernest's 225 (E.24), and checks what its processes wrote on standard error against the line as the design writes it. *Milestone 2, item 2: quiet tests* counted four lines; they are five, since `Static`'s case refuses a file and the root's `404.html`, a line each.
 
 A capture that dropped the line unread would hide it from the run and from the test both, and a line gone or changed would pass (principle 3), so each case compares it. The four checks are regression tests, written after the code, each comment naming what its check does not cover. A wrong expectation fails with the line captured, shown by a probe. `make test` prints its passes alone, 161 of them, in 16.6 s, as before.
+
+## A refused value on one line
+
+*2026-11-10.* A configuration's refusal writes the value refused as `Json.encode` writes it, Ernest's 224 (G.6), so that the operator reads the refusal on one line, in the journal as at a terminal (principle 1). `Json.format` laid a long array or object over lines, which *Milestone 2, item 1: the refusal's form* kept rather than write a second JSON writer here (principle 2). `encode` ends with no line feed, so nothing is trimmed, and writes U+007F bare as `format` did, so the value still writes it `\u007f`.
+
+The value is written with no white space between its parts, `{"address":"127.0.0.1",...}`, where `format` put a space after a member's colon, its members in the order of their names' code points as before. A probe shows the server's refusal of an object for `listeners` on one line, with the status 1. The shell's two messages stay as `Json.format` writes them, §11's form, which the site reads as JSON whatever its white space; nothing asks to change it. `make test` prints 161 passes in 15.9 s.

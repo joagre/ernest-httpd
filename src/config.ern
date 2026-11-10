@@ -467,13 +467,11 @@ fn members(object : Map(String, Json.Value),
     }
 
 // The field breaking the rule with the value refused, as the refusal
-// writes it: as `Json.format` writes it, without its line feed at the
-// end, and U+007F, which it writes bare, as `\u007f`, so that a control
-// character refused is seen (design §4).
-fn invalid(field : String, rule : String, value : Json.Value) : Error = {
-    let formatted = String.trimEnd(Json.format(value));
-    Invalid(=field, =rule, value = Some(String.replace(formatted, "\u{7f}", "\\u007f")))
-}
+// writes it: as `Json.encode` writes it, on one line, and U+007F, which it
+// writes bare, as `\u007f`, so that a control character refused is seen
+// (design §4).
+fn invalid(field : String, rule : String, value : Json.Value) : Error =
+    Invalid(=field, =rule, value = Some(String.replace(Json.encode(value), "\u{7f}", "\\u007f")))
 
 // The field's value, which is required.
 fn required(object : Map(String, Json.Value),
@@ -759,7 +757,7 @@ let refusesMembers =
 
 // design §4: a value of another type than the table's breaks the rule
 // naming the type, an array's element under its index, the value refused
-// as Json.format writes it, over its lines where it is long.
+// as Json.encode writes it, on one line where it is long.
 let refusesTypes =
     Test.Case(name = "refuses a value of another type",
               run = fn() =
@@ -783,12 +781,10 @@ let refusesTypes =
                               Some(#("listeners", "be an array", Some("{}"))),
                               Some(#("listeners",
                                      "be an array",
-                                     Some("{\n"
-                                              <> "  \"address\": \"127.0.0.1\",\n"
-                                              <> "  \"comment\": \"the one listener of the site\",\n"
-                                              <> "  \"kind\": \"plain\",\n"
-                                              <> "  \"port\": 8080\n"
-                                              <> "}")))]))
+                                     Some("{\"address\":\"127.0.0.1\","
+                                              <> "\"comment\":\"the one listener of the site\","
+                                              <> "\"kind\":\"plain\","
+                                              <> "\"port\":8080}")))]))
 
 // design §4: the rules on values: a kind, a port, a count, an empty string
 // and an empty array, an empty redirect host, a host that names userinfo,

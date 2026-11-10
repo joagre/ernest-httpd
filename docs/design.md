@@ -105,7 +105,7 @@ A field that breaks a rule is answered as `Invalid`, its `field` the field's nam
 
 **The errors.** `read` answers `Unreadable(error)` where the file cannot be read, `Io.NotUtf8` among them, and `NotJson(error)` where its text is not one JSON value. `reason(error)` writes `Unreadable` as `cannot read the file: ` and the error as `Io.show` writes it, and `NotJson` as `is not JSON: ` and the error so written.
 
-An `Invalid`'s `value` is the value refused, a member's name where the rule is the name's, as `Json.format` writes it, without its last line feed and over the lines it lays a long array or object on, and U+007F, which it writes bare, as `\u007f`; it is `None` where the rule is `is required` or `is no field of`, which no value breaks. `reason` writes `Invalid` as the field, ` must `, the rule, `: ` and the value, `listeners[0].port must be 0 to 65535: 70000`, `root must name a directory: "/srv/site"`, and one with no value as the field, a space and the rule, `root is required`, `roots is no field of the configuration`.
+An `Invalid`'s `value` is the value refused, a member's name where the rule is the name's, as `Json.encode` writes it, and U+007F, which it writes bare, as `\u007f`; it is `None` where the rule is `is required` or `is no field of`, which no value breaks. `reason` writes `Invalid` as the field, ` must `, the rule, `: ` and the value, `listeners[0].port must be 0 to 65535: 70000`, `root must name a directory: "/srv/site"`, and one with no value as the field, a space and the rule, `root is required`, `roots is no field of the configuration`.
 
 ## 5. The static site
 
