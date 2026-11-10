@@ -10,7 +10,9 @@ Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The
 
 ## Milestone 2: after the first release
 
-What the first release's readers found and the milestone's own items, each a step with its log entry when built. Done: items 1 to 4, 6 and 7, the log's *Milestone 2, item 1: the refusal's form*, *Milestone 2, item 2: quiet tests*, *Milestone 2, items 3 and 4: the attach's word and a restart at the cap*, *Three cleanups* and *The code reader's findings*; item 9, the log's *Milestone 2, item 9: the reset under load*; item 10, the log's *Milestone 2, item 10: the library's own*; the designed lines out of the test run, the log's *The lines in the test run*; the refused value on one line, the log's *A refused value on one line*; and the two nodes in the visitor's container with a CPU cap, the log's *Two nodes and a core*.
+What the first release's readers found and the milestone's own items, each a step with its log entry when built.
+
+Done: items 1 to 4, 6 and 7, the log's *Milestone 2, item 1: the refusal's form*, *Milestone 2, item 2: quiet tests*, *Milestone 2, items 3 and 4: the attach's word and a restart at the cap*, *Three cleanups* and *The code reader's findings*; item 9, the log's *Milestone 2, item 9: the reset under load*; item 10, the log's *Milestone 2, item 10: the library's own*; the designed lines out of the test run, the log's *The lines in the test run*; the refused value on one line, the log's *A refused value on one line*; the server's signal in the tests, the log's *The server's signal in the tests*; and the two nodes in the visitor's container with a CPU cap, the log's *Two nodes and a core*.
 
 ### Now, on Ernest's 0.10.0
 
@@ -34,8 +36,6 @@ The build is done (the log's *Milestone 2, item 11: the shell client's build*).
 The server serves the client and answers the limits while it still speaks today's messages to the site as it stands, since this part adds and takes nothing away. Ernest's session was told so on 2026-11-10, and the rehearsal walked the switch with the client, item 5. Until the launch's switch, design §11's messages stay as Ernest's site speaks them, and a change to them is told to Ernest's session before it is built.
 
 Ernest's side is built against that rehearsal's server: the site's script calling the client, its generator taking no configuration, the shell page's numbers from the client's limits and a stub client in its browser test. Both go live in item 5's switch, the one day both repositories change, the client in the release made for it (Ernest's plan, its MVP 4.6 and its MVP 4.4's item 6; its log's *MVP 4.6 Before the Launch*).
-
-**The server's signal in the tests (2026-11-04).** `Smoke.launch` learns the server's process number through `sh -c 'echo $$; exec ...'` and `Smoke.terminate` runs the host's `kill`, since `Os` sends a program it started no signal but the terminal's hangup. 0.10.0 carries Ernest's 233, `Os.signal` (E.23), and the two go: `Smoke.launch` keeps the program's address alone and `Smoke.terminate` sends it `Termination` (the log's *The twelfth sweep: the signal and the descriptors*).
 
 **Item 8, the listener's retry (2026-11-04).** The test is written and steady, 20 runs in 20: the server run as a child under `ulimit -n 64`, connections held until an accept fails, the line `cannot accept: Io.Other("too many open files")` read, one more opened, which waits unaccepted, the held ones closed and that one answered at the next retry. It held only where the runtime had met its error path once, since the runtime loaded its own modules on first use and could not when the descriptors were spent; 0.10.0 carries Ernest's 234, a run loading them at its start (report §12). It is built now, `Smoke.launch` taking the limit as an `Optional(Int)` and the test in `src/listener.ern` (the log's *The listener's retry* and *Ernest 0.10.0*).
 

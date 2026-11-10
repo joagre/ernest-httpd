@@ -449,9 +449,6 @@ let scenarioMs : Int = 30000
 // test has taken it, and the browser's end, as it came.
 type Heard = Reported(line : String, reply : Reply(Unit)) | BrowserEnded(String)
 
-// The server the test launched, and its process number.
-type Launched = Launched(program : Address(Os.ProgramMsg), pid : String)
-
 // design §14: the client run in Chromium against a server the test
 // launches on the scenario's configuration, the page importing the client
 // and reporting each thing it told, the lines compared with the scenario's
@@ -469,8 +466,7 @@ let runsInABrowser = Test.Case(name = "runs a session in a browser", run = fn() 
 fn walked() : Either(String, List(String)) receiving Heard = {
     let path <-
         Either.mapLeft(written(), fn(error) = "cannot write " <> scratch <> ": " <> Io.show(error));
-    let #(program, pid, ports) <- Either.mapLeft(Smoke.launch(path, 1), Io.show);
-    let server = Launched(=program, =pid);
+    let #(server, ports) <- Either.mapLeft(Smoke.launch(path, 1), Io.show);
     let outcome = servedOn(server, ports);
     match outcome {
         Right(#(_, true)) -> Unit
@@ -489,8 +485,8 @@ fn written() : Either(Io.Error, String) = {
     Right(path)
 }
 
-fn terminated(server : Launched) : Unit = {
-    let _ = Smoke.terminate(server.program, server.pid);
+fn terminated(server : Address(Os.ProgramMsg)) : Unit = {
+    let _ = Smoke.terminate(server);
     Unit
 }
 
@@ -499,7 +495,7 @@ fn terminated(server : Launched) : Unit = {
 // started on the page and the lines heard, then the browser ended and the
 // test's port closed. It answers the lines and whether the server was
 // ended at the scenario's line.
-fn servedOn(server : Launched,
+fn servedOn(server : Address(Os.ProgramMsg),
             ports : List(Int)) : Either(String, #(List(String), Bool)) receiving Heard = {
     let port <- match ports {
         [port] -> Right(port)
@@ -619,7 +615,7 @@ fn answering(socket : Address(Tcp.SocketMsg), test : Address(Heard)) : Unit = {
 // ended.
 fn heard(expected : List(String),
          acc : List(String),
-         server : Launched,
+         server : Address(Os.ProgramMsg),
          serverEnded : Bool,
          time : Int) : #(List(String), Bool) receiving Heard =
     match expected {

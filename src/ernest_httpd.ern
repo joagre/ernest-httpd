@@ -530,7 +530,7 @@ let servesAndEnds = Test.Case(name = "serves the site and ends in order", run = 
             Right(Unit) or Left(Io.NotFound) -> Right(Unit)
           | Left(error) -> Left(error)
         };
-        let #(program, pid, ports) <- Smoke.launch(path, 3);
+        let #(program, ports) <- Smoke.launch(path, 3);
         let #(plainPort, tlsPort, redirectPort) = match ports {
             [one, two, three] -> #(one, two, three)
           | _ -> #(0, 0, 0)
@@ -540,7 +540,7 @@ let servesAndEnds = Test.Case(name = "serves the site and ends in order", run = 
             shellClient(plainPort);
         let #(_, _, unattached) <- upgraded(plainPort, "/shell", "http://localhost");
         let start = Clock.monotonic();
-        let status <- Smoke.terminate(program, pid);
+        let status <- Smoke.terminate(program);
         let took = Clock.monotonic() - start;
         let shellEnd = closing(shellSocket, decoder);
         let unattachedEnd = closing(unattached, WebSocket.decoder(WebSocket.FromServer, 65536));
@@ -639,7 +639,7 @@ let servesTheExample = Test.Case(name = "serves the example site", run = fn() = 
         let text <- example("config.json");
         let path <-
             written("example.json", portsZeroed(Optional.withDefault(String.fromUtf8(text), "")));
-        let #(program, pid, ports) <- Smoke.launch(path, 2);
+        let #(program, ports) <- Smoke.launch(path, 2);
         let #(plainPort, redirectPort) = match ports {
             [one, two] -> #(one, two)
           | _ -> #(0, 0)
@@ -671,7 +671,7 @@ let servesTheExample = Test.Case(name = "serves the example site", run = fn() = 
                          Optional.map(config.shell, fn(shell) = #(shell.path, shell.client)),
                          "http://localhost:8080")
                 |> List.filter(fn(check) = check.result != Right(Unit));
-        let status <- Smoke.terminate(program, pid);
+        let status <- Smoke.terminate(program);
         let shellEnd = closing(shell, WebSocket.decoder(WebSocket.FromServer, 65536));
         let index <- example("root/index.html");
         let style <- example("root/style.css");
