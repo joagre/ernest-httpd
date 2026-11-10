@@ -431,3 +431,7 @@ A server that exited before it is told is answered `Left(Closed)`, and `terminat
 This reverses *The module pages*: a module's contract is read by building it, `make doc`, and this program's archive, which has a launcher, carries no pages where it carried the last release's (principle 2). `make man` goes, with its lines in the Makefile, the README, `docs/README.md` and `docs/release.md`; `tools/docs.ern` and `docs/full_review.md` come whole from the template's commit, reader L kept.
 
 The archive built from a fresh clone holds no `docs/man/` and passes. It showed what design §13 had kept wrong since *The release cleanup*: the archive carries the user's documents alone, `docs/design.md` of `docs/`, no `CLAUDE.md`, and `assets/`, where §13 named `CLAUDE.md` and every file git tracks under `docs/`. §13 says so now. The README linked `docs/README.md`, which no archive carries, so the link was broken in an installation; it names the file as the repository's, as the template's README does.
+
+## The examples' target
+
+*2026-11-11.* The template's `make examples`, its `7fadb13` (the template's log, *The examples run in one word*), had not come here: `make test` built and ran the examples inline. The target comes whole, and `make test` calls it where `examples/` holds a program. This program holds none, its site being data, so `make test` runs as before and `make examples` says there is nothing to build. The README, which teaches no loop, lists no target that only says so (principle 1). The documents' check already ran last (*The documents' check runs last*).

@@ -5,11 +5,12 @@
 #
 #   make          builds: the floor checked, lib/ filled, each dependency and
 #                 then the program compiled
-#   make test     the layout, the tests of every module, test/ where it
-#                 exists, each program of examples/ where there is one, built
-#                 and run, and then the documents, the design's citations, and
-#                 the project's history kept out of the comments and what a
-#                 user reads
+#   make test     the layout, the tests of every module, test/ where it exists,
+#                 make examples where there is a program to build, and then
+#                 the documents, the design's citations, and the project's
+#                 history kept out of the comments and what a user reads
+#   make examples each program of examples/ built and run, what it writes
+#                 under build/examples/
 #   make run      runs the example site through the launcher, or the
 #                 configuration CONFIG names, CONFIG=path make run
 #   make smoke    the smoke test against the deployed site whose canonical
@@ -44,7 +45,7 @@ ERL_DEPS    =
 # ignores.
 XTERM       = https://registry.npmjs.org/@xterm/xterm/-/xterm-5.5.0.tgz \
               https://registry.npmjs.org/@xterm/addon-fit/-/addon-fit-0.10.0.tgz
-# What each program of examples/ writes, named by make test: the suffix of
+# What each program of examples/ writes, named by make examples: the suffix of
 # the one path it is given.
 EXAMPLE_SUFFIX =
 # The configuration make run serves.
@@ -90,7 +91,8 @@ DOCS          = $(wildcard README.md LICENSE THIRD_PARTY_LICENSES CHANGES.md doc
 TREE          = $(PREFIX)/lib/$(NAME)
 DOC_DIR       = $(PREFIX)/share/doc/$(NAME)
 
-.PHONY: all version lib xterm build test run smoke doc format release install uninstall clean
+.PHONY: all version lib xterm build test examples run smoke doc format release install uninstall \
+        clean
 
 all: version lib build
 
@@ -163,18 +165,23 @@ test: all
 	        $(LOAD_PATH) test && \
 	    $(ERN) test --load-path build $(RUN_LOAD_PATH) test/build; \
 	fi
-	@if test -n "$(EXAMPLES)"; then \
-	    $(ERN) build --source-root examples --build-root examples/build --load-path build \
-	        $(LOAD_PATH) examples && \
-	    mkdir -p build/examples && \
-	    for program in examples/build/*.erc; do \
-	        name=$$(basename $$program .erc); \
-	        $(ERN) run --load-path build $(RUN_LOAD_PATH) $$program \
-	            build/examples/$$name$(EXAMPLE_SUFFIX) || exit 1; \
-	        echo "examples/$$name.ern wrote build/examples/$$name$(EXAMPLE_SUFFIX)"; \
-	    done; \
-	fi
+	@if test -n "$(EXAMPLES)"; then $(MAKE) --no-print-directory examples; fi
 	$(ERN) run tools/build/docs.erc
+
+# Each program of examples/ built with the program on its load path, then run
+# with one argument, build/examples/NAME followed by EXAMPLE_SUFFIX, which it
+# writes; a program that ends with a status other than 0 fails the target.
+examples: all
+	@test -n "$(EXAMPLES)" || { echo "no program under examples/: nothing to build"; exit 1; }
+	$(ERN) build --source-root examples --build-root examples/build --load-path build \
+	    $(LOAD_PATH) examples
+	@mkdir -p build/examples
+	@for program in examples/build/*.erc; do \
+	    name=$$(basename $$program .erc); \
+	    $(ERN) run --load-path build $(RUN_LOAD_PATH) $$program \
+	        build/examples/$$name$(EXAMPLE_SUFFIX) || exit 1; \
+	    echo "examples/$$name.ern wrote build/examples/$$name$(EXAMPLE_SUFFIX)"; \
+	done
 
 # The directory of the example site's access log is made first, since the
 # configuration's access-log stands in a directory that exists.
