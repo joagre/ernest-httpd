@@ -11,7 +11,7 @@ It does not run while `findings.md` stands, a release's findings or a review's.
 ## How it runs
 
 - `make test` passes from a fresh clone before a reader starts, as [`release.md`](release.md)'s first step has it.
-- Each reader is a session of its own, on the stronger model, as `CLAUDE.md` says of a review's reader. It is given its brief and the files it reads, and nothing that argues for them, such as the log or another reader's list.
+- Each reader is a session of its own, on the model `CLAUDE.md` gives its kind of reader: C and S read the code, K and D the documents. It is given its brief and the files it reads, and nothing that argues for them, such as the log or another reader's list.
 - A reader edits nothing in the repository. It builds and tries the program in a clone of the commit, in a scratch directory of its own, with the `ern` the Makefile names.
 - The readers read one commit, which the findings name, and run side by side.
 - Each reader hands in a numbered list, most serious first. A finding gives its place, a file and line or a section; a short quote; what is wrong; a program or a command that shows it, where there is one; and a one-line fix. Defects stand apart from matters of clarity.
@@ -37,7 +37,7 @@ A reader's letter names its findings: C12 is the code reader's twelfth.
 
 A copy of the template adds below these the readers its program alone needs, and changes nothing above them.
 
-- **L, the live shell reader.** Reads what a visitor's session stands on: the design's §10 to §13, `src/web_socket.ern`, `src/shell.ern`, `src/sessions.ern` and `src/session.ern`, and of `deploy/` the image, the shell's start, the wrapper, the unit and step 7 of its `README.md`. It tries the session on localhost, and the container where podman stands, and nothing against the deployed site. What it could not run, it says.
+- **L, the live shell reader.** Reads what a visitor's session stands on: the design's §10 to §13, `src/web_socket.ern`, `src/shell.ern`, `src/sessions.ern` and `src/session.ern`, and of `deploy/` the image, the shell's start, the wrapper, the unit and step 7 of its `README.md`. It tries the session on localhost, and the container where podman stands, and nothing against the deployed site. What it could not run, it says. It reads the code.
 
   "A visitor types what they like and the session's program runs it: that is the shell's work and no finding. Report each way a visitor gets past what the shell grants: out of the container, into another visitor's session by its cookie or its socket, past a cap or a deadline, or to something that outlives the session, a container, a process or memory. Give what shows it. A limit the design states and no flag or check holds counts." Real exposures stand apart from hardening.
 
