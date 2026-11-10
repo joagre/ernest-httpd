@@ -695,7 +695,10 @@ let holdsTheTable =
                               #(".xml", "application/xml")]))
 
 // design §5: a file the file system refuses to read answers 500, the
-// root's 404.html among them.
+// root's 404.html among them, each said on standard error with its path
+// and the error. The lines' check is a regression test's, written after
+// the code: it holds a read refused, not a description refused or one
+// that does not answer in time.
 let answersRefused = Test.Case(name = "answers a file it cannot read with 500", run = fn() = {
     let secret = Path(scratch <> "/site/secret.txt");
     let locked = Path(scratch <> "/locked/404.html");
@@ -705,14 +708,20 @@ let answersRefused = Test.Case(name = "answers a file it cannot read with 500", 
     let _ = Fs.write(locked, String.toUtf8("<p>locked</p>"), 5000);
     let _ = Fs.setMode(secret, 0, 5000);
     let _ = Fs.setMode(locked, 0, 5000);
-    let result =
-        served([getting(withPage, "/secret.txt", plainError(500)),
-                getting(site(Path(scratch <> "/locked"), Map.empty),
-                        "/missing.txt",
-                        plainError(500))]);
+    let #(result, captured) =
+        Test.capture(fn() =
+                         served([getting(withPage, "/secret.txt", plainError(500)),
+                                 getting(site(Path(scratch <> "/locked"), Map.empty),
+                                         "/missing.txt",
+                                         plainError(500))]));
     let _ = Fs.setMode(secret, 0o600, 5000);
     let _ = Fs.setMode(locked, 0o600, 5000);
-    result
+    Test.equal(#(result, String.fromUtf8(captured.stderr)),
+               #(Test.Passed,
+                 Some(Path.toString(secret)
+                          <> ": Io.Denied\n"
+                          <> Path.toString(locked)
+                          <> ": Io.Denied\n")))
 })
 
 // design §5: error answers a status's plain text, and the root's 404.html

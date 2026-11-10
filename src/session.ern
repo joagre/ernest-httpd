@@ -1158,13 +1158,20 @@ let keepsTheDeadline = Test.Case(name = "warns and ends at its deadline", run = 
                  ["Returned", "Returned", "Returned"]))
 })
 
-// design §12: a command that cannot start is said on standard error, and
-// the session ends with 4003 at its attach.
+// design §12: a command that cannot start is said on standard error with
+// the program and the error, and the session ends with 4003 at its attach.
+// The line's check is a regression test's, written after the code: it
+// holds a program that is not there, not every error a start meets.
 let refusesAnUnstartedCommand =
     Test.Case(name = "ends with 4003 where its command cannot start", run = fn() = {
-        let session = started(["no-such-program-of-ernest-httpd"], 60000, 30000, 5000);
-        send(session, Attach(shell("shell")));
-        Test.equal(#(next("shell"), sessionEnded()), #("Ended(4003)", "Returned"))
+        let #(ended, captured) = Test.capture(fn() = {
+            let session = started(["no-such-program-of-ernest-httpd"], 60000, 30000, 5000);
+            send(session, Attach(shell("shell")));
+            #(next("shell"), sessionEnded())
+        });
+        Test.equal(#(ended, String.fromUtf8(captured.stderr)),
+                   #(#("Ended(4003)", "Returned"),
+                     Some("cannot start no-such-program-of-ernest-httpd: Io.NotFound\n")))
     })
 
 // design §12: at the end a program that does not exit at the hangup of its

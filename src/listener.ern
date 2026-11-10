@@ -495,11 +495,14 @@ fn isAccepting(process : Process) : Bool =
     }
 
 // design §7: an accept answered Closed, since another process closed the
-// socket, is said and ends the acceptor, which returns and tries no accept
-// on the closed socket; an acceptor that ends before the stop ends the
-// listener, which returns, and no process of the acceptor's is left.
+// socket, is said on standard error and ends the acceptor, which returns
+// and tries no accept on the closed socket; an acceptor that ends before
+// the stop ends the listener, which returns, and no process of the
+// acceptor's is left. The line's check is a regression test's, written
+// after the code: it holds Closed, not another error, after which the
+// listener asks again.
 let endsWithItsAcceptor = Test.Case(name = "ends when its acceptor ends", run = fn() = {
-    let result = {
+    let #(result, captured) = Test.capture(fn() = {
         let _ <- Either.mapLeft(prepared(), Io.show);
         let config <- Either.mapLeft(Config.parse(configuration(200, 4, 4)), Config.reason);
         let socket <- Either.mapLeft(Tcp.listen("127.0.0.1", 0), Io.show);
@@ -536,8 +539,10 @@ let endsWithItsAcceptor = Test.Case(name = "ends when its acceptor ends", run = 
           | after 5000 -> "no end"
         };
         Right(#(accepting, acceptorEnd, end, List.any(Process.live(), spawnedInServe)))
-    };
-    Test.equal(result, Right(#(Test.Passed, "Returned", "Returned", false)))
+    });
+    Test.equal(#(result, String.fromUtf8(captured.stderr)),
+               #(Right(#(Test.Passed, "Returned", "Returned", false)),
+                 Some("cannot accept: Io.Closed\n")))
 })
 
 // A stand-in for a connection, which waits until it is ended.

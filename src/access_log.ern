@@ -260,10 +260,17 @@ let appendsBatches =
                       Test.Failed("cannot prepare " <> scratch <> ": " <> Io.show(error))
               })
 
-// design §8: an append that fails loses its lines, and a Flush after them
-// is answered all the same.
+// design §8: an append that fails is said on standard error with the path
+// and the error and loses its lines, and a Flush after them is answered
+// all the same. The line's check is a regression test's, written after the
+// code: it holds a directory that is not there, not every error an append
+// meets.
 let losesFailedAppends = Test.Case(name = "answers a flush after a failed append", run = fn() = {
-    let log = start(Path(scratch <> "/none/access.log"), 5000);
-    send(log, entry(None));
-    Test.equal(Address.call(log, Flush, 5000), Some(Unit))
+    let #(flushed, captured) = Test.capture(fn() = {
+        let log = start(Path(scratch <> "/none/access.log"), 5000);
+        send(log, entry(None));
+        Address.call(log, Flush, 5000)
+    });
+    Test.equal(#(flushed, String.fromUtf8(captured.stderr)),
+               #(Some(Unit), Some(scratch <> "/none/access.log: Io.NotFound\n")))
 })
