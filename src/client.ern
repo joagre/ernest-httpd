@@ -592,8 +592,7 @@ fn accepting(listening : Address(Tcp.ListenerMsg), test : Address(Heard)) : Unit
 // test and answered 204 once the test has taken it; then the connection is
 // closed. A connection that sends no request in time is closed unread.
 fn answering(socket : Address(Tcp.SocketMsg), test : Address(Heard)) : Unit = {
-    let limits = Http.Limits(line = 8192, headers = 16384);
-    match Http.readRequest(socket, <<>>, limits, 5000) {
+    match Http.readRequest(socket, <<>>, Http.defaultLimits, 5000) {
         Right(#(request, _)) -> {
             let line =
                 Uri.decode(String.drop(request.target, 1))

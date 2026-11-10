@@ -175,7 +175,7 @@ fn answered(connection : Connection,
 // path as written, up to its first `?`: the shell at the shell's path and
 // the client at the client's; the site otherwise.
 fn routed(server : Server, request : Http.Request) : Route =
-    match #(server.sessions, Static.pathAndQuery(request.target)) {
+    match #(server.sessions, Static.pathAndQuery(request)) {
         #(Some(sessions), Some(target)) -> {
             let path = pathOf(target);
             if path == sessions.shell.path then
@@ -282,9 +282,11 @@ fn responded(connection : Connection,
 // order: its version, its hosts, and a body; None for one that is served.
 fn refusal(request : Http.Request) : Optional(Int) = {
     let hosts = Http.headers(request.headers, "Host");
-    if request.version != version(1, 0) && request.version != version(1, 1) then
+    if request.version != version(1, 0) && request.version != Http.http11 then
         Some(505)
-    else if request.version == version(1, 1) && List.isEmpty(hosts) || List.size(hosts) > 1 then
+    else if request.version == Http.http11 && List.isEmpty(hosts)
+        || List.size(hosts) > 1
+        || List.any(hosts, fn(host) = Config.host(host) == None) then
         Some(400)
     else if !List.isEmpty(Http.headers(request.headers, "Transfer-Encoding")) then
         Some(413)
@@ -323,7 +325,7 @@ fn headed(request : Http.Request, response : #(Http.Response, Bytes)) : #(Http.R
 // request that lists `close`, and a 1.0 one that does not list
 // `keep-alive`.
 fn closes(request : Http.Request) : Bool =
-    if request.version == version(1, 1) then
+    if request.version == Http.http11 then
         lists(request, "close")
     else
         !lists(request, "keep-alive")
@@ -547,9 +549,8 @@ fn exchanged(client : Address(Tcp.SocketMsg),
 fn received(client : Address(Tcp.SocketMsg),
             carried : Bytes,
             method : String) : Either(String, #(Answer, Bytes)) = {
-    let limits = Http.Limits(line = 1024, headers = 4096);
     let #(response, rest) <-
-        Either.mapLeft(Http.readResponse(client, carried, limits, 5000), Io.show);
+        Either.mapLeft(Http.readResponse(client, carried, Http.defaultLimits, 5000), Io.show);
     let #(body, beyond) <- if method == "HEAD" then
         Right(#(<<>>, rest))
     else
@@ -740,8 +741,9 @@ let keepsOrCloses = Test.Case(name = "keeps or closes by the version and Connect
 
 // design §6: the requests refused, in the paragraph's order, each closing
 // the connection: a version other than 1.0 and 1.1 with 505, though the
-// request has two Hosts too, a 1.1 request
-// without Host and one with two with 400, Transfer-Encoding and a
+// request has two Hosts too, a 1.1 request without Host, one with two and
+// one whose Host Config.host reads as none, a port that is not digits or
+// userinfo, of 1.1 or 1.0, with 400, Transfer-Encoding and a
 // Content-Length above 0 with 413, and Content-Length values that are not
 // one decimal number with 400; a HEAD's refusal has no body. A
 // Content-Length of 0 is no body, and the request is served and the
@@ -754,6 +756,8 @@ let refusesRequests = Test.Case(name = "refuses a request it does not serve", ru
     Test.equal([once([Http.Request(..twoHosts, version = version(2, 0))]),
                 once(get(1, [])),
                 once([twoHosts]),
+                once(get(1, [header("Host", "localhost:80x")])),
+                once(get(0, [header("Host", "user@localhost")])),
                 once(get(1, [host, header("Transfer-Encoding", "chunked")])),
                 once(get(1, [host, header("Content-Length", "5")])),
                 once(get(1, [host, header("Content-Length", "x")])),
@@ -765,6 +769,8 @@ let refusesRequests = Test.Case(name = "refuses a request it does not serve", ru
                [Right(#([refused(505)], "closed", ["127.0.0.1 GET /a.txt HTTP/2.0 505 31"])),
                 Right(#([refused(400)], "closed", ["127.0.0.1 GET /a.txt HTTP/1.1 400 16"])),
                 Right(#([refused(400)], "closed", ["127.0.0.1 GET /a.txt HTTP/1.1 400 16"])),
+                Right(#([refused(400)], "closed", ["127.0.0.1 GET /a.txt HTTP/1.1 400 16"])),
+                Right(#([refused(400)], "closed", ["127.0.0.1 GET /a.txt HTTP/1.0 400 16"])),
                 Right(#([refused(413)], "closed", ["127.0.0.1 GET /a.txt HTTP/1.1 413 22"])),
                 Right(#([refused(413)], "closed", ["127.0.0.1 GET /a.txt HTTP/1.1 413 22"])),
                 Right(#([refused(400)], "closed", ["127.0.0.1 GET /a.txt HTTP/1.1 400 16"])),
@@ -869,8 +875,12 @@ let servesOverTls = Test.Case(name = "serves a connection over TLS", run = fn() 
     };
     let plainText = {
         let client <- tlsConnected(PlainClient);
-        let bytes = Http.renderRequest(request("GET", "/a.txt", 1, [host]), <<>>);
-        let _ <- Either.mapLeft(Tcp.write(client, bytes, 5000), Io.show);
+        let _ <-
+            Either.mapLeft(Http.writeRequest(client,
+                                             request("GET", "/a.txt", 1, [host]),
+                                             <<>>,
+                                             5000),
+                           Io.show);
         Right(ended())
     };
     Test.equal(#(overTls, plainText),
@@ -994,11 +1004,7 @@ let upgrades = Test.Case(name = "upgrades a request on the shell's path", run = 
             Http.renderRequest(upgrade, <<>>) <> masked(WebSocket.Ping(String.toUtf8("carried")));
         let _ <- Either.mapLeft(Tcp.write(client, bytes, 5000), Io.show);
         let #(response, rest) <-
-            Either.mapLeft(Http.readResponse(client,
-                                             <<>>,
-                                             Http.Limits(line = 1024, headers = 4096),
-                                             5000),
-                           Io.show);
+            Either.mapLeft(Http.readResponse(client, <<>>, Http.defaultLimits, 5000), Io.show);
         let decoder = WebSocket.decoder(WebSocket.FromServer, 4096);
         let pong = framed(client, decoder, rest, 1);
         let _ <-

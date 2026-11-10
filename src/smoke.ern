@@ -359,10 +359,11 @@ export fn get(socket : Address(Tcp.SocketMsg),
               host : String,
               ms : Int) : Either(Io.Error, #(Http.Response, Bytes)) = {
     let request = requested(target, [Http.Header(name = "Host", value = host)]);
-    let _ <- Tcp.write(socket, Http.renderRequest(request, <<>>), ms);
-    let #(response, rest) <- Either.mapLeft(Http.readResponse(socket, <<>>, limits, ms), readError);
+    let _ <- Either.mapLeft(Http.writeRequest(socket, request, <<>>, ms), ioError);
+    let #(response, rest) <-
+        Either.mapLeft(Http.readResponse(socket, <<>>, Http.defaultLimits, ms), ioError);
     let #(body, _) <-
-        Either.mapLeft(Http.readResponseBody(socket, rest, response, 16777216, ms), readError);
+        Either.mapLeft(Http.readResponseBody(socket, rest, response, 16777216, ms), ioError);
     Right(#(response, body))
 }
 
@@ -385,8 +386,8 @@ export fn upgrade(socket : Address(Tcp.SocketMsg),
                    Http.Header(name = "Origin", value = origin),
                    Http.Header(name = "Sec-WebSocket-Key",
                                value = Base64.encode(Crypto.randomBytes(16)))]);
-    let _ <- Tcp.write(socket, Http.renderRequest(request, <<>>), ms);
-    Either.mapLeft(Http.readResponse(socket, <<>>, limits, ms), readError)
+    let _ <- Either.mapLeft(Http.writeRequest(socket, request, <<>>, ms), ioError);
+    Either.mapLeft(Http.readResponse(socket, <<>>, Http.defaultLimits, ms), ioError)
 }
 
 /// The message as a client sends it: one frame masked with a key of its
@@ -477,14 +478,11 @@ fn following(output : Bytes, came : String) : String = {
 
 // A request of HTTP/1.1 for the target with the headers.
 fn requested(target : String, headers : List(Http.Header)) : Http.Request =
-    Http.Request(method = "GET", =target, version = Http.Version(major = 1, minor = 1), =headers)
+    Http.Request(method = "GET", =target, version = Http.http11, =headers)
 
-// The most bytes of a response's line and of its headers together.
-let limits : Http.Limits = Http.Limits(line = 8192, headers = 65536)
-
-// A read's error as the socket's, a response that is no HTTP/1.1 written
-// as `Other`.
-fn readError(error : Http.SocketError) : Io.Error =
+// An error over the socket as the socket's, a response that is no HTTP/1.1
+// written as `Other`.
+fn ioError(error : Http.SocketError) : Io.Error =
     match error {
         Http.Socket(cause) -> cause
       | Http.Protocol(cause) -> Io.Other("the response is " <> Io.show(cause))

@@ -101,10 +101,7 @@ type Asked = Resize(Terminal.Size) | Extend | Stop
 ///                  messageLimit = 1024,
 ///                  hangup = 1000);
 /// let request =
-///     Http.Request(method = "POST",
-///                  target = "/shell",
-///                  version = Http.Version(major = 1, minor = 1),
-///                  headers = []);
+///     Http.Request(method = "POST", target = "/shell", version = Http.http11, headers = []);
 /// Shell.handshake(shell, request)
 /// // => Left(Shell.Refusal(status = 405, headers = [Http.Header(name = "Allow", value = "GET")]))
 /// ```
@@ -112,7 +109,7 @@ export fn handshake(shell : Config.Shell, request : Http.Request) : Either(Refus
     let headers = request.headers;
     if request.method != "GET" then
         Left(Refusal(status = 405, headers = [header("Allow", "GET")]))
-    else if request.version != Http.Version(major = 1, minor = 1)
+    else if request.version != Http.http11
         || !lists(headers, "Upgrade", "websocket")
         || !lists(headers, "Connection", "upgrade")
         || Http.headers(headers, "Sec-WebSocket-Version") != ["13"] then
@@ -140,7 +137,7 @@ export fn handshake(shell : Config.Shell, request : Http.Request) : Either(Refus
                 }
             };
             let response =
-                Http.Response(version = Http.Version(major = 1, minor = 1),
+                Http.Response(version = Http.http11,
                               status = 101,
                               headers = [header("Upgrade", "websocket"),
                                          header("Connection", "Upgrade"),
@@ -176,17 +173,13 @@ fn key(headers : List(Http.Header)) : Optional(String) =
             None
     }
 
-// The request's cookie: the first value of a member `shell` of its Cookie
-// headers, their pairs parted at `;` and trimmed, that is 32 lower-case
-// hexadecimal digits.
-fn carried(headers : List(Http.Header)) : Optional(String) = {
-    let pairs =
-        List.filterMap(List.flatMap(Http.headers(headers, "Cookie"),
-                                    fn(value) = String.split(value, ";")),
-                       fn(pair) = String.splitOnce(String.trim(pair), "="));
-    Optional.map(List.find(pairs, fn(#(name, value)) = name == "shell" && isCookie(value)),
+// The request's cookie: the value of the first cookie `shell` of its Cookie
+// headers, as `Http.cookies` parts them, that is 32 lower-case hexadecimal
+// digits.
+fn carried(headers : List(Http.Header)) : Optional(String) =
+    Optional.map(List.find(Http.cookies(headers),
+                           fn(#(name, value)) = name == "shell" && isCookie(value)),
                  fn(#(_, value)) = value)
-}
 
 fn isCookie(value : String) : Bool =
     String.size(value) == 32
@@ -510,7 +503,7 @@ let cookie : String = "0123456789abcdef0123456789abcdef"
 fn upgrade(key : String, headers : List(Http.Header)) : Http.Request =
     Http.Request(method = "GET",
                  target = "/shell",
-                 version = Http.Version(major = 1, minor = 1),
+                 version = Http.http11,
                  headers = [header("Host", "localhost"),
                             header("Upgrade", "websocket"),
                             header("Connection", "Upgrade"),
@@ -599,7 +592,9 @@ let refusesUpgrades = Test.Case(name = "refuses an upgrade it does not take", ru
 // in any case among other tokens; where the request carried no cookie of
 // the shell's, one carried of another form among them, a cookie of 32
 // lower-case hexadecimal digits drawn and set for the shell's path alone,
-// and where it carried one, that cookie and no Set-Cookie.
+// and where it carried one, that cookie and no Set-Cookie: the first of
+// the shell's form among the cookies of its Cookie headers, as
+// Http.cookies parts them.
 let acceptsUpgrades = Test.Case(name = "accepts an upgrade and sets its cookie", run = fn() = {
     let shell = configured(1, 60000, 30000, 1024);
     let accepted = fn(request) = match handshake(shell, request) {
@@ -612,7 +607,11 @@ let acceptsUpgrades = Test.Case(name = "accepts an upgrade and sets its cookie",
                                  [header("Upgrade", "WebSocket")]),
                          "Connection",
                          [header("Connection", "keep-alive, upgrade")]));
-    let kept = accepted(upgrade(sampleKey, [header("Cookie", "theme=dark;shell=" <> cookie)]));
+    let kept =
+        accepted(upgrade(sampleKey,
+                         [header("Cookie", "theme=dark;shell=ABCDEF"),
+                          header("Cookie",
+                                 " shell = " <> cookie <> "; shell=" <> String.repeat("f", 32))]));
     let first =
         [header("Upgrade", "websocket"),
          header("Connection", "Upgrade"),
@@ -630,9 +629,7 @@ let acceptsUpgrades = Test.Case(name = "accepts an upgrade and sets its cookie",
                            isCookie(drawnCookie)));
     Test.equal(#(drawnSeen, kept),
                #(Some(#(101, true, true)),
-                 Some(#(Http.Response(version = Http.Version(major = 1, minor = 1),
-                                      status = 101,
-                                      headers = first),
+                 Some(#(Http.Response(version = Http.http11, status = 101, headers = first),
                         cookie))))
 })
 
@@ -649,7 +646,7 @@ type Client =
 fn upgrading(socket : Address(Tcp.SocketMsg),
              sessions : Sessions.Sessions,
              timeouts : Config.Timeouts) : Unit receiving ShellMsg =
-    match Http.readRequest(socket, <<>>, Http.Limits(line = 1024, headers = 4096), 5000) {
+    match Http.readRequest(socket, <<>>, Http.defaultLimits, 5000) {
         Right(#(request, rest)) ->
             match handshake(sessions.shell, request) {
                 Right(Accepted(=response, cookie = carried)) ->
@@ -687,11 +684,7 @@ fn opened(sessions : Sessions.Sessions,
                                               <<>>);
                        let _ <- Tcp.write(socket, request <> beyond, 5000);
                        let #(response, rest) <-
-                           Either.mapLeft(Http.readResponse(socket,
-                                                            <<>>,
-                                                            Http.Limits(line = 1024,
-                                                                        headers = 4096),
-                                                            5000),
+                           Either.mapLeft(Http.readResponse(socket, <<>>, Http.defaultLimits, 5000),
                                           fn(_) = Io.Invalid);
                        let decoded <-
                            Either.mapLeft(WebSocket.decode(WebSocket.decoder(WebSocket.FromServer,

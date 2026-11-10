@@ -342,8 +342,6 @@ fn listening(idle : Int,
 fn client(port : Int) : Either(String, Address(Tcp.SocketMsg)) =
     Either.mapLeft(Tcp.connect("127.0.0.1", port, 5000), Io.show)
 
-let limits : Http.Limits = Http.Limits(line = 1024, headers = 4096)
-
 // The status of the response to a GET of the target written to the socket,
 // read within the milliseconds, and the size of its body, or the error.
 fn got(socket : Address(Tcp.SocketMsg),
@@ -353,16 +351,17 @@ fn got(socket : Address(Tcp.SocketMsg),
     let request =
         Http.Request(method = "GET",
                      =target,
-                     version = Http.Version(major = 1, minor = 1),
+                     version = Http.http11,
                      headers = Http.Header(name = "Host", value = "localhost") :: headers);
-    let _ <- Either.mapLeft(Tcp.write(socket, Http.renderRequest(request, <<>>), 5000), Io.show);
+    let _ <- Either.mapLeft(Http.writeRequest(socket, request, <<>>, 5000), Io.show);
     response(socket, ms)
 }
 
 // The status of the next response the socket carries, read within the
 // milliseconds, and the size of its body, or the error.
 fn response(socket : Address(Tcp.SocketMsg), ms : Int) : Either(String, #(Int, Int)) = {
-    let #(response, rest) <- Either.mapLeft(Http.readResponse(socket, <<>>, limits, ms), Io.show);
+    let #(response, rest) <-
+        Either.mapLeft(Http.readResponse(socket, <<>>, Http.defaultLimits, ms), Io.show);
     let #(body, _) <-
         Either.mapLeft(Http.readResponseBody(socket, rest, response, 4096, 5000), Io.show);
     Right(#(response.status, Bytes.size(body)))

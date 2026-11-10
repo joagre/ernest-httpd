@@ -33,7 +33,7 @@ Each module has one job, which its doc block states.
 | Module | File | Owns |
 |---|---|---|
 | `ErnestHttpd` | `src/ernest_httpd.ern` | the entry point: the program's start and its end, §2 |
-| `Config` | `src/config.ern` | the configuration: the file read into the record of §4, and every rule of §4 checked; and a host's port dropped, `Config.withoutPort`, by which §4 and §9 compare hosts |
+| `Config` | `src/config.ern` | the configuration: the file read into the record of §4, and every rule of §4 checked; and the host an authority names, `Config.host`, by which §4, §6 and §9 read hosts |
 | `Static` | `src/static.ern` | a request for a file to its response, §5 |
 | `Connection` | `src/connection.ern` | a socket's life: each request read, checked, served and answered, and its line told to the log, §6 |
 | `Hosts` | `src/hosts.ern` | a request's host and what it decides before the site: the canonical host served, a redirect host and the redirect listener answered 301, a host that is neither 421, and the ACME challenge served, §9 |
@@ -67,7 +67,7 @@ type Error = Unreadable(Io.Error) | NotJson(Json.Error) | Invalid(field : String
 Config.read : (Path, Int) -> Either(Error, Config) // the file read within the milliseconds, each rule checked
 Config.parse : (String) -> Either(Error, Config) // the text read, every rule but the file system's checked
 Config.reason : (Error) -> String // the error in prose, the field first for an Invalid
-Config.withoutPort : (String) -> String // the host with its port dropped, as §9 drops it
+Config.host : (String) -> Optional(String) // the host Uri.parseAuthority reads, as Uri.Authority holds it; None for a text that is no authority or names userinfo
 ```
 
 **The file.** The file is one object whose members are the fields of the table, each required but `shell`, and no other; a text whose value is no object breaks `be an object`, its field named `the configuration`. A field that is absent breaks the rule `is required`, and a member of no field breaks the rule `is no field of` and the object's name: `the configuration` at the top, `a plain listener` for a listener with its kind named, and otherwise the object's field, `timeouts`. A field whose value is not what the table says breaks the rule naming it, `be a string`, `be an integer`, `be an array` or `be an object`; an array's elements are so held one by one, indexed from 0, `redirect-hosts[1]`.
@@ -83,8 +83,8 @@ A string of the file, a member's name among them, breaks `hold no control charac
 | `listeners[i].certificate`, `listeners[i].key` | strings, paths, with `"tls"` alone | `name a regular file`; the certificate also `be readable`, which `read` reads it whole to check; the key also `be readable by the program's user alone`: its user is the program's and its mode has the bit `0o400` and none of the bits `0o077` |
 | `listeners[i].acme-challenge` | a string, a path, with `"redirect"` alone | `name a directory` |
 | `root` | a string, a path | `name a directory` |
-| `canonical-host` | a string | `not be empty` |
-| `redirect-hosts` | an array of strings | each `not be empty` and `not be the canonical host`, compared as §9 compares hosts |
+| `canonical-host` | a string | `not be empty`, and `be a host, with or without a port`: a text `Config.host` reads, its host not empty |
+| `redirect-hosts` | an array of strings | each `not be empty`, `be a host, with or without a port`, as `canonical-host`, and `not be the canonical host`, compared as §9 compares hosts |
 | `timeouts.head`, `timeouts.idle`, `timeouts.write`, `timeouts.file` | integers, milliseconds: a request's head, an idle connection, a write, and a read or an append of the file system | each `be above 0` |
 | `limits.request-line`, `limits.headers` | integers, bytes | each `be above 0` |
 | `limits.connections`, `limits.connections-per-address` | integers, counts | each `be above 0` |
@@ -119,17 +119,14 @@ Static.serve : (Site, Http.Request, Int) -> #(Http.Response, Bytes) // the respo
 Static.error : (Site, Int, Int) -> #(Http.Response, Bytes) // the response of the status, its body the error's
 Static.methodNotAllowed : #(Http.Response, Bytes) // a method other than GET and HEAD answered: 405 with Allow: GET, HEAD, its body the error's
 Static.withoutBody : (#(Http.Response, Bytes)) -> #(Http.Response, Bytes) // a HEAD's response of a GET's
-Static.pathAndQuery : (String) -> Optional(String) // a target's path and query as written; None for a target of another form
-Static.authority : (String) -> Optional(String) // the authority of a target in absolute form; None for a target of another form
+Static.pathAndQuery : (Http.Request) -> Optional(String) // the target's path and query as written; None for a target of another form
 ```
 
 **The method.** `GET` and `HEAD` are served; any other method answers 405 with `Allow: GET, HEAD`, `methodNotAllowed`. A `HEAD` request's response is the `GET`'s with its body dropped and, but for a 304, `Content-Length` the body's size, as `withoutBody` makes it.
 
-**The path.** The target is read by code point, as `Path` reads a path, in origin form, the path up to the first `?`, or in absolute form, a scheme, RFC 3986's, a letter and then letters, digits, `+`, `-` and `.`, then `://`, an authority up to the next `/` or `?`, and the path up to the first `?`, `/` where the path is empty; the query is ignored. A target of another form answers 400.
+**The path.** The target is read by `Http.target`, G.11, in origin form, a reference with no scheme and no authority whose path begins with `/`, or in absolute form, a reference with a scheme and an authority that names no userinfo; its path, `/` where it is empty, is the path, and its query is ignored. A target `Http.target` reads as none, and a reference of another form, answers 400. `pathAndQuery` answers the path and, where the target has a query, `?` and the query, as written, and `None` for a target of another form.
 
-`pathAndQuery` answers the target from its path on, the query among it, an origin-form target whole, `/` standing for an absolute-form target's empty path, before its query, and `None` for a target of another form; `authority` answers an absolute-form target's authority, and `None` for a target of another form. The path is percent-decoded: `%` and two hexadecimal digits are the byte they write, and `%2F`, in either case, answers 400, as does a `%` not followed by two hexadecimal digits, and bytes that are not UTF-8. A decoded path holding a control character, U+0000 to U+001F or U+007F, answers 400.
-
-The path is then split at `/` into segments: an empty segment and `.` are dropped; `..` answers 400, and otherwise a segment beginning with `.` answers 404. A path that ends in `/`, or has no segments, asks for a directory.
+The path is split at `/` into segments, each percent-decoded, `Uri.decode`, G.12, and read as UTF-8: a segment that holds `/`, written `%2F` in either case, that is not UTF-8, or that holds a control character, U+0000 to U+001F or U+007F, answers 400. An empty segment and `.` are then dropped; `..` answers 400, and otherwise a segment beginning with `.` answers 404. A path that ends in `/`, or has no segments, asks for a directory.
 
 **The file.** The segments name a path under the root, links followed. One that leads nowhere, through a regular file or a loop of links among them, or whose name the host cannot take, `Io.Invalid`, answers 404. One that leads to a directory and did not ask for one answers 301 with no body and `Location` the target's path as written, without its query, its leading `/`s made one, with `/` appended. A directory asked for is served as its `index.html`, and answers 404 where that is no regular file. A regular file is served where the path did not ask for a directory; anything else answers 404.
 
@@ -167,7 +164,9 @@ Connection.serve : (Address(Tcp.SocketMsg), Server, Address(Told)) -> Unit recei
 
 **Reading.** Where no bytes were carried past the last head, the connection waits for the next request's first bytes within the idle deadline, `timeouts.idle`, and closes the connection without a response, and without a line, where none come, the client closes or the read fails. It then reads the head, `Http.readRequest` with the bytes carried and the limits `limits.request-line` and `limits.headers`, within the head deadline, `timeouts.head`. A head that does not end in time answers 408; a `Malformed` head 400, `LineTooLong` 414 and `HeadersTooLarge` 431; a client that closes before the head ends, or a read that fails otherwise, ends the connection without a response and without a line. Each response of this paragraph closes the connection.
 
-**The request.** In this order: a version other than 1.0 and 1.1 answers 505; a 1.1 request without `Host`, and a request with two `Host` headers, answers 400; a request with `Transfer-Encoding` answers 413; one with `Content-Length` whose values are not one decimal number, each value digits alone and every value the same number, answers 400, above 0 answers 413, and 0 has no body. Each of these closes the connection, its body dropped for a `HEAD` as `Static.withoutBody` drops it, §5. Any other request is answered as its host decides, `Hosts.decide`, §9, and where that is `Served`: by the shell, §11, where the server has sessions and the target's path as written, `Static.pathAndQuery` up to its first `?`, is `shell.path`; by the client, §14, where the server has sessions and that path is `shell.client`; else by `Static.serve`, each read of the file system within `timeouts.file`.
+**The request.** In this order: a version other than 1.0 and 1.1 answers 505; a 1.1 request without `Host`, a request with two `Host` headers, and one whose `Host` `Config.host` reads as none, answers 400; a request with `Transfer-Encoding` answers 413; one with `Content-Length` whose values are not one decimal number, each value digits alone and every value the same number, answers 400, above 0 answers 413, and 0 has no body. Each of these closes the connection, its body dropped for a `HEAD` as `Static.withoutBody` drops it, §5.
+
+Any other request is answered as its host decides, `Hosts.decide`, §9, and where that is `Served`: by the shell, §11, where the server has sessions and the target's path as written, `Static.pathAndQuery` up to its first `?`, is `shell.path`; by the client, §14, where the server has sessions and that path is `shell.client`; else by `Static.serve`, each read of the file system within `timeouts.file`.
 
 **The upgrade.** A request of the shell's is answered as `Shell.handshake` says: a refusal with `Static.error` of its status and the refusal's headers added, closing the connection; the 101 written as any response, told to the log with the size 0 and to the listener as `Upgraded` with the shell's address, after which the connection runs `Shell.serve` with the bytes after the head and the cookie, and closes when it returns.
 
@@ -217,15 +216,15 @@ AccessLog.line : (LogMsg) -> Optional(String) // an Entry's line, without its li
 
 ```
 type Answer = Served | Answered(#(Http.Response, Bytes))
-Hosts.host : (Http.Request) -> Optional(String) // the request's host, its port dropped; None where the request names none
+Hosts.host : (Http.Request) -> Optional(String) // the request's host, as Uri.Authority holds it; None where the request names none
 Hosts.decide : (Config.Config, Optional(Static.Site), Http.Request, Int) -> Answer
 ```
 
-**The host.** A request's host is the authority of a target in absolute form, `Static.authority`, and otherwise its first `Host` header's value; a request whose target is not in absolute form and that has no `Host` header names none. The port is dropped, `Config.withoutPort`: a `:` at the host's end, after its last `]` where it holds one, with the digits after it, none among them; any other tail stands. A host is compared with the configuration's `canonical-host` and `redirect-hosts`, their ports dropped the same, in any case.
+**The host.** A request's host is the host of its target's authority, where `Http.target` reads one, whether or not it names userinfo, and otherwise the host `Config.host` reads from its first `Host` header; a request of which neither reads one names none. It is compared with the hosts `Config.host` reads from the configuration's `canonical-host` and `redirect-hosts`, in any case.
 
 **The answer.** In this order: a request whose host is neither the canonical host nor a redirect host answers 421, a request that names none being the canonical host's. On the redirect listener, a request whose target's path and query, `Static.pathAndQuery`, begins with `/.well-known/acme-challenge/` is served by `Static.serve` from the challenge site, the target from after `/.well-known/acme-challenge`, a 301 it answers being 404 instead, since a challenge is a file; every other request answers 301. On another listener, a redirect host's request answers 301, and the canonical host's is `Served`. The challenge site is `Static.site` of the directory `acme-challenge` names and its `.well-known/acme-challenge` below it, with the configuration's content types, so that the directory is what certbot's `--webroot-path` is given.
 
-**The 301.** Its `Location` is `https://`, the canonical host as the configuration writes it, and the target's path and query as written; it has no body. A target of another form answers 400 instead, as §5 answers it. The 421 is `Static.error`'s. A `HEAD`'s response is the `GET`'s with its body dropped, as `Static.withoutBody` makes it; the connection is kept or closed after any response of this section as §6 has it for a served request.
+**The 301.** Its `Location` is `https://`, the canonical host as the configuration writes it, and the target's path and query, `Static.pathAndQuery`; it has no body. A target of another form answers 400 instead, as §5 answers it. The 421 is `Static.error`'s. A `HEAD`'s response is the `GET`'s with its body dropped, as `Static.withoutBody` makes it; the connection is kept or closed after any response of this section as §6 has it for a served request.
 
 ## 10. The WebSocket
 
@@ -267,7 +266,7 @@ Shell.serve : (Address(Tcp.SocketMsg), Bytes, Sessions.Sessions, String, String,
 
 **The handshake.** In this order: a method other than `GET` is refused 405 with `Allow: GET`; a version other than 1.1, a request whose `Upgrade` values do not list `websocket` or whose `Connection` values do not list `Upgrade`, the values parted at commas, trimmed and compared in any case, or whose `Sec-WebSocket-Version` is not one header `13`, is refused 426 with `Upgrade: websocket` and `Sec-WebSocket-Version: 13`; a request whose `Origin` is not one header among `shell.origins` as written is refused 403; one without one `Sec-WebSocket-Key` whose value is 16 bytes in base64 is refused 400. The rest is accepted: the 101 carries `Upgrade: websocket`, `Connection: Upgrade`, `Sec-WebSocket-Accept`, `WebSocket.accept` of the key, and, where the request carried no cookie, `Set-Cookie` of `shell=`, the cookie, `; Path=`, `shell.path`, and `; Secure; HttpOnly; SameSite=Strict`.
 
-**The cookie.** The request's cookie is the value of the first member `shell` of its `Cookie` headers, their pairs parted at `;` and trimmed, whose value is 32 lower-case hexadecimal digits; a request without one is given 16 bytes of `Crypto.randomBytes` in lower-case hexadecimal.
+**The cookie.** The request's cookie is the value of the first cookie `shell` of its `Cookie` headers, `Http.cookies`, whose value is 32 lower-case hexadecimal digits; a request without one is given 16 bytes of `Crypto.randomBytes` in lower-case hexadecimal.
 
 **The reader.** The shell spawns the reader, monitored, which reads the socket in rounds of the idle deadline, `Tcp.read` within `timeouts.idle`, `carried` first, decodes what it reads with `WebSocket.decoder(FromClient, shell.message-limit)`, and tells the shell each message, `Received`, a round that read nothing, `Idle`, an error, `Failed`, and the connection's close or a read that fails otherwise, `Closed`; it reads on after a message and after `Idle`, and returns after the other two. The shell waits on its mailbox alone and writes the socket itself, each frame `WebSocket.encode`, within the write deadline, `timeouts.write`; a write that fails or does not end in time closes the connection.
 
@@ -410,7 +409,7 @@ The names that recur across modules, one for each concept, in every module. A na
 - **rule**: what a field's value must be, written as the table of §4 writes it, which an `Invalid` carries. Not `check`, `constraint`.
 - **site**: the root and the content types a request for a file is served from, `Static.Site`, §5.
 - **root**: the directory the site's files stand under, §5. Not `docroot`, `base`.
-- **target**: a request's target as the client wrote it, `Http.Request`'s; its **path** is the target's path, decoded and split into **segments**, §5.
+- **target**: a request's target as the client wrote it, `Http.Request`'s, read by `Http.target`; its **path** is the target's path, split into **segments**, each decoded, §5.
 - **response**: an `Http.Response` with its body beside it, `#(Http.Response, Bytes)`, as `Static.serve` answers it and `Http.renderResponse` takes it, §5. Not `reply`, which is the prelude's.
 - **table**: the content types by extension, the built-in table extended by the configuration's, §5. Not `mimeTypes`.
 - **server**: what every connection of a listener shares, `Connection.Server`: the configuration, the site, the redirect listener's challenge site, the access log's address and the sessions, §6.
@@ -419,7 +418,7 @@ The names that recur across modules, one for each concept, in every module. A na
 - **deadline**: a time of the configuration's a wait is bounded by, the idle, head, write and file deadlines, `timeouts`, §4, §6. Not `timeout`, which is the library's `Io.Timeout`.
 - **remote address**: the host of a connection's far end, `Tcp.remote`'s, by which connections are capped and logged, §7, §8. Not `peer`, which is the report's.
 - **entry**: what a connection tells the access log of one response, `AccessLog.Entry`, written as a line, §8.
-- **host**: a request's host, its `Host` header's value or an absolute-form target's authority, its port dropped, §9; the **canonical host** is the configuration's `canonical-host`, served, and a **redirect host** one of its `redirect-hosts`, answered 301. Not `domain`, `vhost`.
+- **host**: a request's host, the host of its target's authority or, `Config.host`, of its `Host` header, §9; the **canonical host** is the configuration's `canonical-host`, served, and a **redirect host** one of its `redirect-hosts`, answered 301. Not `domain`, `vhost`.
 - **challenge**: the ACME challenge's files, served from the redirect listener's challenge site, `Static.Site` of its directory's `.well-known/acme-challenge`, §9. Not `webroot`.
 - **message**: what one side of a WebSocket sends whole, `WebSocket.Message`, a text or a binary message, a ping, a pong or a close, decoded from its frames, §10. Not `frame`, which is the wire's.
 - **shell**: a connection after its upgrade on the shell's path, `shell.path`, and its process, §11; `shell` is the configuration's object for it, §4. Not `terminal`, `socket`.

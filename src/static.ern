@@ -8,8 +8,8 @@
 /// the response before it writes it. `error` is the response of a status
 /// the connection answers itself, `methodNotAllowed` the one of a method it
 /// does not serve, and `withoutBody` makes either a `HEAD`'s.
-/// `pathAndQuery` and `authority` read a target as `serve` reads it, for
-/// what a request's host decides before the site serves it (design §9).
+/// `pathAndQuery` reads a target as `serve` reads it, for what a
+/// request's host decides before the site serves it (design §9).
 ///
 /// `serve` reads the file system for each request, each read bounded by the
 /// milliseconds given, and keeps nothing between requests: a file changed
@@ -20,11 +20,7 @@
 /// A method other than `GET` and `HEAD` is answered 405, its body plain text:
 ///
 /// ```ernest
-/// let request =
-///     Http.Request(method = "POST",
-///                  target = "/",
-///                  version = Http.Version(major = 1, minor = 1),
-///                  headers = []);
+/// let request = Http.Request(method = "POST", target = "/", version = Http.http11, headers = []);
 /// let #(response, body) = Static.serve(Static.site(Path("site"), Map.empty), request, 1000);
 /// #(response.status, response.headers, String.fromUtf8(body))
 /// // => #(405, [Http.Header(name = "Allow", value = "GET, HEAD"), Http.Header(name = "Content-Type", value = "text/plain; charset=utf-8")], Some("405 Method Not Allowed\n"))
@@ -95,11 +91,7 @@ export fn site(root : Path, contentTypes : Map(String, String)) : Site =
 /// A target of no form a server reads is answered 400:
 ///
 /// ```ernest
-/// let request =
-///     Http.Request(method = "GET",
-///                  target = "*",
-///                  version = Http.Version(major = 1, minor = 1),
-///                  headers = []);
+/// let request = Http.Request(method = "GET", target = "*", version = Http.http11, headers = []);
 /// let #(response, _) = Static.serve(Static.site(Path("site"), Map.empty), request, 1000);
 /// response.status
 /// // => 400
@@ -134,8 +126,7 @@ export let methodNotAllowed : #(Http.Response, Bytes) = {
 /// ### Examples
 ///
 /// ```ernest
-/// let ok =
-///     Http.Response(version = Http.Version(major = 1, minor = 1), status = 200, headers = []);
+/// let ok = Http.Response(version = Http.http11, status = 200, headers = []);
 /// Static.withoutBody(#(ok, <<104, 105>>))
 /// // => #(Http.Response(version = Http.Version(major = 1, minor = 1), status = 200, headers = [Http.Header(name = "Content-Length", value = "2")]), <<>>)
 /// ```
@@ -148,7 +139,7 @@ export fn withoutBody(#(response, body) : #(Http.Response, Bytes)) : #(Http.Resp
     }
 
 fn get(site : Site, request : Http.Request, ms : Int) : #(Http.Response, Bytes) =
-    match asked(request.target) {
+    match asked(request) {
         Left(status) ->
             error(site, status, ms)
       | Right(Asked(=written, =segments, =asksDirectory)) -> {
@@ -226,27 +217,24 @@ fn refused(path : Path, cause : Io.Error) : #(Http.Response, Bytes) = {
 // The target
 //
 
-// What a target asks for: its path as written, without its query; the
-// segments it names under the root; and whether it asks for a directory.
+// What a target asks for: its path as written; the segments it names under
+// the root; and whether it asks for a directory.
 type Asked = Asked(written : String, segments : List(String), asksDirectory : Bool)
 
-// The target read, its path decoded and split into segments, or the status
-// it is refused with: 400, or 404 for a segment that begins with a dot.
-fn asked(target : String) : Either(Int, Asked) = {
-    let written <- Either.fromOptional(writtenPath(target), 400);
-    let decoded <- Either.fromOptional(percentDecoded(String.toUtf8(written), <<>>), 400);
-    let parts <- List.tryMap(Bytes.split(decoded, slash), segment);
+// The target read, its path split into segments and each decoded, or the
+// status it is refused with: 400, or 404 for a segment that begins with a
+// dot.
+fn asked(request : Http.Request) : Either(Int, Asked) = {
+    let reference <- Either.fromOptional(form(request), 400);
+    let written = reference.path;
+    let parts <- List.tryMap(String.split(written, "/"), segment);
     let segments = List.filter(parts, fn(part) = part != "" && part != ".");
     let _ <- if List.contains(segments, "..") then Left(400) else Right(Unit);
     let _ <- if List.any(segments, beginsWithDot) then Left(404) else Right(Unit);
     Right(Asked(=written,
                 =segments,
-                asksDirectory = Bytes.endsWith(decoded, slash) || List.isEmpty(segments)))
+                asksDirectory = String.endsWith(written, "/") || List.isEmpty(segments)))
 }
-
-// The byte `/`, at which a decoded path is split: by bytes, since a string
-// is split by graphemes, and a `/` a combining mark follows is one with it.
-let slash : Bytes = <<47>>
 
 // Whether a segment's first code point is `.`, a combining mark after it
 // or not.
@@ -256,136 +244,61 @@ fn beginsWithDot(part : String) : Bool =
       | _ -> false
     }
 
-/// The target from its path on, its query among it, as the client wrote
-/// it: an origin-form target whole, and an absolute-form one after its
-/// scheme and its authority, `/` standing for an empty path; `None` for a
-/// target of another form, which `serve` answers 400.
+/// The target's path and, where it has a query, `?` and the query, as the
+/// client wrote them, `/` standing for an absolute-form target's empty
+/// path; `None` for a target of another form, which `serve` answers 400.
 ///
-/// The target is read by code point, as `Path` reads a path.
+/// The target is read by `Http.target`, in origin form, a path that
+/// begins with `/`, or in absolute form, a scheme and an authority that
+/// names no userinfo.
 ///
 /// ### Examples
 ///
 /// ```ernest
-/// #(Static.pathAndQuery("/docs?page=2"),
-///   Static.pathAndQuery("http://ernest-lang.org?q=1"),
-///   Static.pathAndQuery("*"))
+/// let get =
+///     fn(target) = Http.Request(method = "GET", =target, version = Http.http11, headers = []);
+/// #(Static.pathAndQuery(get("/docs?page=2")),
+///   Static.pathAndQuery(get("http://ernest-lang.org?q=1")),
+///   Static.pathAndQuery(get("*")))
 /// // => #(Some("/docs?page=2"), Some("/?q=1"), None)
 /// ```
-export fn pathAndQuery(target : String) : Optional(String) =
-    Optional.map(form(target), fn(read) = read.pathAndQuery)
+export fn pathAndQuery(request : Http.Request) : Optional(String) =
+    Optional.map(form(request),
+                 fn(reference) =
+                     reference.path
+                         <> Optional.withDefault(Optional.map(reference.query,
+                                                              fn(query) = "?" <> query),
+                                                 ""))
 
-/// The authority of a target in absolute form, between its scheme's `://`
-/// and the next `/` or `?`, as the client wrote it, its port among it;
-/// `None` for a target of another form, origin form among them.
-///
-/// ### Examples
-///
-/// ```ernest
-/// #(Static.authority("http://ernest-lang.org:80/docs"), Static.authority("/docs"))
-/// // => #(Some("ernest-lang.org:80"), None)
-/// ```
-export fn authority(target : String) : Optional(String) =
-    Optional.andThen(form(target), fn(read) = read.authority)
-
-// A target read in origin form or in absolute form: its authority, None in
-// origin form, and its path and query as written, `/` standing for an
-// absolute-form target's empty path.
-type Form = Form(authority : Optional(String), pathAndQuery : String)
-
-// The target read in its form, by code point, as its `/`, `:` and `?` are
-// written; None for a target of another form.
-fn form(target : String) : Optional(Form) =
-    match String.toList(target) {
-        '/' :: _ ->
-            Some(Form(authority = None, pathAndQuery = target))
-      | chars -> {
-            let #(scheme, rest) = List.span(chars, fn(char) = char != ':');
-            match rest {
-                ':' :: '/' :: '/' :: afterScheme when isScheme(scheme) -> {
-                    let #(authority, path) =
-                        List.span(afterScheme, fn(char) = char != '/' && char != '?');
-                    Some(Form(authority = Some(String.fromList(authority)),
-                              pathAndQuery = rooted(path)))
-                }
-              | _ ->
-                    None
-            }
-        }
-    }
-
-// An absolute-form target's path and query, `/` before a query or nothing,
-// where the path is empty.
-fn rooted(chars : List(Char)) : String =
-    match chars {
-        '/' :: _ -> String.fromList(chars)
-      | _ -> "/" <> String.fromList(chars)
-    }
-
-// The target's path as written, without its query; None for a target of
-// another form.
-fn writtenPath(target : String) : Optional(String) =
-    Optional.map(pathAndQuery(target), fn(written) = beforeQuery(String.toList(written)))
-
-// The characters up to the first `?`.
-fn beforeQuery(chars : List(Char)) : String = {
-    let #(path, _) = List.span(chars, fn(char) = char != '?');
-    String.fromList(path)
-}
-
-// A scheme, RFC 3986's: a letter, then letters, digits, `+`, `-` and `.`.
-fn isScheme(chars : List(Char)) : Bool =
-    match chars {
-        first :: rest ->
-            isAsciiLetter(first)
-                && List.all(rest,
-                            fn(char) =
-                                isAsciiLetter(char)
-                                    || Char.isAsciiDigit(char)
-                                    || char == '+'
-                                    || char == '-'
-                                    || char == '.')
-      | [] ->
-            false
-    }
-
-fn isAsciiLetter(char : Char) : Bool = {
-    let codePoint = Char.toCodePoint(char);
-    codePoint >= 65 && codePoint <= 90 || codePoint >= 97 && codePoint <= 122
-}
-
-// The bytes the path writes, each `%` and two hexadecimal digits the byte
-// they write; None for `%2F` in either case, and for a `%` not followed by
-// two hexadecimal digits.
-fn percentDecoded(bytes : Bytes, acc : Bytes) : Optional(Bytes) =
-    match bytes {
-        <<37, high, low, rest:bytes>> -> {
-            let byte <- hexadecimal(high, low);
-            if byte == 47 then None else percentDecoded(rest, <<acc:bytes, byte>>)
-        }
-      | <<37, _:bytes>> ->
-            None
-      | <<byte, rest:bytes>> ->
-            percentDecoded(rest, <<acc:bytes, byte>>)
+// The target read by Http.target in origin form, no scheme and no
+// authority before a path that begins with `/`, or in absolute form, a
+// scheme and an authority that names no userinfo, its path `/` where it is
+// empty; None for a target of another form.
+fn form(request : Http.Request) : Optional(Uri.Reference) =
+    match Http.target(request) {
+        Some(Uri.Reference(scheme = None,
+                           authority = None,
+                           =path) as reference) when String.startsWith(path, "/") ->
+            Some(reference)
+      | Some(Uri.Reference(scheme = Some(_),
+                           authority = Some(Uri.Authority(userinfo = None)),
+                           =path) as reference) ->
+            Some(Uri.Reference(..reference, path = if path == "" then "/" else path))
       | _ ->
-            Some(acc) // the end of the bytes
+            None
     }
 
-// The byte two hexadecimal digits write, each digit given as its byte.
-fn hexadecimal(high : Int, low : Int) : Optional(Int) = {
-    let highValue <- digit(high);
-    let lowValue <- digit(low);
-    Some(highValue * 16 + lowValue)
-}
-
-fn digit(byte : Int) : Optional(Int) =
-    Optional.andThen(Char.fromCodePoint(byte), fn(char) = Char.digitValue(char, 16))
-
-// A decoded segment as text: refused with 400 where it is not UTF-8 or
-// holds a control character.
-fn segment(bytes : Bytes) : Either(Int, String) = {
+// A segment decoded, as text: refused with 400 where it holds `/`, is not
+// UTF-8 or holds a control character.
+fn segment(written : String) : Either(Int, String) = {
+    let bytes <- Either.fromOptional(Uri.decode(written), 400);
+    let _ <- if Bytes.contains(bytes, slash) then Left(400) else Right(Unit);
     let text <- Either.fromOptional(String.fromUtf8(bytes), 400);
     if List.any(String.toList(text), isControl) then Left(400) else Right(text)
 }
+
+// The byte `/`, which a decoded segment holds where the target wrote `%2F`.
+let slash : Bytes = <<47>>
 
 fn isControl(char : Char) : Bool = {
     let codePoint = Char.toCodePoint(char);
@@ -431,7 +344,7 @@ fn plain(status : Int) : #(Http.Response, Bytes) =
 
 // A response of HTTP/1.1.
 fn response(status : Int, headers : List(Http.Header)) : Http.Response =
-    Http.Response(version = Http.Version(major = 1, minor = 1), =status, =headers)
+    Http.Response(version = Http.http11, =status, =headers)
 
 fn header(name : String, value : String) : Http.Header =
     Http.Header(=name, =value)
@@ -486,7 +399,7 @@ type Check = Check(site : Site, request : Http.Request, expected : Answer)
 type Answer = Answer(status : Int, headers : List(Http.Header), body : Optional(String))
 
 fn request(method : String, target : String, headers : List(Http.Header)) : Http.Request =
-    Http.Request(=method, =target, version = Http.Version(major = 1, minor = 1), =headers)
+    Http.Request(=method, =target, version = Http.http11, =headers)
 
 // A GET of the target, and the answer expected.
 fn getting(site : Site, target : String, expected : Answer) : Check =
@@ -561,9 +474,8 @@ let servesDirectories =
 // design §5: a path that leads nowhere is answered with the root's
 // 404.html where there is one, and plain text where there is none: a name
 // that is not there, a path through a regular file, a loop of links, and a
-// name longer than the host holds; a segment that begins with a combining
-// mark is a name under the root, the `/` before it splitting the path
-// though a string holds the two as one grapheme.
+// name longer than the host holds; and a segment that is a combining mark,
+// written `%CC%81`, is a name under the root.
 let answersNotFound =
     Test.Case(name = "answers a path that leads nowhere",
               run = fn() =
@@ -575,8 +487,7 @@ let answersNotFound =
                           getting(bare, "/loop", plainError(404)),
                           getting(bare, "/loop/a.txt", plainError(404)),
                           getting(bare, "/" <> String.repeat("a", 300), plainError(404)),
-                          getting(bare, "/%CC%81/a.txt", plainError(404)),
-                          getting(bare, "/\u{301}/a.txt", plainError(404))]))
+                          getting(bare, "/%CC%81/a.txt", plainError(404))]))
 
 // design §5: a method other than GET and HEAD answers 405 with Allow,
 // methodNotAllowed.
@@ -642,9 +553,11 @@ let answersUnmodified = Test.Case(name = "answers a file not modified since", ru
             since("yesterday", textFile("alpha"))])
 })
 
-// design §5: the path's rules that answer 400: a target of no form read,
-// an encoded `/`, a bad `%`, bytes that are not UTF-8, a control
-// character, and `..`, written or encoded.
+// design §5: the path's rules that answer 400: a target Http.target reads
+// as none, one holding a character RFC 3986 does not write among them, a
+// reference of another form, absolute form without an authority or naming
+// userinfo among them, an encoded `/`, a bad `%`, bytes that are not
+// UTF-8, a control character, and `..`, written or encoded.
 let refusesPaths =
     Test.Case(name = "refuses a bad path with 400",
               run = fn() =
@@ -654,6 +567,12 @@ let refusesPaths =
                                    "1http://ernest-lang.org/a.txt",
                                    "://ernest-lang.org/a.txt",
                                    "http:/ernest-lang.org/a.txt",
+                                   "http:a.txt",
+                                   "http://user@ernest-lang.org/a.txt",
+                                   "/a|b.txt",
+                                   "/\u{301}/a.txt",
+                                   "/a.txt?a[]=1",
+                                   "/a.txt#top",
                                    "/docs%2Findex.html",
                                    "/docs%2findex.html",
                                    "/%zz",
@@ -704,10 +623,11 @@ let readsAbsoluteForm =
                           getting(withPage, "web+x.1-2://ernest-lang.org/a.txt", textFile("alpha")),
                           getting(withPage, "http://ernest-lang.org/docs", redirect("/docs/"))]))
 
-// design §5: pathAndQuery answers the target from its path on, the query
-// among it: an origin-form target whole, an absolute-form one after its
-// scheme and its authority, `/` for its empty path, before a query or not;
-// and None for a target of another form.
+// design §5: pathAndQuery answers the target's path and query: an
+// origin-form target whole, an absolute-form one after its scheme and its
+// authority, `/` for its empty path, before a query or not; and None for a
+// target of another form, an OPTIONS's `*` and an authority that names
+// userinfo among them.
 let readsPathAndQuery =
     Test.Case(name = "reads a target's path and query",
               run = fn() =
@@ -717,13 +637,15 @@ let readsPathAndQuery =
                                        "http://ernest-lang.org/docs?page=2",
                                        "http://ernest-lang.org",
                                        "http://ernest-lang.org?q=/a.txt",
+                                       "HTTPS://ernest-lang.org:443/",
                                        "HTTPS://user@ernest-lang.org:443/",
                                        "*",
                                        "ernest-lang.org:443",
                                        "a.txt",
                                        "1http://ernest-lang.org/a.txt",
                                        "http:/ernest-lang.org/a.txt"],
-                                      pathAndQuery),
+                                      fn(target) = pathAndQuery(request("GET", target, [])))
+                                 <> [pathAndQuery(request("OPTIONS", "*", []))],
                              [Some("/"),
                               Some("/docs?page=2"),
                               Some("//docs/../a.txt?x=/y"),
@@ -734,31 +656,6 @@ let readsPathAndQuery =
                               None,
                               None,
                               None,
-                              None,
-                              None]))
-
-// design §5: authority answers an absolute-form target's authority as
-// written, up to the next `/` or `?`, its port among it, and an empty one
-// where it is empty; None for a target of another form, origin form among
-// them.
-let readsAuthority =
-    Test.Case(name = "reads a target's authority",
-              run = fn() =
-                  Test.equal(List.map(["http://ernest-lang.org/docs",
-                                       "http://Ernest-Lang.org:8080?q=1",
-                                       "http://[::1]:80/",
-                                       "web+x.1-2://user@ernest-lang.org",
-                                       "http:///a.txt",
-                                       "/docs",
-                                       "//ernest-lang.org/docs",
-                                       "*",
-                                       "ernest-lang.org:443"],
-                                      authority),
-                             [Some("ernest-lang.org"),
-                              Some("Ernest-Lang.org:8080"),
-                              Some("[::1]:80"),
-                              Some("user@ernest-lang.org"),
-                              Some(""),
                               None,
                               None,
                               None,

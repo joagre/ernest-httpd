@@ -10,7 +10,7 @@ Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The
 
 ## Milestone 2: after the first release
 
-What the first release's readers found and the milestone's own items, each a step with its log entry when built. Done: items 1 to 4, 6 and 7, the log's *Milestone 2, item 1: the refusal's form*, *Milestone 2, item 2: quiet tests*, *Milestone 2, items 3 and 4: the attach's word and a restart at the cap*, *Three cleanups* and *The code reader's findings*; item 9, the log's *Milestone 2, item 9: the reset under load*; and the two nodes in the visitor's container with a CPU cap, the log's *Two nodes and a core*.
+What the first release's readers found and the milestone's own items, each a step with its log entry when built. Done: items 1 to 4, 6 and 7, the log's *Milestone 2, item 1: the refusal's form*, *Milestone 2, item 2: quiet tests*, *Milestone 2, items 3 and 4: the attach's word and a restart at the cap*, *Three cleanups* and *The code reader's findings*; item 9, the log's *Milestone 2, item 9: the reset under load*; item 10, the log's *Milestone 2, item 10: the library's own*; and the two nodes in the visitor's container with a CPU cap, the log's *Two nodes and a core*.
 
 ### Now, on Ernest's 0.10.0
 
@@ -34,8 +34,6 @@ The build is done (the log's *Milestone 2, item 11: the shell client's build*).
 The server serves the client and answers the limits while it still speaks today's messages to the site as it stands, since this part adds and takes nothing away. Ernest's session was told so on 2026-11-10, and the rehearsal walked the switch with the client, item 5. Until the launch's switch, design §11's messages stay as Ernest's site speaks them, and a change to them is told to Ernest's session before it is built.
 
 Ernest's side is built against that rehearsal's server: the site's script calling the client, its generator taking no configuration, the shell page's numbers from the client's limits and a stub client in its browser test. Both go live in item 5's switch, the one day both repositories change, the client in the release made for it (Ernest's plan, its MVP 4.6 and its MVP 4.4's item 6; its log's *MVP 4.6 Before the Launch*).
-
-**Item 10, the library's own (2026-11-10).** 0.10.0's library holds what the program wrote for itself: `Http.target`, `Http.cookies` and `Http.cookie`, `Http.writeRequest`, `Http.http11` and `Http.defaultLimits` (Ernest's report, Appendix G.11), and `libs/uri`'s `Uri.parse`, `Uri.parseAuthority` and `Uri.decode` (G.12). `Static`, `Hosts`, `Config`, `Shell` and `Smoke` take them in place of their own, the design changing first where it states a rule the library now owns (the log's *Ernest 0.10.0*).
 
 **The four lines in the test run.** The four lines the design has the program say leave the run, captured by `Test.capture`, Ernest's 225, which 0.10.0 carries (Appendix E.24; the log's *Milestone 2, item 2: quiet tests*).
 
