@@ -4,7 +4,7 @@ The examples, by topic: what each shows and how it is run. There is one, a site.
 
 ## The site
 
-`examples/site/` is a small site with its configuration, `examples/site/config.json`, which `make run` serves on localhost over plain HTTP. Its pages stand under `root/`: a home page with two pictures, a second page, a guide in a directory of its own, the page for a path that leads nowhere, `404.html`, and the shell page, `shell.html`, a terminal in the browser over the server's WebSocket. Its paths are relative, and name files under the checkout, from which it runs.
+`examples/site/` is a small site with its configuration, `examples/site/config.json`, which `make run` serves on localhost over plain HTTP. Its pages stand under `root/`: a home page with two pictures, a second page, a guide in a directory of its own, the page for a path that leads nowhere, `404.html`, and the shell page, `shell.html`, a terminal in the browser over the server's client, which its script, `shell.js`, imports from the configuration's `shell.client`, `/shell/client.js`, and whose limits write the page's sentence on a session's life. Its paths are relative, and name files under the checkout, from which it runs.
 
 The configuration has two listeners on 127.0.0.1: the plain one on port 8080, which serves the site and the shell, and the redirect one on 8081, which answers 301 to `https://localhost/` and serves the ACME challenge from `acme/`. It serves the host `localhost` and redirects `www.localhost`. Every response carries `X-Content-Type-Options: nosniff` and a `Content-Security-Policy` that admits the site's own scripts and styles, the WebSocket back to it, and the inline styles xterm.js writes as it draws the terminal.
 
@@ -20,7 +20,7 @@ builds the server, fetches xterm.js and its fit addon into `root/xterm/` the fir
 
 The example's shell is `ern shell` run as the server's own user, with no container around it: it is for a look at one's own machine over localhost, and never for the internet, where the site's command starts a podman container instead.
 
-Open http://localhost:8080 in a browser, and not http://127.0.0.1:8080: the configuration serves the host `localhost` alone and answers another 421, the shell takes the origin `http://localhost:8080` alone, and the shell's cookie is `Secure`, which a browser keeps from `localhost` over plain HTTP as from a site over TLS. The pages link each other, and the shell page's Stop ends the session, Restart starts a new one, and the status line says why a connection closed.
+Open http://localhost:8080 in a browser, and not http://127.0.0.1:8080: the configuration serves the host `localhost` alone and answers another 421, the shell takes the origin `http://localhost:8080` alone, and the shell's cookie is `Secure`, which a browser keeps from `localhost` over plain HTTP as from a site over TLS. The pages link each other, and the shell page's Stop ends the session, Restart starts a new one, and the status line says why the session ended.
 
 ## What curl shows
 
@@ -56,6 +56,10 @@ curl -i http://localhost:8081/about.html
 
 # the challenge's file on the redirect listener: 200, the key authorization
 curl -i http://localhost:8081/.well-known/acme-challenge/LoqXcYV8q5ONbJQxbmR7SCTNo3tiAXDfowyjxAjEuX0
+
+# the client: 200 with Content-Type: text/javascript; charset=utf-8 and
+# Cache-Control: no-store, the module whose head is the shell's path and limits
+curl -i http://localhost:8080/shell/client.js
 
 # the shell's path without an upgrade: 426 with Upgrade: websocket
 curl -i http://localhost:8080/shell/session

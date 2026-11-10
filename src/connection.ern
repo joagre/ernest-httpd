@@ -6,7 +6,8 @@
 /// server does not serve, a version, a host, a body, and answers the rest as
 /// its host decides, `Hosts.decide`, from the static site where the host is
 /// served, or by the shell where the server has sessions and the target's
-/// path is the shell's. Every response carries `Date` and the
+/// path is the shell's, and by the client, `Client.serve`, where it is the
+/// client's (design §14). Every response carries `Date` and the
 /// configuration's headers, and is written within the write deadline; the
 /// connection is kept for the next request, the bytes after the head
 /// carried over, or closed, as HTTP/1.1 and HTTP/1.0 have it.
@@ -56,6 +57,10 @@ type Connection =
                server : Server,
                listener : Address(Told),
                remote : String)
+
+// Where a request its host serves goes: to the shell, with the sessions,
+// to the client, with the shell's configuration, or to the site.
+type Route = ByShell(Sessions.Sessions) | ByClient(Config.Shell) | BySite
 
 // What a connection does after a response: it reads the next request with
 // the bytes after the head carried, it closes, or after a 101 it is the
@@ -132,8 +137,8 @@ fn unread(connection : Connection, status : Int) : Unit receiving Shell.ShellMsg
 }
 
 // The request refused, or answered as its host decides, and where its
-// host is served, by the shell on the shell's path where the server has
-// sessions and otherwise from the site.
+// host is served, by the shell on the shell's path and by the client on the
+// client's where the server has sessions, and otherwise from the site.
 fn answered(connection : Connection,
             request : Http.Request,
             rest : Bytes) : Unit receiving Shell.ShellMsg = {
@@ -149,10 +154,12 @@ fn answered(connection : Connection,
       | None ->
             match Hosts.decide(server.config, server.challenge, request, ms) {
                 Hosts.Served ->
-                    match shellOf(server, request) {
-                        Some(sessions) ->
+                    match routed(server, request) {
+                        ByShell(sessions) ->
                             upgraded(connection, request, rest, sessions)
-                      | None ->
+                      | ByClient(shell) ->
+                            responded(connection, Some(request), Client.serve(shell, request), next)
+                      | BySite ->
                             responded(connection,
                                       Some(request),
                                       Static.serve(server.site, request, ms),
@@ -164,14 +171,22 @@ fn answered(connection : Connection,
     }
 }
 
-// The sessions where the server has them and the target's path as written,
-// up to its first `?`, is the shell's path; None otherwise.
-fn shellOf(server : Server, request : Http.Request) : Optional(Sessions.Sessions) =
+// Where the request goes, where the server has sessions, by the target's
+// path as written, up to its first `?`: the shell at the shell's path and
+// the client at the client's; the site otherwise.
+fn routed(server : Server, request : Http.Request) : Route =
     match #(server.sessions, Static.pathAndQuery(request.target)) {
-        #(Some(sessions), Some(target)) ->
-            if pathOf(target) == sessions.shell.path then Some(sessions) else None
+        #(Some(sessions), Some(target)) -> {
+            let path = pathOf(target);
+            if path == sessions.shell.path then
+                ByShell(sessions)
+            else if path == sessions.shell.client then
+                ByClient(sessions.shell)
+            else
+                BySite
+        }
       | _ ->
-            None
+            BySite
     }
 
 // A target's path and query up to its first `?`.
@@ -527,7 +542,8 @@ fn exchanged(client : Address(Tcp.SocketMsg),
     Right(List.reverse(answers))
 }
 
-// A response read from the client's socket, and the bytes after it.
+// A response read from the client's socket, its body of at most 64 KiB, and
+// the bytes after it.
 fn received(client : Address(Tcp.SocketMsg),
             carried : Bytes,
             method : String) : Either(String, #(Answer, Bytes)) = {
@@ -537,7 +553,7 @@ fn received(client : Address(Tcp.SocketMsg),
     let #(body, beyond) <- if method == "HEAD" then
         Right(#(<<>>, rest))
     else
-        Either.mapLeft(Http.readResponseBody(client, rest, response, 4096, 5000), Io.show);
+        Either.mapLeft(Http.readResponseBody(client, rest, response, 65536, 5000), Io.show);
     Right(#(Answer(status = response.status,
                    headers = List.map(response.headers, dated),
                    body = String.fromUtf8(body)),
@@ -897,7 +913,8 @@ let withShell : String =
     String.replace(configuration(5000, 5000),
                    "/access.log\"}\n",
                    "/access.log\",\n"
-                       <> " \"shell\": {\"path\": \"/shell\", \"origins\": [\"http://localhost\"],\n"
+                       <> " \"shell\": {\"path\": \"/shell\", \"client\": \"/shell/client.js\",\n"
+                       <> "           \"origins\": [\"http://localhost\"],\n"
                        <> "           \"command\": [\"cat\"], \"most-at-once\": 2,\n"
                        <> "           \"starts\": {\"count\": 10, \"within\": 60000},\n"
                        <> "           \"lifetime\": 60000, \"warning\": 30000,\n"
@@ -1048,4 +1065,62 @@ let upgrades = Test.Case(name = "upgrades a request on the shell's path", run = 
                  Right(#([plain(404, [closing, length("404 Not Found\n")])],
                          "closed",
                          ["127.0.0.1 GET /shell HTTP/1.1 404 14"]))))
+})
+
+// design §6, §14: where the server has sessions, a request on the client's
+// path, its query aside, is answered by the client, the module after the
+// configuration's headers, with its type and no-store, and a method other
+// than GET and HEAD with Static.methodNotAllowed, the connection kept after
+// the one and closed after the other as asked, each told to the log.
+// Without sessions the path is the site's.
+let servesTheClient = Test.Case(name = "serves the client on its path", run = fn() = {
+    let result = {
+        let server <- serverOf(withShell);
+        let sessions <- Either.fromOptional(server.sessions, "the server has no sessions");
+        let #(_, module) = Client.serve(sessions.shell, request("GET", "/shell/client.js", 1, []));
+        let client <- connectedTo(server);
+        let answers <-
+            exchanged(client,
+                      [request("GET", "/shell/client.js?v=1", 1, [host]),
+                       request("POST", "/shell/client.js", 1, [host, closing])]);
+        let end = next(client);
+        let #(entries, _) = told(2);
+        let stopped = Address.call(sessions.address, Sessions.Stop, 5000) == Some(Unit);
+        Right(#(answers, end, entries, stopped, String.fromUtf8(module)))
+    };
+    let notAllowed = "405 Method Not Allowed\n";
+    match result {
+        Right(#(answers, end, entries, stopped, Some(module))) -> {
+            let size = Int.toString(Bytes.size(String.toUtf8(module)));
+            Test.equal(#(answers,
+                         end,
+                         entries,
+                         stopped,
+                         once([request("GET", "/shell/client.js", 1, [host, closing])])),
+                       #([Answer(status = 200,
+                                 headers = first
+                                     <> [header("Content-Type", "text/javascript; charset=utf-8"),
+                                         header("Cache-Control", "no-store"),
+                                         header("Content-Length", size)],
+                                 body = Some(module)),
+                          Answer(status = 405,
+                                 headers = first
+                                     <> [header("Allow", "GET, HEAD"),
+                                         textType,
+                                         closing,
+                                         length(notAllowed)],
+                                 body = Some(notAllowed))],
+                         "closed",
+                         ["127.0.0.1 GET /shell/client.js?v=1 HTTP/1.1 200 " <> size,
+                          "127.0.0.1 POST /shell/client.js HTTP/1.1 405 23"],
+                         true,
+                         Right(#([plain(404, [closing, length("404 Not Found\n")])],
+                                 "closed",
+                                 ["127.0.0.1 GET /shell/client.js HTTP/1.1 404 14"]))))
+        }
+      | Right(_) ->
+            Test.Failed("the client's module is not UTF-8")
+      | Left(failure) ->
+            Test.Failed(failure)
+    }
 })

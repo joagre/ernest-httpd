@@ -221,6 +221,7 @@ fn startedWith(command : List(String),
                count : Int,
                within : Int) : Sessions =
     start(Config.Shell(path = "/shell",
+                       client = "/shell/client.js",
                        origins = ["http://localhost"],
                        =command,
                        =mostAtOnce,

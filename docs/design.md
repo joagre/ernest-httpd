@@ -4,7 +4,7 @@ How the program is arranged, stated as rules: its processes and what each owns, 
 
 ## 1. What the program does
 
-ernest-httpd serves one site, ernest-lang.org: its static pages, and one WebSocket per visitor that connects a terminal in the browser to a shell in a container on the server. It implements what that needs of HTTP/1.1 and WebSocket, and nothing more. It is configured by one file, §4, runs as §2 says, and serves the site, §5 to §9, and the shell, §10 to §12; §13 is its deployment. It leaves out of HTTP/1.1 a request's body, chunked responses, ranges, `ETag`, `Cache-Control`, content negotiation, compression, trailers and every version but 1.0 and 1.1, §6; and of WebSocket its extensions and its subprotocols, §10.
+ernest-httpd serves one site, ernest-lang.org: its static pages, and one WebSocket per visitor that connects a terminal in the browser to a shell in a container on the server. It implements what that needs of HTTP/1.1 and WebSocket, and nothing more. It is configured by one file, §4, runs as §2 says, and serves the site, §5 to §9, the shell, §10 to §12, and the shell's client, §14; §13 is its deployment. It leaves out of HTTP/1.1 a request's body, chunked responses, ranges, `ETag`, `Cache-Control` but for the client's, content negotiation, compression, trailers and every version but 1.0 and 1.1, §6; and of WebSocket its extensions and its subprotocols, §10.
 
 ## 2. Processes
 
@@ -43,7 +43,8 @@ Each module has one job, which its doc block states.
 | `Shell` | `src/shell.ern` | a shell's life: the upgrade's handshake, and after the 101 the socket read through its reader, the session attached at the page's first resize, and the terminal's bytes and the messages carried both ways, §11 |
 | `Sessions` | `src/sessions.ern` | the sessions by cookie: a shell's attach passed to its session or a session started within the caps, and every session ended at the stop, §12 |
 | `Session` | `src/session.ern` | one session: its program under a terminal, read through its reader while a shell is attached, its deadline, and its end with a close code, §12 |
-| `Smoke` | `src/smoke.ern` | the smoke test: the checks run against a deployed site, the shell's where its configuration has a `shell`, each said on standard output, and run by the end-to-end test against the example site, and the client the checks and the end-to-end tests run with, §13 |
+| `Smoke` | `src/smoke.ern` | the smoke test: the checks run against a deployed site, the shell's where its configuration has a `shell`, each said on standard output, and run by the end-to-end test against the example site, and the requests the checks and the end-to-end tests run with, §13 |
+| `Client` | `src/client.ern` | the client: the module served at `shell.client`, the limits at its head, and its test in a browser, §14 |
 
 ## 4. The configuration
 
@@ -59,7 +60,7 @@ type Kind = Plain | Tls(certificate : Path, key : Path) | Redirect(acmeChallenge
 type Timeouts = Timeouts(head : Int, idle : Int, write : Int, file : Int) // milliseconds
 type Limits = Limits(requestLine : Int, headers : Int, connections : Int,
   connectionsPerAddress : Int) // bytes, bytes, counts
-type Shell = Shell(path : String, origins : List(String), command : List(String),
+type Shell = Shell(path : String, client : String, origins : List(String), command : List(String),
   mostAtOnce : Int, starts : Starts, lifetime : Int, warning : Int, messageLimit : Int, hangup : Int)
 type Starts = Starts(count : Int, within : Int) // within in milliseconds
 type Error = Unreadable(Io.Error) | NotJson(Json.Error) | Invalid(field : String, rule : String, value : Optional(String))
@@ -92,6 +93,7 @@ A string of the file, a member's name among them, breaks `hold no control charac
 | `access-log` | a string, a path | `stand in a directory that exists` |
 | `shell` | an object, or absent where no WebSocket is served | |
 | `shell.path` | a string | `begin with /` |
+| `shell.client` | a string, the client's path, §14 | `begin with /` and `not be shell.path` |
 | `shell.origins` | an array of strings | each `not be empty` |
 | `shell.command` | an array of strings | `not be empty`; the first is the program |
 | `shell.most-at-once` | an integer, a count | `be above 0` |
@@ -115,12 +117,13 @@ Static.site : (Path, Map(String, String)) -> Site // the root, and the built-in 
 Static.contentTypes : Map(String, String) // the built-in table
 Static.serve : (Site, Http.Request, Int) -> #(Http.Response, Bytes) // the response and its body
 Static.error : (Site, Int, Int) -> #(Http.Response, Bytes) // the response of the status, its body the error's
+Static.methodNotAllowed : #(Http.Response, Bytes) // a method other than GET and HEAD answered: 405 with Allow: GET, HEAD, its body the error's
 Static.withoutBody : (#(Http.Response, Bytes)) -> #(Http.Response, Bytes) // a HEAD's response of a GET's
 Static.pathAndQuery : (String) -> Optional(String) // a target's path and query as written; None for a target of another form
 Static.authority : (String) -> Optional(String) // the authority of a target in absolute form; None for a target of another form
 ```
 
-**The method.** `GET` and `HEAD` are served; any other method answers 405 with `Allow: GET, HEAD`. A `HEAD` request's response is the `GET`'s with its body dropped and, but for a 304, `Content-Length` the body's size, as `withoutBody` makes it.
+**The method.** `GET` and `HEAD` are served; any other method answers 405 with `Allow: GET, HEAD`, `methodNotAllowed`. A `HEAD` request's response is the `GET`'s with its body dropped and, but for a 304, `Content-Length` the body's size, as `withoutBody` makes it.
 
 **The path.** The target is read by code point, as `Path` reads a path, in origin form, the path up to the first `?`, or in absolute form, a scheme, RFC 3986's, a letter and then letters, digits, `+`, `-` and `.`, then `://`, an authority up to the next `/` or `?`, and the path up to the first `?`, `/` where the path is empty; the query is ignored. A target of another form answers 400.
 
@@ -164,7 +167,7 @@ Connection.serve : (Address(Tcp.SocketMsg), Server, Address(Told)) -> Unit recei
 
 **Reading.** Where no bytes were carried past the last head, the connection waits for the next request's first bytes within the idle deadline, `timeouts.idle`, and closes the connection without a response, and without a line, where none come, the client closes or the read fails. It then reads the head, `Http.readRequest` with the bytes carried and the limits `limits.request-line` and `limits.headers`, within the head deadline, `timeouts.head`. A head that does not end in time answers 408; a `Malformed` head 400, `LineTooLong` 414 and `HeadersTooLarge` 431; a client that closes before the head ends, or a read that fails otherwise, ends the connection without a response and without a line. Each response of this paragraph closes the connection.
 
-**The request.** In this order: a version other than 1.0 and 1.1 answers 505; a 1.1 request without `Host`, and a request with two `Host` headers, answers 400; a request with `Transfer-Encoding` answers 413; one with `Content-Length` whose values are not one decimal number, each value digits alone and every value the same number, answers 400, above 0 answers 413, and 0 has no body. Each of these closes the connection, its body dropped for a `HEAD` as `Static.withoutBody` drops it, §5. Any other request is answered as its host decides, `Hosts.decide`, §9, and where that is `Served`: by the shell, §11, where the server has sessions and the target's path as written, `Static.pathAndQuery` up to its first `?`, is `shell.path`; else by `Static.serve`, each read of the file system within `timeouts.file`.
+**The request.** In this order: a version other than 1.0 and 1.1 answers 505; a 1.1 request without `Host`, and a request with two `Host` headers, answers 400; a request with `Transfer-Encoding` answers 413; one with `Content-Length` whose values are not one decimal number, each value digits alone and every value the same number, answers 400, above 0 answers 413, and 0 has no body. Each of these closes the connection, its body dropped for a `HEAD` as `Static.withoutBody` drops it, §5. Any other request is answered as its host decides, `Hosts.decide`, §9, and where that is `Served`: by the shell, §11, where the server has sessions and the target's path as written, `Static.pathAndQuery` up to its first `?`, is `shell.path`; by the client, §14, where the server has sessions and that path is `shell.client`; else by `Static.serve`, each read of the file system within `timeouts.file`.
 
 **The upgrade.** A request of the shell's is answered as `Shell.handshake` says: a refusal with `Static.error` of its status and the refusal's headers added, closing the connection; the 101 written as any response, told to the log with the size 0 and to the listener as `Upgraded` with the shell's address, after which the connection runs `Shell.serve` with the bytes after the head and the cookie, and closes when it returns.
 
@@ -348,15 +351,55 @@ The start copies both into the home, since the container is read-only and a node
 
 **The configuration**, `deploy/config.json`, installed as `node/config.json`: a `tls` listener on 443 and a `redirect` listener on 80 on each of `0.0.0.0` and `::`, since a listener takes its address's family alone (E.18), the two `tls` listeners naming one certificate and key; the hosts of §9; the headers `Strict-Transport-Security: max-age=31536000`, `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' wss://` and the canonical host; the log above; `limits.connections`, which §7 counts by listener, and `limits.connections-per-address` sized so that the two `tls` listeners' connections together times what one holds after the site's largest file, five times the file over TLS, stays under 256 MiB, and `timeouts.idle` 15000, so that an idle connection gives it back soon; and no `shell`, until the site's page has one. `Config.parse` reads it in a test, every rule but the file system's.
 
-**The shell's member.** Where the site's page has a shell, the configuration takes the member `shell`: `path` `/shell/session`, `origins` `["https://ernest-lang.org"]`, the command above, `most-at-once` 6, sized to the machine's 1.9 GB of memory, `starts` 10 within 3600000, `lifetime` 300000, `warning` 60000, `message-limit` 65536 and `hangup` 5000.
+**The shell's member.** Where the site's page has a shell, the configuration takes the member `shell`: `path` `/shell/session`, `client` `/shell/client.js`, the path the site imports the client from, §14, `origins` `["https://ernest-lang.org"]`, the command above, `most-at-once` 6, sized to the machine's 1.9 GB of memory, `starts` 10 within 3600000, `lifetime` 300000, `warning` 60000, `message-limit` 65536 and `hangup` 5000.
 
-**The smoke test**, `Smoke`, `make smoke HOST=` and the canonical host, `ern run` on the module's own `.erc`, `build/smoke.erc`, with the host and `deploy/config.json` as its arguments, since `--main` names a function of the file's own module alone: against the deployed site over TLS, verified against the host's bundle, `/etc/ssl/certs/ca-certificates.crt`, each check a line on standard output, the check's name and `ok`, or `failed: ` and what came; the program exits 0 where every check passed and 1 otherwise. `Smoke` exports the checks' client, and the server's start by its launcher on a configuration and its end by the termination signal, which the end-to-end tests run with.
+**The smoke test**, `Smoke`, `make smoke HOST=` and the canonical host, `ern run` on the module's own `.erc`, `build/smoke.erc`, with the host and `deploy/config.json` as its arguments, since `--main` names a function of the file's own module alone: against the deployed site over TLS, verified against the host's bundle, `/etc/ssl/certs/ca-certificates.crt`, each check a line on standard output, the check's name and `ok`, or `failed: ` and what came; the program exits 0 where every check passed and 1 otherwise. `Smoke` exports the checks' requests, a `GET` and an upgrade, and the server's start by its launcher on a configuration and its end by the termination signal, which the end-to-end tests run with.
 
 `Smoke.main` takes the host and the configuration's path, and refuses another count of arguments with `usage: smoke host config.json` on standard error and the status 2. It reads the file's text within 5000 milliseconds and checks it with `Config.parse`, every rule but the file system's, whose files are the machine's; a file it cannot read, as `Unreadable`, or a text `Config.parse` refuses is said on standard error as `smoke: `, the path, `: ` and `Config.reason`, with the status 2, and so is one whose `redirect-hosts` is empty, as the rule `must not be empty`, since the checks need the first.
 
-**The checks.** `/` over 443 answers 200; `/` over 80 answers 301 to `https://`, the canonical host and `/`; `/` with the first redirect host answers 301 the same; `Host: elsewhere` answers 421; and where the configuration has a `shell`, its `path` upgrades with the origin `https://` and the canonical host, a resize of 24 by 80 attaches a new session, `{"attached": "new"}`, `1 + 2` and a line feed typed as keys answer output holding `3 : Int`, its type dimmed as the shell writes it at a terminal, or plain where `NO_COLOR` is set, and a stop closes with 4004.
+**The checks.** `/` over 443 answers 200; `/` over 80 answers 301 to `https://`, the canonical host and `/`; `/` with the first redirect host answers 301 the same; `Host: elsewhere` answers 421; and where the configuration has a `shell`, its `client` answers 200 with `Content-Type` `text/javascript; charset=utf-8`, §14, and its `path` upgrades with the origin `https://` and the canonical host, a resize of 24 by 80 attaches a new session, `{"attached": "new"}`, `1 + 2` and a line feed typed as keys answer output holding `3 : Int`, its type dimmed as the shell writes it at a terminal, or plain where `NO_COLOR` is set, and a stop closes with 4004.
 
-`Smoke.checks(scheme, host, port, redirectPort, redirectHost, shellPath, origin)` runs them against any site, `redirectHost` a `String`, the first of the configuration's `redirect-hosts`, `shellPath` an `Optional(String)`, the shell's check where it is `Some(path)`, at the path from the origin; `ErnestHttpd`'s end-to-end test runs them against the example site over plain HTTP at its shell's path, so that `make test` holds them. The operator's `:processes` at an attached shell is a step of `deploy/README.md`, not of the program.
+`Smoke.checks(scheme, host, port, redirectPort, redirectHost, shell, origin)` runs them against any site, `redirectHost` a `String`, the first of the configuration's `redirect-hosts`, `shell` an `Optional(#(String, String))`, the shell's path and its client's, the shell's checks where it is `Some`, the upgrade at the path from the origin; `ErnestHttpd`'s end-to-end test runs them against the example site over plain HTTP at its shell's path, so that `make test` holds them. The operator's `:processes` at an attached shell is a step of `deploy/README.md`, not of the program.
+
+## 14. The client
+
+`Client.serve(shell, request)` answers the response and its body for a request at the client's path, `shell.client`: the client, a JavaScript module a page imports to run a session over the shell, §11, on the module's own origin. The module is the client's text, `Client.text`, held as written in a raw string, under a head the server writes from the configuration. The interface below is the one thing the server and the site it serves share.
+
+```
+Client.serve : (Config.Shell, Http.Request) -> #(Http.Response, Bytes) // the response and its body
+Client.text : String // the client's text as written: an ES module that defines nothing on window and holds no backtick
+```
+
+**The response.** `GET` answers 200 with `Content-Type: text/javascript; charset=utf-8`, `Cache-Control: no-store` and `Content-Length`, and the module as the body; `HEAD` the same with its body dropped, as `Static.withoutBody` makes it; any other method answers `Static.methodNotAllowed`, §5. It carries no `Last-Modified` and answers no 304. A browser keeps no copy, so a page loaded whole runs the client of the server it talks to; a page restored from the browser's history is not loaded whole, and a reload mends it.
+
+**The module.** The body is two lines and then `Client.text`: `const path = `, `shell.path` as `Json.encode` writes it, and `;`; then `export const limits = `, the object `Json.encode` writes of `lifetime`, `warning`, `mostAtOnce` and `starts`, an object of `count` and `within`, the configuration's values in milliseconds and counts, and `;`. The text names `path` and not `limits`.
+
+**The interface.** The module's named exports, as a page sees them:
+
+```
+export const limits // { lifetime, warning, mostAtOnce, starts: { count, within } }, the configuration's shell, §4
+export function start(rows, columns, told) // a session of the size, told as below; answers the Session at once
+Session.keys(bytes) // a Uint8Array to the program
+Session.resize(rows, columns)
+Session.extend()
+Session.stop()
+told.output(bytes) // a Uint8Array the program wrote
+told.attached(joined) // the session is attached; true where this browser joined a live session
+told.warning(left) // the milliseconds before the end, unless a key or an extension moves it
+told.ended(reason) // "expired", "takenOver", "unavailable", "stopped" or "lost", once, last
+```
+
+**The session.** `start` opens a WebSocket to `path` on the module's own origin, `import.meta.url` with its scheme `wss:` for `https:` and `ws:` otherwise, binary messages as `ArrayBuffer`, sends `{"resize": [rows, columns]}` at the open, and answers the session at once. What the session is asked before the socket is open is sent at the open after the size, in its order: `keys` as a binary message, `resize` as `{"resize": [rows, columns]}`, `extend` as `{"extend": true}` and `stop` as `{"stop": true}`, §11; so a stop asked before the attach is ordered after the size, and the shell holds it until the session is attached.
+
+A row or column count outside 1 to 65535 faults the call with a `RangeError`, a `told` whose four members are not each a function faults `start` with a `TypeError`, and so does a `keys` of anything but a `Uint8Array`. After `ended` the session sends nothing, and what it is asked is dropped.
+
+**What is told.** `attached` once, from the shell's `{"attached": ...}`, `joined` true for `"joined"`, before any `output`; `output` for each binary message, in order; `warning` for each `{"warning": seconds}`, `left` the seconds times 1000; `ended` once, last, at the socket's close, with `"expired"` for 4001, `"takenOver"` for 4002, `"unavailable"` for 4003, `"stopped"` for 4004, and `"lost"` for any other code, a socket that does not open or that fails among them. A text message of another form is dropped. The client keeps no state of the page's.
+
+**The test.** `Client`'s test runs the client in Chromium, `chromium` on `PATH`, which `make test` needs; a machine without it fails the test with a line naming the package. The test writes a page under `build/client/`; launches the server as the end-to-end tests do, on a configuration whose root is the page's directory, whose canonical host is `client.localhost`, whose `shell` has the origin `http://client.localhost`, the command `sh`, a lifetime of 2000 and a warning of 1000 milliseconds, `most-at-once` 4 and `starts.count` 2 within a minute, and whose `headers` has no `Content-Security-Policy`, which would refuse the page's report; listens on a port of its own; and starts Chromium on the page with `--headless=new`, `--user-data-dir` under `build/client/`, and `--host-resolver-rules` carrying `client.localhost` to the server's port.
+
+The page imports the client, walks the scenario, and reports each thing the client told it, and each `error` and `unhandledrejection` event of the window and a failed import, as one line, an awaited `fetch` of the line to the test's port, so that the lines come in order. The test reads each request line with `Http.readRequest`, answers 204, and compares each line with the scenario's, stopping at the first that differs; it ends the server at the line of the unavailable start, before it answers it. It waits on its own socket or the browser's end, within 30 seconds for the whole, and a failure names the lines received; then it ends the browser and the server.
+
+The scenario: the limits as configured; a size out of range and a `told` that is no function, each a fault; a start attached new; a second start, the first taken over and the second attached joined; a resize out of range and keys of a string, each a fault; keys and their output; a resize, which `stty size` answers; the warning, an extension moving it to a second warning, and the expiry; a start whose stop is asked before the attach, attached new and stopped; the start of a third session, unavailable; and a start after the server's end, lost.
 
 ## Glossary
 
@@ -381,6 +424,7 @@ The names that recur across modules, one for each concept, in every module. A na
 - **message**: what one side of a WebSocket sends whole, `WebSocket.Message`, a text or a binary message, a ping, a pong or a close, decoded from its frames, §10. Not `frame`, which is the wire's.
 - **shell**: a connection after its upgrade on the shell's path, `shell.path`, and its process, §11; `shell` is the configuration's object for it, §4. Not `terminal`, `socket`.
 - **session**: the process that owns one visitor's program under a terminal, by the visitor's cookie, §12; **the sessions** is the process that holds them. Not `container`, which is the command's.
+- **client**: the shell's client, the module the server serves at `shell.client`, which a page imports to run a session, §14. Not `script`.
 - **cookie**: the value of the `shell` cookie that names a visitor's session, 32 hexadecimal digits, §11. Not `token`, `id`.
 - **program**: the command a session runs under its terminal, `shell.command`, §12. Not `child`, `container`.
 - **reader**: a process that alone calls the read of a socket or a terminal and tells its owner what it read, §11, §12.

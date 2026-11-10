@@ -6,7 +6,7 @@ Read *Where we are* first, then the milestone under way, its steps by what each 
 
 ## Where we are
 
-Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way: its steps on 0.10.0 are ready, item 11, the shell client Ernest asked for, waits on its design with the user, and the rest waits on Ernest's MVP 4.4 release or on what the access log shows.
+Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way: its steps on 0.10.0 are ready, item 11, the shell client Ernest asked for, is built and served, and the rest waits on Ernest's MVP 4.4 release or on what the access log shows.
 
 ## Milestone 2: after the first release
 
@@ -27,9 +27,11 @@ Ernest's session handed the site over on 2026-11-10: `make site TAG=v0.10.0` and
 
 The client's interface is then the one thing the two repositories share, stated in this design and cited from Ernest's site design note by its address.
 
-The steps, in order. The design first, in `docs/proposals/shell-client/`, discussed with the user until the user says it is ready; nothing of it enters the design, this plan or the log before. Its named decisions: how the client is served and kept current; where the limits are answered; how the test runs the client, since this machine has browsers and no JavaScript runtime, so `make test` would take a headless one; and the section of the design that states the client's interface. Once decided, the design takes it, and Ernest's session is told by a message where the interface stands.
+The design is taken (2026-11-10): §14 states the client, its response, its module, its interface and its test, and §1, §4, §6, §13 and the glossary what each owns of it, from the proposal under `docs/proposals/shell-client/`, agreed with Ernest's session, whose site note cites §14 (the log's *The shell client's design*). Ernest's session was told the same day. The proposal stays as the record of its design until its reading and sweep, an item before this milestone's release, below.
 
-Then it is built: the server serves the client and answers the limits while it still speaks today's messages to the site as it stands, since this part adds and takes nothing away; Ernest's session is told by a message when a server serves the client. Then the rehearsal walks the switch again, with the client, on scratch ports. Until the launch's switch, design §11's messages stay as Ernest's site speaks them, and a change to them is told to Ernest's session before it is built.
+The build is done (the log's *Milestone 2, item 11: the shell client's build*).
+
+The server serves the client and answers the limits while it still speaks today's messages to the site as it stands, since this part adds and takes nothing away. The message telling Ernest's session that a server serves the client waits on the user's word (decided 2026-11-10). Then the rehearsal walks the switch again, with the client, on scratch ports. Until the launch's switch, design §11's messages stay as Ernest's site speaks them, and a change to them is told to Ernest's session before it is built.
 
 Ernest's side is built against that rehearsal's server: the site's script calling the client, its generator taking no configuration, the shell page's numbers from the client's limits and a stub client in its browser test. Both go live in item 5's switch, the one day both repositories change, the client in the release made for it (Ernest's plan, its MVP 4.6 and its MVP 4.4's item 6; its log's *MVP 4.6 Before the Launch*).
 
@@ -48,6 +50,8 @@ Ernest's side is built against that rehearsal's server: the site's script callin
 ### On Ernest's MVP 4.4 release
 
 **Item 5, the release and the switch.** When the reviews of Ernest's MVP 4.4 begin, the floor rises to the minor of its release, 0.11 or 0.12 as Ernest says, on the archive of the commit its readers read. Once that release is tagged, the same week and after `ernest-template`'s release and `ernest-epx`'s, it is installed, and a release of this program is made by `docs/release.md`, its readers among it, which `make release` refuses before the tag.
+
+**The proposal's reading and sweep.** Before that release, `docs/proposals/shell-client/` is read with the user for what it holds that no owner has yet, which goes to the design or the log, and the directory goes, its milestone's row naming the log entries that argue it, so that the release ships the owner and not the proposal. Its named decision, with the user: the glossary's *client*, the shell's, beside the word's sense of an HTTP client, the end that sends the requests, which §1, §6, §8, the glossary's *target* and the tests' helpers use; either one is renamed or the glossary states both (the log's *Milestone 2, item 11: the shell client's build*).
 
 That release, with item 11's client, is installed in one switch on the path the second rehearsal walked: `deploy/config.json` takes the member `shell` that design §13 gives, and `deploy/README.md`'s step 7 builds the image and installs the wrapper (the log's *The wrapper and the smoke test's configuration*). The site, generated the same way from the tag of the MVP 4.4 release, is copied last, as step 5 copies `site/` today, so that every project it lists builds on the release it names (decided 2026-11-04, its release and its floor 2026-11-05, the log's *The release before the site*, *The site on Ernest's next minor* and *The floor at the reviews*). The `ernest-lang.org` repository, which holds the one page until then, goes (the log's *From the site's design*).
 

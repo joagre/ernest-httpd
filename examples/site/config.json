@@ -20,6 +20,7 @@
   "access-log": "build/examples/site/access.log",
   "shell": {
     "path": "/shell/session",
+    "client": "/shell/client.js",
     "origins": ["http://localhost:8080"],
     "command": ["ern", "shell"],
     "most-at-once": 4,

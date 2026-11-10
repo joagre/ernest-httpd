@@ -6,7 +6,8 @@
 /// root and content types, and answers each request with `serve`, whatever
 /// its method and target; it adds `Date` and the configuration's headers to
 /// the response before it writes it. `error` is the response of a status
-/// the connection answers itself, and `withoutBody` makes it a `HEAD`'s.
+/// the connection answers itself, `methodNotAllowed` the one of a method it
+/// does not serve, and `withoutBody` makes either a `HEAD`'s.
 /// `pathAndQuery` and `authority` read a target as `serve` reads it, for
 /// what a request's host decides before the site serves it (design §9).
 ///
@@ -105,16 +106,26 @@ export fn site(root : Path, contentTypes : Map(String, String)) : Site =
 /// ```
 export fn serve(site : Site, request : Http.Request, ms : Int) : #(Http.Response, Bytes) =
     match request.method {
-        "GET" ->
-            get(site, request, ms)
-      | "HEAD" ->
-            withoutBody(get(site, request, ms))
-      | _ -> {
-            let #(response, body) = error(site, 405, ms);
-            #(Http.Response(..response, headers = header("Allow", "GET, HEAD") :: response.headers),
-              body)
-        }
+        "GET" -> get(site, request, ms)
+      | "HEAD" -> withoutBody(get(site, request, ms))
+      | _ -> methodNotAllowed
     }
+
+/// The response to a method other than `GET` and `HEAD`: 405 with
+/// `Allow: GET, HEAD`, its body the error's plain text, as `serve` answers
+/// any target and the client's path answers it too (design §14).
+///
+/// ### Examples
+///
+/// ```ernest
+/// let #(response, _) = Static.methodNotAllowed;
+/// #(response.status, Http.header(response.headers, "Allow"))
+/// // => #(405, Some("GET, HEAD"))
+/// ```
+export let methodNotAllowed : #(Http.Response, Bytes) = {
+    let #(response, body) = plain(405);
+    #(Http.Response(..response, headers = header("Allow", "GET, HEAD") :: response.headers), body)
+}
 
 /// A `HEAD`'s response of a `GET`'s: its body dropped and, but for a 304,
 /// the body's size as its `Content-Length`. The connection drops so the
@@ -567,13 +578,21 @@ let answersNotFound =
                           getting(bare, "/%CC%81/a.txt", plainError(404)),
                           getting(bare, "/\u{301}/a.txt", plainError(404))]))
 
-// design §5: a method other than GET and HEAD answers 405 with Allow.
+// design §5: a method other than GET and HEAD answers 405 with Allow,
+// methodNotAllowed.
 let refusesMethods = Test.Case(name = "refuses a method other than GET and HEAD", run = fn() = {
     let refused =
         Answer(..plainError(405),
                headers = header("Allow", "GET, HEAD") :: plainError(405).headers);
-    served([Check(site = withPage, request = request("POST", "/a.txt", []), expected = refused),
-            Check(site = withPage, request = request("get", "/a.txt", []), expected = refused)])
+    match served([Check(site = withPage,
+                        request = request("POST", "/a.txt", []),
+                        expected = refused),
+                  Check(site = withPage,
+                        request = request("get", "/a.txt", []),
+                        expected = refused)]) {
+        Test.Passed -> Test.equal(compared(methodNotAllowed), refused)
+      | failed -> failed
+    }
 })
 
 // design §5: a HEAD is answered as the GET with no body and its body's size

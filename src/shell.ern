@@ -91,6 +91,7 @@ type Asked = Resize(Terminal.Size) | Extend | Stop
 /// ```ernest
 /// let shell =
 ///     Config.Shell(path = "/shell",
+///                  client = "/shell/client.js",
 ///                  origins = ["https://ernest-lang.org"],
 ///                  command = ["cat"],
 ///                  mostAtOnce = 1,
@@ -488,6 +489,7 @@ type Seen = Ended(Down) | ShellAttached(Address(Session.Told)) | ToSession(Sessi
 // the lifetime, the warning and the message limit given.
 fn configured(mostAtOnce : Int, lifetime : Int, warning : Int, messageLimit : Int) : Config.Shell =
     Config.Shell(path = "/shell",
+                 client = "/shell/client.js",
                  origins = ["http://localhost"],
                  command = ["cat"],
                  =mostAtOnce,

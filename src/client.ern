@@ -1,0 +1,646 @@
+/// The shell's client: the module the server serves at the configuration's
+/// `shell.client`, which a page imports to run a session over the shell's
+/// WebSocket on the module's own origin (design §14).
+///
+/// `serve` answers a request at the client's path: the module for a `GET`,
+/// with `Cache-Control: no-store`, so that a page loaded whole runs the
+/// client of the server it talks to; the same without its body for a
+/// `HEAD`; and `Static.methodNotAllowed` for any other method. The module
+/// is two lines the server writes from the configuration, the shell's path
+/// and the limits it enforces, `limits`, and then `text`, the client as
+/// written.
+///
+/// The client holds no element of a page and no terminal. Its `start`
+/// opens the socket, speaks the shell's messages (design §11), and tells
+/// the page what the session says: the output, the attach and whether it
+/// joined a live session, each warning, and the end by its name.
+///
+/// ## Examples
+///
+/// ```ernest
+/// let shell =
+///     Config.Shell(path = "/shell/session",
+///                  client = "/shell/client.js",
+///                  origins = ["https://ernest-lang.org"],
+///                  command = ["sh"],
+///                  mostAtOnce = 6,
+///                  starts = Config.Starts(count = 10, within = 3600000),
+///                  lifetime = 300000,
+///                  warning = 60000,
+///                  messageLimit = 65536,
+///                  hangup = 5000);
+/// let request =
+///     Http.Request(method = "GET",
+///                  target = "/shell/client.js",
+///                  version = Http.http11,
+///                  headers = []);
+/// let #(response, _) = Client.serve(shell, request);
+/// #(response.status, response.headers)
+/// // => #(200, [Http.Header(name = "Content-Type", value = "text/javascript; charset=utf-8"), Http.Header(name = "Cache-Control", value = "no-store")])
+/// ```
+
+//
+// Serving
+//
+
+/// The response to a request at the client's path and its body: for a
+/// `GET`, 200 with the module, `text/javascript` and `Cache-Control:
+/// no-store`; for a `HEAD`, the same with its body dropped, as
+/// `Static.withoutBody` drops it; and for any other method
+/// `Static.methodNotAllowed`. The module is written at each request from
+/// the shell's configuration: `const path = ` and the shell's path, then
+/// `export const limits = ` and the lifetime, the warning, the most
+/// sessions at once and the starts, each as `Json.encode` writes it, and
+/// then `text`.
+export fn serve(shell : Config.Shell, request : Http.Request) : #(Http.Response, Bytes) =
+    match request.method {
+        "GET" -> module(shell)
+      | "HEAD" -> Static.withoutBody(module(shell))
+      | _ -> Static.methodNotAllowed
+    }
+
+// The module's response: its head and the client's text, as JavaScript
+// that no cache keeps.
+fn module(shell : Config.Shell) : #(Http.Response, Bytes) =
+    #(Http.Response(version = Http.http11,
+                    status = 200,
+                    headers = [Http.Header(name = "Content-Type",
+                                           value = "text/javascript; charset=utf-8"),
+                               Http.Header(name = "Cache-Control", value = "no-store")]),
+      String.toUtf8(head(shell) <> text))
+
+// The module's two lines before the client's text: the shell's path, which
+// the text names, and the limits the page imports, in the configuration's
+// names and units.
+fn head(shell : Config.Shell) : String = {
+    let starts =
+        Json.Object(Map.fromList([#("count", Json.Integer(shell.starts.count)),
+                                  #("within", Json.Integer(shell.starts.within))]));
+    let limits =
+        Json.Object(Map.fromList([#("lifetime", Json.Integer(shell.lifetime)),
+                                  #("warning", Json.Integer(shell.warning)),
+                                  #("mostAtOnce", Json.Integer(shell.mostAtOnce)),
+                                  #("starts", starts)]));
+    "const path = "
+        <> Json.encode(Json.Text(shell.path))
+        <> ";\n"
+        <> "export const limits = "
+        <> Json.encode(limits)
+        <> ";\n"
+}
+
+/// The client's text as written: an ES module, after the two lines `serve`
+/// writes before it, which defines nothing on the page's global object and
+/// holds no backtick. It exports `start(rows, columns, told)`, which opens
+/// the socket to the shell's path on the module's own origin and answers
+/// the session at once: `keys(bytes)`, `resize(rows, columns)`, `extend()`
+/// and `stop()`. What the session is asked before its socket is open is
+/// sent at the open, after the size, in its order. It tells `told` the
+/// session's `output(bytes)`, `attached(joined)`, `warning(left)` in
+/// milliseconds, and last `ended(reason)`: `expired`, `takenOver`,
+/// `unavailable`, `stopped`, or `lost` for any other close.
+export let text : String = `// The shell's client, design §14 of ernest-httpd: a session over the
+// shell's WebSocket, design §11, on this module's own origin. The two lines
+// above this one are the server's, written from its configuration.
+
+const reasons = { 4001: "expired", 4002: "takenOver", 4003: "unavailable", 4004: "stopped" };
+const members = ["output", "attached", "warning", "ended"];
+
+// A session of the size, told to the page through the four members of
+// told; it answers at once. What it is asked before its socket opens is
+// sent at the open, after the size, in its order, and what it is asked
+// after its end is dropped.
+export function start(rows, columns, told) {
+    checkSize(rows, columns);
+    for (const member of members) {
+        if (typeof told?.[member] !== "function") {
+            throw new TypeError("told." + member + " is not a function");
+        }
+    }
+    const waiting = [JSON.stringify({ resize: [rows, columns] })];
+    let socket = null;
+    let attached = false;
+    let ended = false;
+
+    // The end, told once and last.
+    function end(reason) {
+        if (!ended) {
+            ended = true;
+            told.ended(reason);
+        }
+    }
+
+    // A message held until the socket opens, sent while it is open, and
+    // dropped once the session has ended or its socket is closing.
+    function send(message) {
+        if (ended || socket === null) {
+            return;
+        }
+        if (socket.readyState === WebSocket.CONNECTING) {
+            waiting.push(typeof message === "string" ? message : message.slice());
+        } else if (socket.readyState === WebSocket.OPEN) {
+            socket.send(message);
+        }
+    }
+
+    // A text of the shell's: the attach's word, once, and each warning, its
+    // seconds made milliseconds; a text of another form is dropped.
+    function heard(data) {
+        let message = null;
+        try {
+            message = JSON.parse(data);
+        } catch {
+            return;
+        }
+        if (message === null || typeof message !== "object") {
+            return;
+        }
+        if (!attached && (message.attached === "new" || message.attached === "joined")) {
+            attached = true;
+            told.attached(message.attached === "joined");
+        } else if (Number.isInteger(message.warning)) {
+            told.warning(message.warning * 1000);
+        }
+    }
+
+    try {
+        socket = new WebSocket(address());
+    } catch {
+        // a socket that cannot be made does not open: the session is lost,
+        // told once start has answered
+        queueMicrotask(() => end("lost"));
+    }
+    if (socket !== null) {
+        socket.binaryType = "arraybuffer";
+        socket.onopen = () => {
+            for (const message of waiting.splice(0)) {
+                socket.send(message);
+            }
+        };
+        socket.onmessage = (event) => {
+            if (event.data instanceof ArrayBuffer) {
+                told.output(new Uint8Array(event.data));
+            } else {
+                heard(event.data);
+            }
+        };
+        socket.onclose = (event) => end(reasons[event.code] ?? "lost");
+    }
+    return Object.freeze({
+        keys(bytes) {
+            if (!(bytes instanceof Uint8Array)) {
+                throw new TypeError("keys are a Uint8Array");
+            }
+            send(bytes);
+        },
+        resize(rows, columns) {
+            checkSize(rows, columns);
+            send(JSON.stringify({ resize: [rows, columns] }));
+        },
+        extend() {
+            send(JSON.stringify({ extend: true }));
+        },
+        stop() {
+            send(JSON.stringify({ stop: true }));
+        },
+    });
+}
+
+// The socket's address: the shell's path on this module's origin, over
+// wss: where the module came over https:, and ws: otherwise.
+function address() {
+    const url = new URL(import.meta.url);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    url.pathname = path;
+    url.search = "";
+    url.hash = "";
+    return url.href;
+}
+
+// A terminal's size: its rows and its columns, each an integer from 1 to
+// 65535, as the shell takes them.
+function checkSize(rows, columns) {
+    const isCount = (count) => Number.isInteger(count) && count >= 1 && count <= 65535;
+    if (!isCount(rows) || !isCount(columns)) {
+        throw new RangeError("rows and columns are integers from 1 to 65535");
+    }
+}
+`
+
+//
+// Tests
+//
+
+// The shell the tests serve the client of, the deployed one's numbers.
+let shell : Config.Shell =
+    Config.Shell(path = "/shell/session",
+                 client = "/shell/client.js",
+                 origins = ["https://ernest-lang.org"],
+                 command = ["sh"],
+                 mostAtOnce = 6,
+                 starts = Config.Starts(count = 10, within = 3600000),
+                 lifetime = 300000,
+                 warning = 60000,
+                 messageLimit = 65536,
+                 hangup = 5000)
+
+fn request(method : String) : Http.Request =
+    Http.Request(=method, target = "/shell/client.js", version = Http.http11, headers = [])
+
+// The served module's two lines before the text, as the test reads them.
+let served : String =
+    "const path = \"/shell/session\";\n"
+        <> "export const limits = {\"lifetime\":300000,\"mostAtOnce\":6,"
+        <> "\"starts\":{\"count\":10,\"within\":3600000},\"warning\":60000};\n"
+
+// design §14: a GET answers 200 with the module, its type and no-store, and
+// the module is the head, the shell's path and the limits in the
+// configuration's names, then the text; a HEAD answers the same without the
+// body, its Content-Length the body's size; any other method answers
+// Static.methodNotAllowed.
+let servesTheModule = Test.Case(name = "serves the module", run = fn() = {
+    let #(response, body) = serve(shell, request("GET"));
+    let #(headResponse, headBody) = serve(shell, request("HEAD"));
+    let size = Int.toString(Bytes.size(body));
+    let typed =
+        [Http.Header(name = "Content-Type", value = "text/javascript; charset=utf-8"),
+         Http.Header(name = "Cache-Control", value = "no-store")];
+    Test.equal(#(response.status,
+                 response.headers,
+                 String.fromUtf8(body),
+                 headResponse.status,
+                 headResponse.headers,
+                 headBody,
+                 serve(shell, request("POST")),
+                 serve(shell, request("get"))),
+               #(200,
+                 typed,
+                 Some(served <> text),
+                 200,
+                 typed <> [Http.Header(name = "Content-Length", value = size)],
+                 <<>>,
+                 Static.methodNotAllowed,
+                 Static.methodNotAllowed))
+})
+
+// design §14: the text names the shell's path and neither the limits nor
+// the page's global object, and is a module, which exports start.
+let writesTheText =
+    Test.Case(name = "writes the client's text",
+              run = fn() =
+                  Test.equal(#(String.contains(text, "url.pathname = path;"),
+                               String.contains(text, "limits"),
+                               String.contains(text, "window"),
+                               String.contains(text, "export function start(rows, columns, told)")),
+                             #(true, false, false, true)))
+
+// The client's test's own files: the page's directory, the configuration,
+// the access log and the browser's profile.
+let scratch : String = "build/client"
+
+// The configuration the client's test launches the server on: a plain
+// listener, the page's directory, the host client.localhost, no headers,
+// and a shell whose command is sh, a session living 2000 milliseconds from
+// its last key and warned 1000 before, two starts within a minute.
+let configuration : String =
+    "{\"listeners\": [{\"kind\": \"plain\", \"address\": \"127.0.0.1\", \"port\": 0}],\n"
+        <> " \"root\": \""
+        <> scratch
+        <> "/root\", \"canonical-host\": \"client.localhost\", \"redirect-hosts\": [],\n"
+        <> " \"timeouts\": {\"head\": 5000, \"idle\": 10000, \"write\": 5000, \"file\": 5000},\n"
+        <> " \"limits\": {\"request-line\": 8192, \"headers\": 16384,\n"
+        <> "            \"connections\": 32, \"connections-per-address\": 32},\n"
+        <> " \"content-types\": {}, \"headers\": {}, \"access-log\": \""
+        <> scratch
+        <> "/access.log\",\n"
+        <> " \"shell\": {\"path\": \"/shell/session\", \"client\": \"/shell/client.js\",\n"
+        <> "           \"origins\": [\"http://client.localhost\"], \"command\": [\"sh\"],\n"
+        <> "           \"most-at-once\": 4, \"starts\": {\"count\": 2, \"within\": 60000},\n"
+        <> "           \"lifetime\": 2000, \"warning\": 1000,\n"
+        <> "           \"message-limit\": 65536, \"hangup\": 1000}}\n"
+
+// The page the browser loads: it imports the client, walks the scenario,
+// and reports each thing the client told it, and each error of its own, as
+// one line, an awaited fetch to the port its query names, so that the
+// lines come in order.
+let page : String = `<!DOCTYPE html>
+<meta charset="utf-8">
+<title>The client's test</title>
+<script type="module">
+const port = new URLSearchParams(location.search).get("report");
+let reported = Promise.resolve();
+
+function report(line) {
+    const url = "http://127.0.0.1:" + port + "/" + encodeURIComponent(line);
+    reported = reported.then(() => fetch(url, { mode: "no-cors" })).catch(() => {});
+    return reported;
+}
+
+window.addEventListener("error", (event) => report("error " + event.message));
+window.addEventListener("unhandledrejection", (event) => report("unhandledrejection " + event.reason));
+
+// A session the client started, what it was told kept: each word a line
+// under the session's name, and its output as text.
+function started(start, name) {
+    const decoder = new TextDecoder();
+    const seen = { lines: [], output: "", wake: () => {} };
+    const said = (line) => {
+        seen.lines.push(name + " " + line);
+        seen.wake();
+    };
+    const session = start(24, 80, {
+        output(bytes) {
+            seen.output += decoder.decode(bytes, { stream: true });
+            seen.wake();
+        },
+        attached(joined) { said("attached " + joined); },
+        warning(left) { said("warning " + left); },
+        ended(reason) { said("ended " + reason); },
+    });
+    async function until(test) {
+        while (!test()) {
+            await new Promise((resolve) => { seen.wake = resolve; });
+        }
+    }
+    return {
+        session,
+        async next() {
+            await until(() => seen.lines.length > 0);
+            return seen.lines.shift();
+        },
+        async typed(text, answer) {
+            seen.output = "";
+            session.keys(new TextEncoder().encode(text));
+            await until(() => seen.output.includes(answer));
+            return name + " output " + answer;
+        },
+    };
+}
+
+// The name of the error the call threw, or none.
+function fault(call) {
+    try {
+        call();
+        return "none";
+    } catch (error) {
+        return error.name;
+    }
+}
+
+async function scenario() {
+    const { start, limits } = await import("/shell/client.js");
+    await report("limits " + JSON.stringify(limits));
+    const quiet = { output() {}, attached() {}, warning() {}, ended() {} };
+    await report("start faults " + fault(() => start(0, 80, quiet)) + " " + fault(() => start(24, 80, {})));
+    const first = started(start, "first");
+    await report(await first.next());
+    const second = started(start, "second");
+    await report(await first.next());
+    await report(await second.next());
+    const keys = second.session.keys;
+    await report("second faults " + fault(() => second.session.resize(0, 80)) + " " + fault(() => keys("echo")));
+    await report(await second.typed("echo $((40+2))\n", "42"));
+    second.session.resize(30, 100);
+    await report(await second.typed("stty size\n", "30 100"));
+    await report(await second.next());
+    second.session.extend();
+    await report(await second.next());
+    await report(await second.next());
+    const third = started(start, "third");
+    third.session.stop();
+    await report(await third.next());
+    await report(await third.next());
+    const fourth = started(start, "fourth");
+    await report(await fourth.next());
+    const fifth = started(start, "fifth");
+    await report(await fifth.next());
+}
+
+scenario().catch((error) => report("failed " + error));
+</script>
+`
+
+// The line of the start the server refuses, at which the test ends the
+// server before it answers, so that the next start is lost.
+let unavailable : String = "fourth ended unavailable"
+
+// The lines the page reports, in order, the scenario of design §14.
+let scenario : List(String) =
+    ["limits {\"lifetime\":2000,\"mostAtOnce\":4,\"starts\":{\"count\":2,\"within\":60000},\"warning\":1000}",
+     "start faults RangeError TypeError",
+     "first attached false",
+     "first ended takenOver",
+     "second attached true",
+     "second faults RangeError TypeError",
+     "second output 42",
+     "second output 30 100",
+     "second warning 1000",
+     "second warning 1000",
+     "second ended expired",
+     "third attached false",
+     "third ended stopped",
+     unavailable,
+     "fifth ended lost"]
+
+// The milliseconds the whole scenario has.
+let scenarioMs : Int = 30000
+
+// What the client's test takes: a line the page reported, answered once the
+// test has taken it, and the browser's end, as it came.
+type Heard = Reported(line : String, reply : Reply(Unit)) | BrowserEnded(String)
+
+// The server the test launched, and its process number.
+type Launched = Launched(program : Address(Os.ProgramMsg), pid : String)
+
+// design §14: the client run in Chromium against a server the test
+// launches on the scenario's configuration, the page importing the client
+// and reporting each thing it told, the lines compared with the scenario's
+// as they come, and the server ended at the unavailable start's line; a
+// machine without chromium fails with a line naming the package.
+let runsInABrowser = Test.Case(name = "runs a session in a browser", run = fn() = match walked() {
+    Right(lines) -> Test.equal(lines, scenario)
+  | Left(failure) -> Test.Failed(failure)
+})
+
+// The scenario walked: the page and the configuration written and the
+// server launched on them; then the lines the page reported, up to the
+// first that differs from the scenario's, or what kept it from running;
+// the server ended where the scenario did not end it.
+fn walked() : Either(String, List(String)) receiving Heard = {
+    let path <-
+        Either.mapLeft(written(), fn(error) = "cannot write " <> scratch <> ": " <> Io.show(error));
+    let #(program, pid, ports) <- Either.mapLeft(Smoke.launch(path, 1), Io.show);
+    let server = Launched(=program, =pid);
+    let outcome = servedOn(server, ports);
+    match outcome {
+        Right(#(_, true)) -> Unit
+      | _ -> terminated(server)
+    };
+    Either.map(outcome, fn(#(lines, _)) = lines)
+}
+
+// The page and the configuration written under the scratch directory, and
+// the configuration's path.
+fn written() : Either(Io.Error, String) = {
+    let path = scratch <> "/config.json";
+    let _ <- Fs.makeDir(Path(scratch <> "/root"), 5000);
+    let _ <- Fs.write(Path(scratch <> "/root/index.html"), String.toUtf8(page), 5000);
+    let _ <- Fs.write(Path(path), String.toUtf8(configuration), 5000);
+    Right(path)
+}
+
+fn terminated(server : Launched) : Unit = {
+    let _ = Smoke.terminate(server.program, server.pid);
+    Unit
+}
+
+// The scenario walked against the server on the port it listens on: the
+// test's own port listened on and its connections accepted, the browser
+// started on the page and the lines heard, then the browser ended and the
+// test's port closed. It answers the lines and whether the server was
+// ended at the scenario's line.
+fn servedOn(server : Launched,
+            ports : List(Int)) : Either(String, #(List(String), Bool)) receiving Heard = {
+    let port <- match ports {
+        [port] -> Right(port)
+      | _ -> Left("the server listens on " <> Io.show(ports))
+    };
+    let listening <- Either.mapLeft(Tcp.listen("127.0.0.1", 0), Io.show);
+    let me = self();
+    let acceptor = spawn(fn() = accepting(listening, me));
+    let outcome = {
+        let reportPort <- Either.mapLeft(Tcp.port(listening), Io.show);
+        let #(browser, reader) <- browsed(port, reportPort);
+        let lines = heard(scenario, [], server, false, Clock.monotonic() + scenarioMs);
+        ended(browser, reader);
+        Right(lines)
+    };
+    Tcp.closeListener(listening);
+    kill(Process.fromAddress(acceptor));
+    outcome
+}
+
+// Chromium started headless on the page, with a profile of its own under
+// the scratch directory and client.localhost carried to the server's port,
+// the page reporting to the test's port; and the reader that reads it to
+// its end, which owns it. A machine without chromium answers the line that
+// names the package.
+fn browsed(port : Int,
+           reportPort : Int) : Either(String,
+                                      #(Address(Os.ProgramMsg), Address(Never))) receiving Heard = {
+    let profile = Os.workingDirectory <> Path(scratch <> "/profile");
+    let command =
+        Os.command("chromium",
+                   ["--headless=new",
+                    "--user-data-dir=" <> Path.toString(profile),
+                    "--host-resolver-rules=MAP client.localhost 127.0.0.1:" <> Int.toString(port),
+                    "http://client.localhost/?report=" <> Int.toString(reportPort)]);
+    match Os.start(command) {
+        Right(browser) -> {
+            let me = self();
+            let reader = spawn(fn() = reading(browser, me));
+            Os.give(browser, Process.fromAddress(reader));
+            Right(#(browser, reader))
+        }
+      | Left(Io.NotFound) ->
+            Left("chromium is not on PATH: make test runs the client's test in it, the package chromium")
+      | Left(error) ->
+            Left("cannot start chromium: " <> Io.show(error))
+    }
+}
+
+// The browser read to its end, what it writes dropped, and the test told
+// how it ended.
+fn reading(browser : Address(Os.ProgramMsg), test : Address(Heard)) : Unit =
+    match Os.read(browser, scenarioMs) {
+        Right(Os.Exited(status)) -> send(test, BrowserEnded("exited with " <> Int.toString(status)))
+      | Right(_) or Left(Io.Timeout) -> reading(browser, test)
+      | Left(error) -> send(test, BrowserEnded(Io.show(error)))
+    }
+
+// The browser ended by the termination signal and its end waited for, where
+// it has not exited, and then its reader, which owns it.
+fn ended(browser : Address(Os.ProgramMsg), reader : Address(Never)) : Unit receiving Heard = {
+    match Os.signal(browser, Os.Termination) {
+        Right(Unit) ->
+            receive {
+                BrowserEnded(_) -> Unit
+              | after 10000 -> Unit
+            }
+      | Left(_) ->
+            Unit
+    };
+    kill(Process.fromAddress(reader))
+}
+
+// The connections to the test's port accepted until the listener closes,
+// each read by a process of its own.
+fn accepting(listening : Address(Tcp.ListenerMsg), test : Address(Heard)) : Unit =
+    match Tcp.accept(listening, scenarioMs) {
+        Right(socket) -> {
+            let handler = spawn(fn() = answering(socket, test));
+            Tcp.give(socket, Process.fromAddress(handler));
+            accepting(listening, test)
+        }
+      | Left(Io.Timeout) ->
+            accepting(listening, test)
+      | Left(_) ->
+            Unit
+    }
+
+// A report read: its request's target, decoded, is the line, told to the
+// test and answered 204 once the test has taken it; then the connection is
+// closed. A connection that sends no request in time is closed unread.
+fn answering(socket : Address(Tcp.SocketMsg), test : Address(Heard)) : Unit = {
+    let limits = Http.Limits(line = 8192, headers = 16384);
+    match Http.readRequest(socket, <<>>, limits, 5000) {
+        Right(#(request, _)) -> {
+            let line =
+                Uri.decode(String.drop(request.target, 1))
+                    |> Optional.andThen(String.fromUtf8)
+                    |> Optional.withDefault("undecoded " <> request.target);
+            let _ = Address.call(test, fn(reply) = Reported(=line, =reply), scenarioMs);
+            let noContent =
+                Http.Response(version = Http.http11,
+                              status = 204,
+                              headers = [Http.Header(name = "Connection", value = "close")]);
+            let _ = Tcp.write(socket, Http.renderResponse(noContent, <<>>), 5000);
+            Unit
+        }
+      | Left(_) ->
+            Unit
+    };
+    Tcp.close(socket)
+}
+
+// The lines heard and compared with those expected as they come, each
+// answered, the server ended first at the unavailable start's line; until
+// every expected line came, one differed, the browser ended or the time,
+// a monotonic one, came. It answers the lines and whether the server was
+// ended.
+fn heard(expected : List(String),
+         acc : List(String),
+         server : Launched,
+         serverEnded : Bool,
+         time : Int) : #(List(String), Bool) receiving Heard =
+    match expected {
+        [] ->
+            #(acc, serverEnded)
+      | wanted :: rest ->
+            receive {
+                Reported(=line, =reply) -> {
+                    let ends = line == unavailable;
+                    if ends then terminated(server) else Unit;
+                    answer(reply, Unit);
+                    if line == wanted then
+                        heard(rest, acc <> [line], server, serverEnded || ends, time)
+                    else
+                        #(acc <> [line], serverEnded || ends)
+                }
+              | BrowserEnded(how) ->
+                    #(acc <> ["the browser " <> how], serverEnded)
+              | after Int.max(time - Clock.monotonic(), 0) ->
+                    #(acc <> ["nothing more within " <> Int.toString(scenarioMs) <> " ms"],
+                      serverEnded)
+            }
+    }

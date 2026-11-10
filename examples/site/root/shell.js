@@ -1,20 +1,19 @@
-// The shell page's script: xterm.js over the server's WebSocket, as design
-// §11 of ernest-httpd has it. The terminal's bytes go each way as binary
-// messages; the page's own messages are text, one JSON object each: the
-// terminal's size at the open and at each change, which attaches the
-// session and then resizes it, an extend and a stop. The server's text
-// messages are the attach's completion, whether it started the session or
-// joined one, and the warning of the seconds left; a page that joined a
-// live session sends C-l, so that the shell draws its line again on the
-// fresh terminal. At the close the status line says why, by the close code.
+// The shell page's script: xterm.js over the server's client, which design
+// §14 of ernest-httpd states and the page imports from the server, at the
+// configuration's shell.client. The terminal's keys go to the session and
+// its output to the terminal; a page that joined a live session sends C-l,
+// so that the shell draws its line again on the fresh terminal; a warning
+// shows the time the session ends and an Extend button; and at the end the
+// status line says why. The page's sentence on the session's life is
+// written from the server's limits.
 "use strict";
 
-const path = "/shell/session"; // the configuration's shell.path
-const reasons = {
-    4001: "expired",
-    4002: "taken over by another tab",
-    4003: "unavailable",
-    4004: "stopped",
+const words = {
+    expired: "expired",
+    takenOver: "taken over by another tab",
+    unavailable: "unavailable",
+    stopped: "stopped",
+    lost: "disconnected",
 };
 
 const terminal = new Terminal();
@@ -27,90 +26,92 @@ const statusLine = document.getElementById("status");
 const warning = document.getElementById("warning");
 const left = document.getElementById("left");
 const encoder = new TextEncoder();
-let socket = null;
+let session = null; // the session under way, null once it has ended
 let restarting = false;
 
-function connect() {
-    const scheme = location.protocol === "https:" ? "wss://" : "ws://";
-    socket = new WebSocket(scheme + location.host + path);
-    socket.binaryType = "arraybuffer";
+// A session started at the terminal's size, its output written to the
+// terminal; at its end a restart asked for starts the next.
+function connect(client) {
     statusLine.textContent = "connecting";
-    socket.onopen = () => {
-        statusLine.textContent = "connected";
-        terminal.reset();
-        sendText({ resize: [terminal.rows, terminal.cols] });
-        terminal.focus();
-    };
-    socket.onmessage = (event) => {
-        if (event.data instanceof ArrayBuffer) {
-            terminal.write(new Uint8Array(event.data));
-        } else {
-            const message = JSON.parse(event.data);
-            if (message.attached === "joined") {
-                send(Uint8Array.of(0x0c));
-            } else if ("warning" in message) {
-                warn(message.warning);
+    terminal.reset();
+    const started = client.start(terminal.rows, terminal.cols, {
+        output: (bytes) => terminal.write(bytes),
+        attached: (joined) => {
+            statusLine.textContent = "connected";
+            if (joined) {
+                started.keys(Uint8Array.of(0x0c));
             }
-        }
-    };
-    socket.onclose = (event) => {
-        warning.hidden = true;
-        statusLine.textContent = reasons[event.code] || "disconnected, code " + event.code;
-        if (restarting) {
-            restarting = false;
-            connect();
-        }
-    };
-}
-
-// What is sent while the socket is not open is dropped.
-function send(data) {
-    if (socket.readyState === WebSocket.OPEN) {
-        socket.send(data);
-    }
-}
-
-function sendText(message) {
-    send(JSON.stringify(message));
+        },
+        warning: warn,
+        ended: (reason) => {
+            warning.hidden = true;
+            statusLine.textContent = words[reason];
+            session = null;
+            if (restarting) {
+                restarting = false;
+                connect(client);
+            }
+        },
+    });
+    session = started;
+    terminal.focus();
 }
 
 // A key moves the session's end as an extend does, so it takes the warning
 // down.
 function sendKeys(bytes) {
     warning.hidden = true;
-    send(bytes);
+    session?.keys(bytes);
 }
 
-function warn(seconds) {
-    const end = new Date(Date.now() + seconds * 1000);
+function warn(ms) {
+    const end = new Date(Date.now() + ms);
     left.textContent = "The session ends at " + end.toLocaleTimeString() + " unless extended.";
     warning.hidden = false;
 }
 
-// A restart stops the session and connects anew at the close, or at once
-// where the socket is closed already.
-function restart() {
-    if (socket.readyState === WebSocket.CLOSED) {
-        connect();
+// A restart stops the session and starts anew at its end, or at once where
+// it has ended already; a stop asked before the session is attached is the
+// client's to order.
+function restart(client) {
+    if (session === null) {
+        connect(client);
     } else {
         restarting = true;
-        if (socket.readyState === WebSocket.OPEN) {
-            sendText({ stop: true });
-        } else {
-            socket.close();
-        }
+        session.stop();
     }
 }
 
-terminal.onData((data) => sendKeys(encoder.encode(data)));
-terminal.onBinary((data) => sendKeys(Uint8Array.from(data, (char) => char.charCodeAt(0))));
-terminal.onResize((size) => sendText({ resize: [size.rows, size.cols] }));
-window.addEventListener("resize", () => fit.fit());
-document.getElementById("extend").addEventListener("click", () => {
-    warning.hidden = true;
-    sendText({ extend: true });
-    terminal.focus();
+// A duration of the limits in words: seconds where it is no whole number
+// of minutes.
+function spoken(ms) {
+    const seconds = Math.round(ms / 1000);
+    if (seconds % 60 !== 0) {
+        return seconds === 1 ? "a second" : seconds + " seconds";
+    }
+    const minutes = seconds / 60;
+    return minutes === 1 ? "a minute" : minutes + " minutes";
+}
+
+function loaded(client) {
+    const { lifetime, warning: before } = client.limits;
+    document.getElementById("lifetime").textContent =
+        "It ends " + spoken(lifetime) + " after your last key or Extend, and this page warns you " +
+        spoken(before) + " before.";
+    terminal.onData((data) => sendKeys(encoder.encode(data)));
+    terminal.onBinary((data) => sendKeys(Uint8Array.from(data, (char) => char.charCodeAt(0))));
+    terminal.onResize((size) => session?.resize(size.rows, size.cols));
+    window.addEventListener("resize", () => fit.fit());
+    document.getElementById("extend").addEventListener("click", () => {
+        warning.hidden = true;
+        session?.extend();
+        terminal.focus();
+    });
+    document.getElementById("stop").addEventListener("click", () => session?.stop());
+    document.getElementById("restart").addEventListener("click", () => restart(client));
+    connect(client);
+}
+
+import("/shell/client.js").then(loaded, () => {
+    statusLine.textContent = "the client did not load";
 });
-document.getElementById("stop").addEventListener("click", () => sendText({ stop: true }));
-document.getElementById("restart").addEventListener("click", restart);
-connect();

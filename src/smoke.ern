@@ -24,7 +24,9 @@
 /// and `/` for the redirect host it is given, the configuration's first,
 /// each answered 301 to `https://`, the host and `/`; `/` for a host that
 /// is neither, `elsewhere`, answered 421; and where it is given the shell's
-/// path, the path upgraded from the origin, a resize of 24 rows by 80
+/// path and its client's, the client answered 200 as
+/// `text/javascript; charset=utf-8` (design §14), and the shell's path
+/// upgraded from the origin, a resize of 24 rows by 80
 /// columns attaching a new session, `{"attached": "new"}`, `1 + 2` and a
 /// line feed typed as keys answering output that holds `3 : Int` within
 /// 5000 milliseconds, its type dimmed as the shell writes it at a terminal
@@ -32,7 +34,7 @@
 /// check opens a connection of its own, so that one that fails says what
 /// came and the next runs as any.
 ///
-/// The checks' client is the end-to-end tests' too: a GET's response,
+/// The checks' requests are the end-to-end tests' too: a GET's response,
 /// `get`; an upgrade's, `upgrade`; a message framed as a client frames it,
 /// `masked`; and a shell's attach and its output read until a test passes,
 /// `readOutput`. So is the server they run against, started by its
@@ -70,9 +72,9 @@ export fn main() : Unit =
         [host, path] ->
             match configured(path) {
                 Right(#(config, redirectHost)) -> {
-                    let shellPath = Optional.map(config.shell, fn(shell) = shell.path);
+                    let paths = Optional.map(config.shell, fn(shell) = #(shell.path, shell.client));
                     let checked =
-                        checks("https", host, 443, 80, redirectHost, shellPath, "https://" <> host);
+                        checks("https", host, 443, 80, redirectHost, paths, "https://" <> host);
                     List.forEach(checked, fn(check) = Io.println(line(check)));
                     Os.exit(if List.all(checked, passed) then 0 else 1)
                 }
@@ -137,15 +139,16 @@ let answerMs : Int = 5000
 
 /// The checks run against the site of the host on the port, over the
 /// scheme, `https` or `http`, on the redirect port over plain HTTP, and for
-/// the redirect host, and the shell's upgrade at the shell's path from the
-/// origin where the path is given, each with its name and what came where
-/// it failed, in the order the module's documentation gives them.
+/// the redirect host, and, where the shell's path and its client's are
+/// given, the client's response and the shell's upgrade from the origin,
+/// each with its name and what came where it failed, in the order the
+/// module's documentation gives them.
 export fn checks(scheme : String,
                  host : String,
                  port : Int,
                  redirectPort : Int,
                  redirectHost : String,
-                 shellPath : Optional(String),
+                 shell : Optional(#(String, String)),
                  origin : String) : List(Check) = {
     let canonical = "https://" <> host <> "/";
     let site = scheme <> "://" <> host <> ":" <> Int.toString(port);
@@ -158,14 +161,19 @@ export fn checks(scheme : String,
            result = answered(opened(scheme, host, port), redirectHost, "301 " <> canonical)),
      Check(name = site <> "/ for elsewhere answers 421",
            result = answered(opened(scheme, host, port), "elsewhere", "421"))]
-        <> match shellPath {
-            Some(path) ->
-                [Check(name = site <> path <> " runs 1 + 2 and closes with 4004 at a stop",
-                       result = shell(opened(scheme, host, port), path, host, origin))]
+        <> match shell {
+            Some(#(path, client)) ->
+                [Check(name = site <> client <> " answers 200 as " <> javascript,
+                       result = clientAnswered(opened(scheme, host, port), client, host)),
+                 Check(name = site <> path <> " runs 1 + 2 and closes with 4004 at a stop",
+                       result = shellAnswered(opened(scheme, host, port), path, host, origin))]
           | None ->
                 []
         }
 }
+
+// The client's content type, which a module's import requires.
+let javascript : String = "text/javascript; charset=utf-8"
 
 // A connection to the host's port: over TLS, the far end's certificate
 // verified against the bundle, for https, and plain for http; another
@@ -193,6 +201,23 @@ fn answered(connection : Either(String, Address(Tcp.SocketMsg)),
     if came == wanted then Right(Unit) else Left(came)
 }
 
+// What a GET of the client's path naming the host answers over the
+// connection, which is then closed: its status and its Content-Type, 200
+// and JavaScript wanted.
+fn clientAnswered(connection : Either(String, Address(Tcp.SocketMsg)),
+                  client : String,
+                  host : String) : Either(String, Unit) = {
+    let socket <- connection;
+    let got = get(socket, client, host, socketMs);
+    Tcp.close(socket);
+    let #(response, _) <- Either.mapLeft(got, Io.show);
+    let came =
+        Int.toString(response.status)
+            <> " "
+            <> Optional.withDefault(Http.header(response.headers, "Content-Type"), "with no type");
+    if came == "200 " <> javascript then Right(Unit) else Left(came)
+}
+
 // A response as a check compares it: its status, and its Location after a
 // space where it has one.
 fn shown(#(response, _) : #(Http.Response, Bytes)) : String =
@@ -203,10 +228,10 @@ fn shown(#(response, _) : #(Http.Response, Bytes)) : String =
 
 // The shell's check at the path over the connection, which is then
 // closed.
-fn shell(connection : Either(String, Address(Tcp.SocketMsg)),
-         path : String,
-         host : String,
-         origin : String) : Either(String, Unit) = {
+fn shellAnswered(connection : Either(String, Address(Tcp.SocketMsg)),
+                 path : String,
+                 host : String,
+                 origin : String) : Either(String, Unit) = {
     let socket <- connection;
     let result = shellOver(socket, path, host, origin);
     Tcp.close(socket);
@@ -278,7 +303,7 @@ fn isBinary(message : WebSocket.Message) : Bool =
     }
 
 //
-// The client
+// The requests
 //
 
 /// The response to a GET of the target naming the host, written to the
@@ -519,7 +544,8 @@ let configuration : String =
         <> " \"content-types\": {}, \"headers\": {}, \"access-log\": \""
         <> scratch
         <> "/access.log\",\n"
-        <> " \"shell\": {\"path\": \"/shell/session\", \"origins\": [\"http://localhost\"],\n"
+        <> " \"shell\": {\"path\": \"/shell/session\", \"client\": \"/shell/client.js\",\n"
+        <> "           \"origins\": [\"http://localhost\"],\n"
         <> "           \"command\": [\"sh\", \"-c\", \"read line && echo '3 : Int' && exec cat\"],\n"
         <> "           \"most-at-once\": 2, \"starts\": {\"count\": 10, \"within\": 60000},\n"
         <> "           \"lifetime\": 60000, \"warning\": 30000,\n"
@@ -539,15 +565,16 @@ fn written() : Either(Io.Error, String) = {
 // design §13: the checks against a site, the scratch site served by the
 // launcher over plain HTTP: every check passes and says `: ok` against the
 // site whose host, redirect host, listeners and shell they check, the
-// shell's stand-in answering the keys typed and the stop closing with
-// 4004; given no shell's path, the four checks of the rest alone pass;
-// against the same site from an origin it does not take, the shell's check
-// fails and says what came, the 403, while the rest pass; given a redirect
+// client answered as JavaScript, the shell's stand-in answering the keys
+// typed and the stop closing with 4004; given no shell's paths, the four
+// checks of the rest alone pass; against the same site from an origin it
+// does not take, the shell's check fails and says what came, the 403,
+// while the rest pass, the client's among them; given a redirect
 // host the site does not have, its check fails with the 421, the check
 // asking for the host it is given; and against a port where nothing
 // listens every check fails and says `Io.Refused`, each in a connection of
 // its own. get, upgrade, masked and readOutput are the
-// client they run with, and launch and terminate start and end the server
+// requests they run with, and launch and terminate start and end the server
 // they run against.
 let checksASite = Test.Case(name = "checks a site and says what came", run = fn() = {
     let result = {
@@ -557,7 +584,7 @@ let checksASite = Test.Case(name = "checks a site and says what came", run = fn(
             [one, two] -> #(one, two)
           | _ -> #(0, 0)
         };
-        let shellPath = Some("/shell/session");
+        let shell = Some(#("/shell/session", "/shell/client.js"));
         let redirectHost = "www.localhost";
         let passing =
             checks("http",
@@ -565,7 +592,7 @@ let checksASite = Test.Case(name = "checks a site and says what came", run = fn(
                    plainPort,
                    redirectPort,
                    redirectHost,
-                   shellPath,
+                   shell,
                    "http://localhost");
         let withoutShell =
             checks("http",
@@ -581,7 +608,7 @@ let checksASite = Test.Case(name = "checks a site and says what came", run = fn(
                    plainPort,
                    redirectPort,
                    redirectHost,
-                   shellPath,
+                   shell,
                    "http://elsewhere");
         let elsewhere =
             checks("http",
@@ -595,13 +622,7 @@ let checksASite = Test.Case(name = "checks a site and says what came", run = fn(
         let nothing <- Tcp.port(closed);
         Tcp.closeListener(closed);
         let unanswered =
-            checks("http",
-                   "localhost",
-                   nothing,
-                   nothing,
-                   redirectHost,
-                   shellPath,
-                   "http://localhost");
+            checks("http", "localhost", nothing, nothing, redirectHost, shell, "http://localhost");
         let status <- terminate(program, pid);
         Right(#(List.map(passing, line),
                 List.map(withoutShell, line),
@@ -631,6 +652,7 @@ let checksASite = Test.Case(name = "checks a site and says what came", run = fn(
                      <> "/ answers 301 to https://localhost/",
                  site <> "/ for www.localhost answers 301 to https://localhost/",
                  site <> "/ for elsewhere answers 421",
+                 site <> "/shell/client.js answers 200 as text/javascript; charset=utf-8",
                  site <> "/shell/session runs 1 + 2 and closes with 4004 at a stop"]
             };
             let ok = List.map(named(plainPort, redirectPort), fn(name) = name <> ": ok");
@@ -646,7 +668,7 @@ let checksASite = Test.Case(name = "checks a site and says what came", run = fn(
             Test.equal(#(passing, withoutShell, refused, elsewhere, unanswered, status),
                        #(ok,
                          List.take(ok, 4),
-                         List.take(ok, 4) <> [shellName <> ": failed: 403"],
+                         List.take(ok, 5) <> [shellName <> ": failed: 403"],
                          misdirected,
                          List.map(named(nothing, nothing),
                                   fn(name) = name <> ": failed: Io.Refused"),

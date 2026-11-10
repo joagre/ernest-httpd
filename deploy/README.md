@@ -118,6 +118,7 @@ The rest of the step is run when the configuration takes a shell. `deploy/config
 ```json
 "shell": {
   "path": "/shell/session",
+  "client": "/shell/client.js",
   "origins": ["https://ernest-lang.org"],
   "command": ["/home/httpd/ernest-httpd/shell.sh", "-it", "--rm", "--network", "none", "--read-only",
               "--cap-drop=ALL", "--security-opt=no-new-privileges",
@@ -207,9 +208,10 @@ https://ernest-lang.org:443/ for www.ernest-lang.org answers 301 to https://erne
 https://ernest-lang.org:443/ for elsewhere answers 421: ok
 ```
 
-The smoke test reads the checks it runs from `deploy/config.json`, the archive's own, whose rules but the file system's it checks, the files being the machine's; one it refuses is said with its path, `smoke: deploy/config.json: listeners is required`. A configuration with a shell, step 7's, adds a fifth line:
+The smoke test reads the checks it runs from `deploy/config.json`, the archive's own, whose rules but the file system's it checks, the files being the machine's; one it refuses is said with its path, `smoke: deploy/config.json: listeners is required`. A configuration with a shell, step 7's, adds two lines, the client's and the shell's:
 
 ```console
+https://ernest-lang.org:443/shell/client.js answers 200 as text/javascript; charset=utf-8: ok
 https://ernest-lang.org:443/shell/session runs 1 + 2 and closes with 4004 at a stop: ok
 ```
 

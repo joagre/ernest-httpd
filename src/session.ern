@@ -539,6 +539,7 @@ fn size(rows : Int, columns : Int) : Terminal.Size =
 // and the hangup given.
 fn configured(command : List(String), lifetime : Int, warning : Int, hangup : Int) : Config.Shell =
     Config.Shell(path = "/shell",
+                 client = "/shell/client.js",
                  origins = ["http://localhost"],
                  =command,
                  mostAtOnce = 4,

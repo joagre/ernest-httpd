@@ -68,12 +68,14 @@ export type Timeouts = Timeouts(head : Int, idle : Int, write : Int, file : Int)
 export type Limits =
     Limits(requestLine : Int, headers : Int, connections : Int, connectionsPerAddress : Int)
 
-/// The shell: the WebSocket's path, the origins allowed, the command a
-/// session runs, how many at once, each visitor's starts, a session's
-/// lifetime and its warning in milliseconds, the most bytes of a message,
-/// and the milliseconds a program has to exit after its terminal is hung up.
+/// The shell: the WebSocket's path, the client's path (design §14), the
+/// origins allowed, the command a session runs, how many at once, each
+/// visitor's starts, a session's lifetime and its warning in milliseconds,
+/// the most bytes of a message, and the milliseconds a program has to exit
+/// after its terminal is hung up.
 export type Shell =
     Shell(path : String,
+          client : String,
           origins : List(String),
           command : List(String),
           mostAtOnce : Int,
@@ -316,6 +318,7 @@ fn shell(top : Map(String, Json.Value)) : Either(Error, Optional(Shell)) =
                         "shell",
                         "shell",
                         ["path",
+                         "client",
                          "origins",
                          "command",
                          "most-at-once",
@@ -329,6 +332,13 @@ fn shell(top : Map(String, Json.Value)) : Either(Error, Optional(Shell)) =
                 Right(Unit)
             else
                 Left(invalid("shell.path", "begin with /", Json.Text(path)));
+            let client <- string(object, "shell", "client");
+            let _ <- if !beginsWith(client, '/') then
+                Left(invalid("shell.client", "begin with /", Json.Text(client)))
+            else if client == path then
+                Left(invalid("shell.client", "not be shell.path", Json.Text(client)))
+            else
+                Right(Unit);
             let origins <- elements(object, "shell", "origins", nonEmptyString);
             let command <- elements(object, "shell", "command", stringValue);
             let _ <- notEmptyArray("shell.command", command);
@@ -343,6 +353,7 @@ fn shell(top : Map(String, Json.Value)) : Either(Error, Optional(Shell)) =
                 Left(invalid("shell.warning", "be below the lifetime", Json.Integer(warning)));
             let hangup <- positive(object, "shell", "hangup");
             Right(Some(Shell(=path,
+                             =client,
                              =origins,
                              =command,
                              =mostAtOnce,
@@ -638,7 +649,7 @@ let example : String =
                    "\"/home/httpd/ernest-httpd/log/access.log\"\n",
                    "\"/home/httpd/ernest-httpd/log/access.log\",\n"
                        <> "  \"shell\": {\n"
-                       <> "    \"path\": \"/shell/session\",\n"
+                       <> "    \"path\": \"/shell/session\", \"client\": \"/shell/client.js\",\n"
                        <> "    \"origins\": [\"https://ernest-lang.org\"],\n"
                        <> "    \"command\": [\"podman\", \"run\", \"-it\", \"--rm\", \"ernest-shell\"],\n"
                        <> "    \"most-at-once\": 10,\n"
@@ -691,6 +702,7 @@ let readsTheExample =
                           Http.Header(name = "X-Content-Type-Options", value = "nosniff")],
                          Path("/home/httpd/ernest-httpd/log/access.log"),
                          Some(Shell(path = "/shell/session",
+                                    client = "/shell/client.js",
                                     origins = ["https://ernest-lang.org"],
                                     command = ["podman", "run", "-it", "--rm", "ernest-shell"],
                                     mostAtOnce = 10,
@@ -775,8 +787,9 @@ let refusesTypes =
 // host, its port dropped and in any case, a control character, a content
 // type's dot, a header's token and a header the server writes itself, in
 // any case, a framing header's, a response's own and an upgrade's, the
-// shell's path, its warning, and its hangup, a value and one that is
-// absent.
+// shell's path, the client's path, which begins with / and is not the
+// shell's, and is required, the warning, and the hangup, a value and one
+// that is absent.
 let refusesValues =
     Test.Case(name = "refuses a value that breaks a rule",
               run = fn() =
@@ -810,6 +823,9 @@ let refusesValues =
                               broken(edited("\"X-Content-Type-Options\"",
                                             "\"sec-websocket-accept\"")),
                               broken(edited("\"path\": \"/shell/session\"", "\"path\": \"shell\"")),
+                              broken(edited("\"/shell/client.js\"", "\"shell/client.js\"")),
+                              broken(edited("\"/shell/client.js\"", "\"/shell/session\"")),
+                              broken(edited(" \"client\": \"/shell/client.js\",", "")),
                               broken(edited("\"warning\": 60000", "\"warning\": 300000")),
                               broken(edited("\"hangup\": 5000", "\"hangup\": 0")),
                               broken(edited(", \"hangup\": 5000", ""))],
@@ -857,6 +873,11 @@ let refusesValues =
                                      writtenByTheServer,
                                      Some("\"sec-websocket-accept\""))),
                               Some(#("shell.path", "begin with /", Some("\"shell\""))),
+                              Some(#("shell.client", "begin with /", Some("\"shell/client.js\""))),
+                              Some(#("shell.client",
+                                     "not be shell.path",
+                                     Some("\"/shell/session\""))),
+                              Some(#("shell.client", "is required", None)),
                               Some(#("shell.warning", "be below the lifetime", Some("300000"))),
                               Some(#("shell.hangup", "be above 0", Some("0"))),
                               Some(#("shell.hangup", "is required", None))]))

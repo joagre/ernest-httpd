@@ -2,11 +2,11 @@
 
 *The Importance of Being Ernest, a Trivial Comedy for Serious People*
 
-ernest-httpd serves one site, ernest-lang.org: static pages, and one WebSocket per visitor that connects a terminal in the browser to a shell on the server. It implements what that needs of HTTP/1.1 and nothing more, and is written in Ernest against an installed Ernest. Its design is [`docs/design.md`](docs/design.md). This repository was begun from [`ernest-template`](https://github.com/joagre/ernest-template).
+ernest-httpd serves one site, ernest-lang.org: static pages, and one WebSocket per visitor that connects a terminal in the browser to a shell on the server, with the client, the module a page imports to speak it. It implements what that needs of HTTP/1.1 and nothing more, and is written in Ernest against an installed Ernest. Its design is [`docs/design.md`](docs/design.md). This repository was begun from [`ernest-template`](https://github.com/joagre/ernest-template).
 
 ## Building
 
-It needs [Ernest](https://ernest-lang.org) on your `PATH`, the floor the Makefile names, `ern 0.10`; `make` says so where another is found. `ERN=path/to/ern make` names another `ern`, which every target then runs, the tests and the example's shell among them. An Ernest installed under a prefix of your own, `make install PREFIX=<prefix>` in its unpacked archive, builds it with `ERN=<prefix>/bin/ern make`.
+It needs [Ernest](https://ernest-lang.org) on your `PATH`, the floor the Makefile names, `ern 0.10`; `make` says so where another is found. `ERN=path/to/ern make` names another `ern`, which every target then runs, the tests and the example's shell among them. An Ernest installed under a prefix of your own, `make install PREFIX=<prefix>` in its unpacked archive, builds it with `ERN=<prefix>/bin/ern make`. `make test` needs Chromium too, `chromium` on `PATH`, Debian's package of that name, since the client's test runs the client in it.
 
 ```
 make            builds: lib/ filled, each dependency and then the program compiled

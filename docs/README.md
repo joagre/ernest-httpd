@@ -12,4 +12,5 @@ What each document of this repository is. [`README.md`](../README.md) says what 
 - **[`deploy/README.md`](../deploy/README.md)**: the deployment, the operator's steps in their order.
 - **`language_feedback.md`**, under `docs/` from its first line and gone when it is empty: what writing Ernest felt against the principles, a queue, carried to Ernest as `CLAUDE.md`'s *Defects and gaps* says.
 - **`findings.md`**, while a review's findings are open: the findings, a line each.
+- **`proposals/`**: what is designed, a directory for each with its README saying what its files are and which is current; a proposal is tentative until it is decided, and a built one stays as the record of its design until its milestone's reading and sweep.
 - **[`CLAUDE.md`](../CLAUDE.md)**: the working rules.
