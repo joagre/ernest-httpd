@@ -133,7 +133,7 @@ export fn serve(shell : Config.Shell,
         first :: rest -> #(first, rest)
       | [] -> #("", [])
     };
-    match Os.startTerminal(Os.Command(program = name, =arguments, input = <<>>), size) {
+    match Os.startTerminal(Os.command(name, arguments), size) {
         Right(program) -> {
             let me = self();
             let idle = timeouts.idle;
@@ -239,7 +239,7 @@ fn serving(started : Started, state : Serving) : Unit receiving SessionMsg =
             ended(started, state, code)
       | Answered(Right(Os.Exited(_))) -> {
             begun(started, state, 4004);
-            Process.kill(Process.fromAddress(started.writer));
+            kill(Process.fromAddress(started.writer));
             writerEnded();
             stopped(started, 4004, true)
         }
@@ -253,17 +253,17 @@ fn serving(started : Started, state : Serving) : Unit receiving SessionMsg =
             // a read that faulted: the terminal is read no more, and the
             // program is killed at once
             begun(started, state, 1011);
-            Process.kill(Process.fromAddress(started.writer));
+            kill(Process.fromAddress(started.writer));
             writerEnded();
-            Process.kill(Process.fromAddress(started.program));
+            kill(Process.fromAddress(started.program));
             drained(1011)
         }
       | WriterEnded(_) -> {
             // a write that faulted: the program is killed at once
             begun(started, state, 1011);
-            Process.kill(Process.fromAddress(started.reader));
+            kill(Process.fromAddress(started.reader));
             readerEnded(1011);
-            Process.kill(Process.fromAddress(started.program));
+            kill(Process.fromAddress(started.program));
             drained(1011)
         }
       | Alarm(_) ->
@@ -418,7 +418,7 @@ fn rang(started : Started, state : Serving) : Unit receiving SessionMsg = {
 // hangup's end, a read already under way reading on.
 fn ended(started : Started, state : Serving, code : Int) : Unit receiving SessionMsg = {
     begun(started, state, code);
-    Process.kill(Process.fromAddress(started.writer));
+    kill(Process.fromAddress(started.writer));
     writerEnded();
     Os.closeInput(started.program);
     if state.reading then Unit else send(started.reader, Read);
@@ -462,7 +462,7 @@ fn hungUp(started : Started, code : Int, time : Int) : Unit receiving SessionMsg
             hungUp(started, code, time)
         }
       | ReaderEnded(_) -> {
-            Process.kill(Process.fromAddress(started.program));
+            kill(Process.fromAddress(started.program));
             drained(code)
         }
       | Attach(shell) -> {
@@ -478,9 +478,9 @@ fn hungUp(started : Started, code : Int, time : Int) : Unit receiving SessionMsg
 // The reader ended and waited for, and the program killed where it has not
 // exited; then what waits in the mailbox taken, and the session returns.
 fn stopped(started : Started, code : Int, exited : Bool) : Unit receiving SessionMsg = {
-    Process.kill(Process.fromAddress(started.reader));
+    kill(Process.fromAddress(started.reader));
     readerEnded(code);
-    if exited then Unit else Process.kill(Process.fromAddress(started.program));
+    if exited then Unit else kill(Process.fromAddress(started.program));
     drained(code)
 }
 
@@ -770,7 +770,7 @@ let holdsForTheNext =
         let detachedOutput = toldOutput("one");
         send(session, End(1000));
         let end = next("two");
-        kill(one);
+        kill(Process.fromAddress(one));
         Test.equal(#(attached,
                      echoed,
                      held,
@@ -819,7 +819,7 @@ let waitsForWritten = Test.Case(name = "reads on once its shell has written", ru
     let readOn = String.startsWith(next("third"), "Output(");
     send(session, End(1000));
     let end = messages("third");
-    kill(first);
+    kill(Process.fromAddress(first));
     Test.equal(#(attachedFirst,
                  firstOutput,
                  takenOver,
@@ -893,7 +893,7 @@ fn readUntil(program : Address(Os.ProgramMsg), text : String, acc : String) : St
 // read, Wrote comes and the program has read the keys once; the next write
 // is written and told as any.
 let waitsOutATimedOutWrite = Test.Case(name = "waits out a write past its deadline", run = fn() = {
-    let command = Os.Command(program = "sh", arguments = ["-c", readsAtResize], input = <<>>);
+    let command = Os.command("sh", ["-c", readsAtResize]);
     match Os.startTerminal(command, size(24, 80)) {
         Right(program) -> {
             let ready = readUntil(program, "ready\r\n", "");
@@ -912,8 +912,8 @@ let waitsOutATimedOutWrite = Test.Case(name = "waits out a write past its deadli
             send(writer, Write(String.toUtf8("beta\n")));
             let again = wrote(5000);
             let beta = readUntil(program, "beta\r\n", "");
-            kill(writer);
-            Process.kill(Process.fromAddress(program));
+            kill(Process.fromAddress(writer));
+            kill(Process.fromAddress(program));
             Test.equal(#(ready, early, late, read == a, again, beta),
                        #("ready\r\n", "nothing", "Wrote", true, "Wrote", "beta\r\n"))
         }
@@ -1022,7 +1022,7 @@ let tellsTheAttachment =
         send(session, Attach(shell("three")));
         let third = next("three");
         send(session, End(1000));
-        kill(one);
+        kill(Process.fromAddress(one));
         Test.equal(#(first, second, next("two"), third, next("three"), sessionEnded()),
                    #("Attached(New)",
                      "Attached(Joined)",
@@ -1199,7 +1199,7 @@ let endsWithItsHelpers =
                                else
                                    Test.Failed("the reader does not wait in its read"),
                            5000);
-            List.forEach(spawnedInServe(activity), Process.kill);
+            List.forEach(spawnedInServe(activity), kill);
             #(attached <> " " <> Io.show(settled), next("shell"), sessionEnded())
         };
         Test.equal([ending(Process.Calling), ending(Process.Receiving)],

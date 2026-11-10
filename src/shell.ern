@@ -457,7 +457,7 @@ fn closed(connected : Connected,
           reader : Optional(Process)) : Unit receiving ShellMsg = {
     match reader {
         Some(process) -> {
-            Process.kill(process);
+            kill(process);
             readerEnded()
         }
       | None ->
@@ -976,10 +976,10 @@ let closesAtItsSessionsEnd =
                        [],
                        Smoke.masked(page("{\"resize\": [24, 80]}")));
             let #(attached, client) = nextMessage(client);
-            kill(session);
+            kill(Process.fromAddress(session));
             Right(#(attached, messages(client, 2), ended()))
         };
-        kill(sessions.address);
+        kill(Process.fromAddress(sessions.address));
         Test.equal(result, Right(#(attachedText("new"), ["Close(1011)", "closed"], "Returned")))
     })
 
@@ -1040,8 +1040,8 @@ let dropsBeforeTheResize =
             });
             Right(#(attached, output, closing, end, taken))
         };
-        kill(session);
-        kill(sessions.address);
+        kill(Process.fromAddress(session));
+        kill(Process.fromAddress(sessions.address));
         Test.equal(result,
                    Right(#(attachedText("new"),
                            "Binary(out)",

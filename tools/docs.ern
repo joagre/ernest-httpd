@@ -97,8 +97,7 @@ export fn main() : Unit = {
 
 // The files git tracks whose names match the pattern.
 fn tracked(pattern : String) : List(String) =
-    match Os.run(Os.Command(program = "git", arguments = ["ls-files", pattern], input = <<>>),
-                 5000) {
+    match Os.run(Os.command("git", ["ls-files", pattern]), 5000) {
         Right(finished) when finished.status == 0 ->
             textLines(finished.stdout)
       | _ -> {

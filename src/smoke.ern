@@ -415,7 +415,7 @@ let limits : Http.Limits = Http.Limits(line = 8192, headers = 65536)
 
 // A read's error as the socket's, a response that is no HTTP/1.1 written
 // as `Other`.
-fn readError(error : Http.ReadError) : Io.Error =
+fn readError(error : Http.SocketError) : Io.Error =
     match error {
         Http.Socket(cause) -> cause
       | Http.Protocol(cause) -> Io.Other("the response is " <> Io.show(cause))
@@ -437,9 +437,7 @@ fn readError(error : Http.ReadError) : Io.Error =
 export fn launch(path : String,
                  count : Int) : Either(Io.Error, #(Address(Os.ProgramMsg), String, List(Int))) = {
     let program <-
-        Os.start(Os.Command(program = "sh",
-                            arguments = ["-c", "echo $$; exec bin/ernest_httpd \"$0\"", path],
-                            input = <<>>));
+        Os.start(Os.command("sh", ["-c", "echo $$; exec bin/ernest_httpd \"$0\"", path]));
     let out <- said(program, "", count + 1);
     match String.lines(out) {
         pid :: listening -> {
@@ -482,7 +480,7 @@ fn portSaid(line : String) : Either(Io.Error, Int) = {
 /// has exited, read within 30000 milliseconds, what it writes before left
 /// unread.
 export fn terminate(program : Address(Os.ProgramMsg), pid : String) : Either(Io.Error, Int) = {
-    let _ <- Os.run(Os.Command(program = "kill", arguments = ["-TERM", pid], input = <<>>), 5000);
+    let _ <- Os.run(Os.command("kill", ["-TERM", pid]), 5000);
     exited(program)
 }
 
@@ -719,10 +717,8 @@ fn ranSmoke(runs : List(List(String))) : List(Either(Io.Error,
             spawn(fn() =
                       send(me,
                            Ran(=index,
-                               outcome = Os.run(Os.Command(program = "ern",
-                                                           arguments = ["run", "build/smoke.erc"]
-                                                               <> arguments,
-                                                           input = <<>>),
+                               outcome = Os.run(Os.command("ern",
+                                                           ["run", "build/smoke.erc"] <> arguments),
                                                 30000))));
         Unit
     });

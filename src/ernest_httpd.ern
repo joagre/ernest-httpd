@@ -296,9 +296,7 @@ fn ran(runs : List(List(String))) : List(Either(Io.Error, Os.Finished)) receivin
             spawn(fn() =
                       send(me,
                            Ran(=index,
-                               outcome = Os.run(Os.Command(program = "bin/ernest_httpd",
-                                                           =arguments,
-                                                           input = <<>>),
+                               outcome = Os.run(Os.command("bin/ernest_httpd", arguments),
                                                 30000))));
         Unit
     });

@@ -206,12 +206,12 @@ fn recorded(connections : Map(Process, Open), told : Connection.Told) : Map(Proc
 // ended and each that tells Upgraded after told to close, until every
 // connection has ended.
 fn ending(listening : Listening, connections : Map(Process, Open)) : Unit receiving ListenerMsg = {
-    Process.kill(Process.fromAddress(listening.acceptor));
+    kill(Process.fromAddress(listening.acceptor));
     let open = acceptorEnded(connections);
     Tcp.closeListener(listening.socket);
     let current = taken(open);
     Map.forEach(current, fn(process, connection) = match connection.doing {
-        AwaitingRequest -> Process.kill(process)
+        AwaitingRequest -> kill(process)
       | ServingRequest -> Unit
       | ServingShell(shell) -> closingShell(shell)
     });
@@ -242,7 +242,7 @@ fn closing(connections : Map(Process, Open)) : Unit receiving ListenerMsg =
         Unit
     else receive {
         Told(Connection.ResponseWritten(process)) -> {
-            Process.kill(process);
+            kill(process);
             closing(connections)
         }
       | Told(Connection.Upgraded(shell) as told) -> {
