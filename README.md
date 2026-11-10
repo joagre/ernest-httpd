@@ -49,7 +49,7 @@ The server runs on its machine as [`deploy/README.md`](deploy/README.md) says, s
 
 ## The documents
 
-[`docs/README.md`](docs/README.md) says what each document is.
+In the repository, `docs/README.md` says what each document is.
 
 The tests live in the modules they test, which `make test` runs; `test/`, where it exists, holds a program run end to end, and `tools/` the checker of the documents, `make test` runs them too.
 
