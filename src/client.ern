@@ -93,8 +93,8 @@ fn head(shell : Config.Shell) : String = {
 /// writes before it, which defines nothing on the page's global object and
 /// holds no backtick. It exports `start(rows, columns, told)`, which opens
 /// the socket to the shell's path on the module's own origin and answers
-/// the session at once: `keys(bytes)`, `resize(rows, columns)`, `extend()`
-/// and `stop()`. What the session is asked before its socket is open is
+/// the handle at once: `keys(bytes)`, `resize(rows, columns)`, `extend()`
+/// and `stop()`. What the handle is asked before its socket is open is
 /// sent at the open, after the size, in its order. It tells `told` the
 /// session's `output(bytes)`, `attached(joined)`, `warning(left)` in
 /// milliseconds, and last `ended(reason)`: `expired`, `takenOver`,
@@ -348,7 +348,7 @@ function started(start, name) {
         seen.lines.push(name + " " + line);
         seen.wake();
     };
-    const session = start(24, 80, {
+    const handle = start(24, 80, {
         output(bytes) {
             seen.output += decoder.decode(bytes, { stream: true });
             seen.wake();
@@ -363,14 +363,14 @@ function started(start, name) {
         }
     }
     return {
-        session,
+        handle,
         async next() {
             await until(() => seen.lines.length > 0);
             return seen.lines.shift();
         },
         async typed(text, answer) {
             seen.output = "";
-            session.keys(new TextEncoder().encode(text));
+            handle.keys(new TextEncoder().encode(text));
             await until(() => seen.output.includes(answer));
             return name + " output " + answer;
         },
@@ -397,17 +397,17 @@ async function scenario() {
     const second = started(start, "second");
     await report(await first.next());
     await report(await second.next());
-    const keys = second.session.keys;
-    await report("second faults " + fault(() => second.session.resize(0, 80)) + " " + fault(() => keys("echo")));
+    const keys = second.handle.keys;
+    await report("second faults " + fault(() => second.handle.resize(0, 80)) + " " + fault(() => keys("echo")));
     await report(await second.typed("echo $((40+2))\n", "42"));
-    second.session.resize(30, 100);
+    second.handle.resize(30, 100);
     await report(await second.typed("stty size\n", "30 100"));
     await report(await second.next());
-    second.session.extend();
+    second.handle.extend();
     await report(await second.next());
     await report(await second.next());
     const third = started(start, "third");
-    third.session.stop();
+    third.handle.stop();
     await report(await third.next());
     await report(await third.next());
     const fourth = started(start, "fourth");

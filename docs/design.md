@@ -363,14 +363,14 @@ The start copies both into the home, since the container is read-only and a node
 
 ## 14. The client
 
-`Client.serve(shell, request)` answers the response and its body for a request at the client's path, `shell.client`: the client, a JavaScript module a page imports to run a session over the shell, §11, on the module's own origin. The module is the client's text, `Client.text`, held as written in a raw string, under a head the server writes from the configuration. The interface below is the one thing the server and the site it serves share.
+`Client.serve(shell, request)` answers the response and its body for a request at the client's path, `shell.client`: the client, a JavaScript module a page imports to run a session over the shell, §11, on the module's own origin. The module is the client's text, `Client.text`, under a head the server writes from the configuration.
 
 ```
 Client.serve : (Config.Shell, Http.Request) -> #(Http.Response, Bytes) // the response and its body
-Client.text : String // the client's text as written: an ES module that defines nothing on window and holds no backtick
+Client.text : String // the client's text as written: an ES module that defines nothing on window
 ```
 
-**The response.** `GET` answers 200 with `Content-Type: text/javascript; charset=utf-8` and `Cache-Control: no-store`, and the module as the body; `HEAD` the same with its body dropped and `Content-Length` the body's size, as `Static.withoutBody` makes it; any other method answers `Static.methodNotAllowed`, §5. It carries no `Last-Modified` and answers no 304. A browser keeps no copy, so a page loaded whole runs the client of the server it talks to; a page restored from the browser's history is not loaded whole, and a reload mends it.
+**The response.** `GET` answers 200 with `Content-Type: text/javascript; charset=utf-8` and `Cache-Control: no-store`, and the module as the body; `HEAD` the same with its body dropped and `Content-Length` the body's size, as `Static.withoutBody` makes it; any other method answers `Static.methodNotAllowed`, §5. It carries no `Last-Modified` and answers no 304.
 
 **The module.** The body is two lines and then `Client.text`: `const path = `, `shell.path` as `Json.encode` writes it, and `;`; then `export const limits = `, the object `Json.encode` writes of `lifetime`, `mostAtOnce`, `starts`, an object of `count` and `within`, and `warning`, in that order, the configuration's values in milliseconds and counts, and `;`. The text names `path` and not `limits`.
 
@@ -378,24 +378,24 @@ Client.text : String // the client's text as written: an ES module that defines 
 
 ```
 export const limits // { lifetime, warning, mostAtOnce, starts: { count, within } }, the configuration's shell, §4
-export function start(rows, columns, told) // a session of the size, told as below; answers the Session at once
-Session.keys(bytes) // a Uint8Array to the program
-Session.resize(rows, columns)
-Session.extend()
-Session.stop()
+export function start(rows, columns, told) // a session of the size, told as below; answers the handle at once
+handle.keys(bytes) // a Uint8Array to the program
+handle.resize(rows, columns)
+handle.extend()
+handle.stop()
 told.output(bytes) // a Uint8Array the program wrote
 told.attached(joined) // the session is attached; true where this browser joined a live session
 told.warning(left) // the milliseconds before the end, unless a key or an extension moves it
 told.ended(reason) // "expired", "takenOver", "unavailable", "stopped" or "lost", once, last
 ```
 
-**The session.** `start` opens a WebSocket to `path` on the module's own origin, `import.meta.url` with its scheme `wss:` for `https:` and `ws:` otherwise, binary messages as `ArrayBuffer`, sends `{"resize": [rows, columns]}` at the open, and answers the session at once. What the session is asked before the socket is open is sent at the open after the size, in its order: `keys` as a binary message, `resize` as `{"resize": [rows, columns]}`, `extend` as `{"extend": true}` and `stop` as `{"stop": true}`, §11; so a stop asked before the attach is ordered after the size, and the shell holds it until the session is attached.
+**The handle.** `start` opens a WebSocket to `path` on the module's own origin, `import.meta.url` with its scheme `wss:` for `https:` and `ws:` otherwise, binary messages as `ArrayBuffer`, sends `{"resize": [rows, columns]}` at the open, and answers the handle at once. What the handle is asked before the socket is open is sent at the open after the size, in its order: `keys` as a binary message, `resize` as `{"resize": [rows, columns]}`, `extend` as `{"extend": true}` and `stop` as `{"stop": true}`, §11.
 
-A row or column count that is not an integer from 1 to 65535 faults the call with a `RangeError`; a `told` whose four members are not each a function faults `start` with a `TypeError`, and `keys` of anything but a `Uint8Array` faults `keys` with one. Once the socket is closing or closed, or could not be made, the session sends nothing and what it is asked is dropped, a call that faults still faulting.
+A row or column count that is not an integer from 1 to 65535 faults the call with a `RangeError`; a `told` whose four members are not each a function faults `start` with a `TypeError`, and `keys` of anything but a `Uint8Array` faults `keys` with one. Once the socket is closing or closed, or could not be made, the handle sends nothing and what it is asked is dropped, a call that faults still faulting.
 
 **What is told.** `attached` once, from the shell's `{"attached": ...}`, `joined` true for `"joined"`, before any `output`; `output` for each binary message, in order; `warning` for each `{"warning": seconds}`, `left` the seconds times 1000; `ended` once, last, at the socket's close, with `"expired"` for 4001, `"takenOver"` for 4002, `"unavailable"` for 4003, `"stopped"` for 4004, and `"lost"` for any other code, a socket that does not open or that fails among them. A text message of another form is dropped. The client keeps no state of the page's.
 
-**The test.** `Client`'s test runs the client in Chromium, `chromium` on `PATH`, which `make test` needs; a machine without it fails the test with a line naming the package. The test writes a page under `build/client/`; launches the server as the end-to-end tests do, on a configuration whose root is the page's directory, whose canonical host is `client.localhost`, whose `shell` has the origin `http://client.localhost`, the command `sh`, a lifetime of 2000 and a warning of 1000 milliseconds, `most-at-once` 4 and `starts.count` 2 within a minute, and whose `headers` has no `Content-Security-Policy`, which would refuse the page's report; listens on a port of its own; and starts Chromium on the page, its query `report` naming the test's port, with `--headless=new`, `--user-data-dir` under `build/client/`, and `--host-resolver-rules` carrying `client.localhost` to the server's port.
+**The test.** `Client`'s test runs the client in Chromium, `chromium` on `PATH`; a machine without it fails the test with a line naming the package. The test writes a page under `build/client/`; launches the server as the end-to-end tests do, on a configuration whose root is the page's directory, whose canonical host is `client.localhost`, whose `shell` has the origin `http://client.localhost`, the command `sh`, a lifetime of 2000 and a warning of 1000 milliseconds, `most-at-once` 4 and `starts.count` 2 within a minute, and whose `headers` has no `Content-Security-Policy`; listens on a port of its own; and starts Chromium on the page, its query `report` naming the test's port, with `--headless=new`, `--user-data-dir` under `build/client/`, and `--host-resolver-rules` carrying `client.localhost` to the server's port.
 
 The page imports the client, walks the scenario, and reports each thing the client told it, and each `error` and `unhandledrejection` event of the window and a walk that fails, as one line, an awaited `fetch` of the line to the test's port, so that the lines come in order. The test reads each request line with `Http.readRequest`, answers 204, and compares each line with the scenario's, stopping at the first that differs; it ends the server at the line of the unavailable start, before it answers it. It waits on its own socket or the browser's end, within 30 seconds for the whole, and a failure names the lines received; then it ends the browser and the server.
 
@@ -424,7 +424,7 @@ The names that recur across modules, one for each concept, in every module. A na
 - **message**: what one side of a WebSocket sends whole, `WebSocket.Message`, a text or a binary message, a ping, a pong or a close, decoded from its frames, §10. Not `frame`, which is the wire's.
 - **shell**: a connection after its upgrade on the shell's path, `shell.path`, and its process, §11; `shell` is the configuration's object for it, §4. Not `terminal`, `socket`.
 - **session**: the process that owns one visitor's program under a terminal, by the visitor's cookie, §12; **the sessions** is the process that holds them. Not `container`, which is the command's.
-- **client**: the shell's client, the module the server serves at `shell.client`, which a page imports to run a session, §14. Not `script`.
+- **client**: the shell's client, the module the server serves at `shell.client`, which a page imports to run a session, §14; a request's client, §1, §6, §8 and §10, is the report's word for its sender. Not `script`.
 - **cookie**: the value of the `shell` cookie that names a visitor's session, 32 hexadecimal digits, §11. Not `token`, `id`.
 - **program**: the command a session runs under its terminal, `shell.command`, §12. Not `child`, `container`.
 - **reader**: a process that alone calls the read of a socket or a terminal and tells its owner what it read, §11, §12.

@@ -25,7 +25,7 @@ Ernest's session handed the site over on 2026-11-10: `make site TAG=v0.10.0` and
 - **Never stale.** A page loaded whole runs the client of the server it talks to, never one a browser kept from the server before.
 - **Its own test.** The client against a server the test starts itself, on the machine it runs on, in this repository.
 
-The client's interface is then the one thing the two repositories share, stated in this design and cited from Ernest's site design note by its address.
+The client's interface is stated in this design and cited from Ernest's site design note by its address.
 
 The design is taken (2026-11-10): §14 states the client, its response, its module, its interface and its test, and §1, §4, §6, §13 and the glossary what each owns of it, from the proposal under `docs/proposals/shell-client/`, agreed with Ernest's session, whose site note cites §14 (the log's *The shell client's design*). Ernest's session was told the same day. The proposal stays as the record of its design until its reading and sweep, an item before this milestone's release, below.
 
@@ -51,7 +51,7 @@ Ernest's side is built against that rehearsal's server: the site's script callin
 
 **Item 5, the release and the switch.** When the reviews of Ernest's MVP 4.4 begin, the floor rises to the minor of its release, 0.11 or 0.12 as Ernest says, on the archive of the commit its readers read. Once that release is tagged, the same week and after `ernest-template`'s release and `ernest-epx`'s, it is installed, and a release of this program is made by `docs/release.md`, its readers among it, which `make release` refuses before the tag.
 
-**The proposal's reading and sweep.** Before that release, `docs/proposals/shell-client/` is read with the user for what it holds that no owner has yet, which goes to the design or the log, and the directory goes, its milestone's row naming the log entries that argue it, so that the release ships the owner and not the proposal. Its named decisions, with the user in a design session: the six lines of `docs/findings.md`, the cold reading of §14's sentences, the glossary's *client* among them (the log's *Milestone 2, item 11: the shell client's build*).
+**The proposal's reading and sweep.** Before that release, `docs/proposals/shell-client/` is read with the user for what it holds that no owner has yet, which goes to the design or the log, and the directory goes, its milestone's row naming the log entries that argue it, so that the release ships the owner and not the proposal. The six findings of the cold reading of §14's sentences are decided (the log's *The cold reading's six*).
 
 That release, with item 11's client, is installed in one switch on the path the second rehearsal walked: `deploy/config.json` takes the member `shell` that design §13 gives, and `deploy/README.md`'s step 7 builds the image and installs the wrapper (the log's *The wrapper and the smoke test's configuration*). The site, generated the same way from the tag of the MVP 4.4 release, is copied last, as step 5 copies `site/` today, so that every project it lists builds on the release it names (decided 2026-11-04, its release and its floor 2026-11-05, the log's *The release before the site*, *The site on Ernest's next minor* and *The floor at the reviews*). The `ernest-lang.org` repository, which holds the one page until then, goes (the log's *From the site's design*).
 
