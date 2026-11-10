@@ -6,19 +6,17 @@ Read *Where we are* first, then the milestone under way, its steps by what each 
 
 ## Where we are
 
-Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0+14a7c50c`, installed from its archive by 2026-11-06. Milestone 2 is under way: item 9 waits on Ernest's answer to `language_feedback.md`'s line 27, and every other step on a release of Ernest's, its MVP 4.15 or its MVP 4.4, or on what the access log shows.
+Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0+14a7c50c`, installed from its archive by 2026-11-06. Milestone 2 is under way: every step waits on a release of Ernest's, its MVP 4.15 or its MVP 4.4, or on what the access log shows.
 
 ## Milestone 2: after the first release
 
 What the first release's readers found and the milestone's own items, each a step with its log entry when built. Done: items 1 to 4, 6 and 7, the log's *Milestone 2, item 1: the refusal's form*, *Milestone 2, item 2: quiet tests*, *Milestone 2, items 3 and 4: the attach's word and a restart at the cap*, *Three cleanups* and *The code reader's findings*; and the two nodes in the visitor's container with a CPU cap, the log's *Two nodes and a core*.
 
-### On Ernest's answer to line 27
-
-**Item 9, a reset under load (2026-11-07).** With twelve clients connecting at once, about one HTTPS connection to https://ernest-lang.org in twenty to forty is reset during the TLS handshake, curl saying `Recv failure: Connection reset by peer`. The cause is the listener's backlog, the host's 5, which no option changes (Ernest's report, Appendix E.18): a SYN past it is answered by a syncookie, and a ClientHello of two segments, as a post-quantum key share makes it, is reset where its first segment finds the accept queue full. Line 27 asks that a listener take the host's largest backlog; nothing here goes around it (the log's *Milestone 2, item 9: the reset under load*).
-
-The probe that closes it, run on the archive that carries Ernest's answer: the server in a user network namespace, `unshare -rn`, its loopback at MTU 1500 with 20 ms each way by `tc netem`, pinned to two processors, and 20 rounds of `seq 12 | xargs -P 12` curls over TLS, which on `0.10.0+14a7c50c` reset 5 to 14 of 240. It closes when none is reset, before item 5's switch, since a launch brings such bursts.
-
 ### On Ernest's MVP 4.15
+
+**Item 9, a reset under load (2026-11-07).** With twelve clients connecting at once, about one HTTPS connection to https://ernest-lang.org in twenty to forty is reset during the TLS handshake, curl saying `Recv failure: Connection reset by peer`. The cause is the listener's backlog, the host's 5, which no option changes (Ernest's report, Appendix E.18): a SYN past it is answered by a syncookie, and a ClientHello of two segments, as a post-quantum key share makes it, is reset where its first segment finds the accept queue full. Ernest took `language_feedback.md`'s line 27 as its 248, its MVP 4.15 item 48: a listener takes the largest backlog the host takes, 4096 on Linux by default. Nothing here goes around it (the log's *Milestone 2, item 9: the reset under load*).
+
+The probe that closes it, run on the archive that carries 248: the server in a user network namespace, `unshare -rn`, its loopback at MTU 1500 with 20 ms each way by `tc netem`, pinned to two processors, and 20 rounds of `seq 12 | xargs -P 12` curls over TLS, which on `0.10.0+14a7c50c` reset 5 to 14 of 240. It closes when none is reset, and line 27 goes then, before item 5's switch, since a launch brings such bursts.
 
 **The four lines in the test run.** The four lines the design has the program say stay in the run until Ernest's test runner can capture a case's standard error, Ernest's 225; with the archive that carries it they leave the run (the log's *Milestone 2, item 2: quiet tests*).
 
