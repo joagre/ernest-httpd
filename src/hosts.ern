@@ -331,7 +331,9 @@ let tokenServed : Compared =
 // otherwise the host Config.host reads from its Host header, its port and
 // an IPv6 address's brackets dropped and its case kept; a request in
 // origin form with no Host names none, and so does one whose Host
-// Config.host reads as none, which the connection refuses first.
+// Config.host reads as none, which the connection refuses first. A
+// regression test, written after the code: it does not cover an IP
+// literal with a zone id, which G.12 does not read.
 let readsTheHost =
     Test.Case(name = "reads a request's host",
               run = fn() =
@@ -417,7 +419,8 @@ let comparesConfiguredPorts =
 
 // design §9: an IPv6 address is compared without its brackets, the
 // configuration's and the request's alike, and the 301 keeps the canonical
-// host as written.
+// host as written. A regression test, written after the code: it does not
+// compare two spellings of one address, which §9 compares as text.
 let comparesAddresses =
     Test.Case(name = "compares an IPv6 address",
               run = fn() =

@@ -594,7 +594,9 @@ let refusesUpgrades = Test.Case(name = "refuses an upgrade it does not take", ru
 // lower-case hexadecimal digits drawn and set for the shell's path alone,
 // and where it carried one, that cookie and no Set-Cookie: the first of
 // the shell's form among the cookies of its Cookie headers, as
-// Http.cookies parts them.
+// Http.cookies parts them. That case is a regression test's, written after
+// the code: it does not cover a quoted value, which Http.cookies keeps
+// with its quotes and the shell's form refuses.
 let acceptsUpgrades = Test.Case(name = "accepts an upgrade and sets its cookie", run = fn() = {
     let shell = configured(1, 60000, 30000, 1024);
     let accepted = fn(request) = match handshake(shell, request) {

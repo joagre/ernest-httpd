@@ -557,7 +557,11 @@ let answersUnmodified = Test.Case(name = "answers a file not modified since", ru
 // as none, one holding a character RFC 3986 does not write among them, a
 // reference of another form, absolute form without an authority or naming
 // userinfo among them, an encoded `/`, a bad `%`, bytes that are not
-// UTF-8, a control character, and `..`, written or encoded.
+// UTF-8, a control character, and `..`, written or encoded. The cases of
+// characters RFC 3986 does not write, of userinfo, of a scheme without an
+// authority and of a fragment are a regression test's, written after the
+// code: they do not cover every character Uri.parse refuses, which G.12
+// owns.
 let refusesPaths =
     Test.Case(name = "refuses a bad path with 400",
               run = fn() =
@@ -627,7 +631,8 @@ let readsAbsoluteForm =
 // origin-form target whole, an absolute-form one after its scheme and its
 // authority, `/` for its empty path, before a query or not; and None for a
 // target of another form, an OPTIONS's `*` and an authority that names
-// userinfo among them.
+// userinfo among them. Those two are a regression test's cases, written
+// after the code.
 let readsPathAndQuery =
     Test.Case(name = "reads a target's path and query",
               run = fn() =

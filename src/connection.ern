@@ -747,7 +747,9 @@ let keepsOrCloses = Test.Case(name = "keeps or closes by the version and Connect
 // Content-Length above 0 with 413, and Content-Length values that are not
 // one decimal number with 400; a HEAD's refusal has no body. A
 // Content-Length of 0 is no body, and the request is served and the
-// connection kept.
+// connection kept. The cases of a Host Config.host reads as none are a
+// regression test's, written after the code: Config's readsHosts holds
+// the texts it reads.
 let refusesRequests = Test.Case(name = "refuses a request it does not serve", run = fn() = {
     fn get(minor : Int, headers : List(Http.Header)) : List(Http.Request) =
         [request("GET", "/a.txt", minor, headers)];

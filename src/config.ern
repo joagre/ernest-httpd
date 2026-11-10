@@ -793,12 +793,14 @@ let refusesTypes =
 // design §4: the rules on values: a kind, a port, a count, an empty string
 // and an empty array, an empty redirect host, a host that names userinfo,
 // an empty host or a port that is not digits, a redirect host that is the
-// canonical host, its port dropped and in any case, a control character, a content
-// type's dot, a header's token and a header the server writes itself, in
-// any case, a framing header's, a response's own and an upgrade's, the
-// shell's path, the client's path, which begins with / and is not the
-// shell's, and is required, the warning, and the hangup, a value and one
-// that is absent.
+// canonical host, its port dropped and in any case, a control character,
+// a content type's dot, a header's token and a header the server writes
+// itself, in any case, a framing header's, a response's own and an
+// upgrade's, the shell's path, the client's path, which begins with / and
+// is not the shell's, and is required, the warning, and the hangup, a
+// value and one that is absent. The cases of a host that is none are a
+// regression test's, written after the code: they do not cover every text
+// Config.host reads as none, which readsHosts holds more of.
 let refusesValues =
     Test.Case(name = "refuses a value that breaks a rule",
               run = fn() =
@@ -914,8 +916,9 @@ let writtenByTheServer : String =
 // theirs: a bad port before a bad root, a listener before the next, an
 // empty canonical host before its being a host and before a redirect
 // host, a redirect host's emptiness and its being a host before its being
-// the canonical host, the warning below the
-// lifetime after the message limit's, and the hangup after the warning.
+// the canonical host, the warning below the lifetime after the message
+// limit's, and the hangup after the warning. The host rule's place is a
+// regression test's case, written after the code.
 let checksInOrder =
     Test.Case(name = "answers the first rule broken",
               run = fn() =
@@ -951,11 +954,13 @@ let checksInOrder =
                               Some(#("shell.message-limit", "be above 0", Some("0"))),
                               Some(#("shell.warning", "be below the lifetime", Some("300000")))]))
 
-// design §4, §9: the host an authority names, as written, its port
-// dropped, an empty one among them, and an IPv6 address without its
-// brackets, an empty host among them; None for a text that is no
-// authority, a port that is not digits or a bare IPv6 address among them,
-// or that names userinfo.
+// design §4, §9: the host an authority names, as Uri.Authority holds it,
+// its case kept, its port dropped, an empty one among them, and an IPv6
+// address without its brackets, an empty host among them; None for a text
+// that is no authority, a port that is not digits or a bare IPv6 address
+// among them, or that names userinfo. A regression test, written after the
+// code: it holds the texts a configuration and a Host bring, not every
+// text Uri.parseAuthority reads, which G.12 owns.
 let readsHosts =
     Test.Case(name = "reads the host an authority names",
               run = fn() =
