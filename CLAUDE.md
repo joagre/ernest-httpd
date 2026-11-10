@@ -37,7 +37,7 @@ Until a proposal is decided all of it is tentative, and nothing flows from it in
 
 A proposal refused or not taken up stays, its README's status line saying which. Only a built one goes.
 
-A built proposal is kept as the record of its design, its status line saying so. It goes once its milestone's row names the log entries that argue it and nothing else cites the directory. First a reading, decided with the user, finds what it holds that no owner has yet, an experiment's finding or a table of what other systems do, and that goes to `docs/design.md` or the log.
+A built proposal is kept as the record of its design, its status line saying so. It goes once its milestone's row names the log entries that argue it and nothing else cites the directory. First a reading, decided with the user, finds what it holds that no owner has yet, an experiment's finding or a table of what other systems do, and that goes to `docs/design.md` or the log. The reading and the sweep are an item of the milestone that built the proposal, placed before the milestone's release, so that the release ships the owner and not the proposal.
 
 A `scratch/` directory inside a proposal's own directory, untracked, is the user's own thinking: no session edits it, commits it or builds on it.
 
