@@ -4,19 +4,23 @@
 ///
 /// `main` takes the site's canonical host and the path of its
 /// configuration, `deploy/config.json` for the deployed site, and runs the
-/// checks the configuration takes against the host over TLS on 443, the
-/// far end's certificate verified against the host's bundle,
-/// `/etc/ssl/certs/ca-certificates.crt`, and over plain HTTP on 80, the
-/// shell's where the configuration has a `shell`, at its path, from the
-/// origin `https://` and the host. It prints each check's line, the check's
-/// name and `: ok`, or `: failed: ` and what came, and exits with the
-/// status 0 where every check passed and 1 otherwise. It refuses another
-/// count of arguments with `usage: smoke host config.json` on standard
-/// error and the status 2, and a configuration it cannot read, whose text
-/// `Config.parse` refuses, or that has no redirect host, with `smoke: `,
-/// the path, `: ` and `Config.reason` on standard error and the status 2,
-/// the last as `redirect-hosts must not be empty: []`; the rules of the
-/// file system's are not checked, since the files they name are the
+/// checks the configuration takes against the host over TLS on the port of
+/// its first `tls` listener, the far end's certificate verified against the
+/// host's bundle, `/etc/ssl/certs/ca-certificates.crt`, and over plain HTTP
+/// on the port of its first `redirect` listener, the shell's where the
+/// configuration has a `shell`, at its path, from the origin a page of the
+/// site sends, `https://` and the host, with `:` and the port where it is
+/// not 443. It prints each check's line, the check's name and `: ok`, or
+/// `: failed: ` and what came, and exits with the status 0 where every
+/// check passed and 1 otherwise. It refuses another count of arguments
+/// with `usage: smoke host config.json` on standard error and the status 2,
+/// and a configuration it cannot read, whose text `Config.parse` refuses,
+/// that has no redirect host, or that lacks a `tls` or a `redirect`
+/// listener, with `smoke: `, the path, `: ` and `Config.reason` on standard
+/// error and the status 2, the last two as
+/// `redirect-hosts must not be empty: []` and
+/// `listeners must hold a tls listener and a redirect listener`; the rules
+/// of the file system's are not checked, since the files they name are the
 /// machine's.
 ///
 /// `checks` runs the same checks against any site, over the scheme its port
@@ -64,17 +68,24 @@ export type Check = Check(name : String, result : Either(String, Unit))
 //
 
 /// The checks the configuration the second argument names takes, run
-/// against the site of the host the first names, over TLS on 443 and plain
-/// HTTP on 80, each check's line printed, and the status 0 where every one
+/// against the site of the host the first names, over TLS on the port of
+/// its first `tls` listener and plain HTTP on its first `redirect`
+/// listener's, each check's line printed, and the status 0 where every one
 /// passed and 1 otherwise.
 export fn main() : Unit =
     match Os.arguments {
         [host, path] ->
             match configured(path) {
-                Right(#(config, redirectHost)) -> {
+                Right(#(config, redirectHost, port, redirectPort)) -> {
                     let paths = Optional.map(config.shell, fn(shell) = #(shell.path, shell.client));
                     let checked =
-                        checks("https", host, 443, 80, redirectHost, paths, "https://" <> host);
+                        checks("https",
+                               host,
+                               port,
+                               redirectPort,
+                               redirectHost,
+                               paths,
+                               origin(host, port));
                     List.forEach(checked, fn(check) = Io.println(line(check)));
                     Os.exit(if List.all(checked, passed) then 0 else 1)
                 }
@@ -91,21 +102,54 @@ export fn main() : Unit =
 
 // The configuration of the file's text, read within fileMs, every rule but
 // the file system's checked: the files those rules name are the deployed
-// machine's, not the smoke test's; and its first redirect host, whose
-// check it takes, refused as an Invalid where it has none.
-fn configured(path : String) : Either(Config.Error, #(Config.Config, String)) = {
+// machine's, not the smoke test's; its first redirect host, whose check it
+// takes, refused as an Invalid where it has none; and the ports of its
+// first tls listener and its first redirect listener, which the checks run
+// on, refused as an Invalid where it lacks either.
+fn configured(path : String) : Either(Config.Error, #(Config.Config, String, Int, Int)) = {
     let bytes <- Either.mapLeft(Fs.read(Path(path), fileMs), Config.Unreadable);
     let text <- Either.fromOptional(String.fromUtf8(bytes), Config.Unreadable(Io.NotUtf8(bytes)));
     let config <- Config.parse(text);
-    match config.redirectHosts {
+    let redirectHost <- match config.redirectHosts {
         first :: _ ->
-            Right(#(config, first))
+            Right(first)
       | [] ->
             Left(Config.Invalid(field = "redirect-hosts",
                                 rule = "not be empty",
                                 value = Some("[]")))
+    };
+    match #(firstPort(config, isTls), firstPort(config, isRedirect)) {
+        #(Some(port), Some(redirectPort)) ->
+            Right(#(config, redirectHost, port, redirectPort))
+      | _ ->
+            Left(Config.Invalid(field = "listeners",
+                                rule = "must hold a tls listener and a redirect listener",
+                                value = None))
     }
 }
+
+// The port of the configuration's first listener whose kind passes the
+// test, where it has one.
+fn firstPort(config : Config.Config, test : (Config.Kind) -> Bool) : Optional(Int) =
+    Optional.map(List.find(config.listeners, fn(listener) = test(listener.kind)),
+                 fn(listener) = listener.port)
+
+fn isTls(kind : Config.Kind) : Bool =
+    match kind {
+        Config.Tls() -> true
+      | _ -> false
+    }
+
+fn isRedirect(kind : Config.Kind) : Bool =
+    match kind {
+        Config.Redirect() -> true
+      | _ -> false
+    }
+
+// The origin a page of the site on the port sends: `https://` and the
+// host, and `:` and the port where it is not HTTPS's own, 443.
+fn origin(host : String, port : Int) : String =
+    if port == 443 then "https://" <> host else "https://" <> host <> ":" <> Int.toString(port)
 
 // The milliseconds the configuration's file is read within.
 let fileMs : Int = 5000
@@ -679,6 +723,41 @@ let checksASite = Test.Case(name = "checks a site and says what came", run = fn(
     }
 })
 
+// design §13: the checks run on the ports of the configuration's first tls
+// listener and its first redirect listener, 443 and 80 for the deployed
+// one and 8443 and 8080 for the deployed one moved there, its first
+// redirect host the deployed one's in both; and the shell's from the origin
+// a page on the tls port sends, the port written where it is not 443. A
+// regression test, written after `main` had run the checks on 443 and 80
+// whatever the configuration's listeners: it does not run the checks
+// themselves over TLS, which a certificate the host's bundle verifies
+// needs.
+let takesThePortsOfTheConfiguration =
+    Test.Case(name = "takes the ports of the configuration", run = fn() = {
+        let directory = "build/scratch/smoke-ports";
+        let moved = directory <> "/moved.json";
+        let deployed = text("deploy/config.json");
+        let movedText =
+            String.replace(String.replace(deployed, "\"port\": 443", "\"port\": 8443"),
+                           "\"port\": 80",
+                           "\"port\": 8080");
+        let ports =
+            fn(path) =
+                Either.map(configured(path),
+                           fn(#(_, redirectHost, port, redirectPort)) =
+                               #(redirectHost, port, redirectPort));
+        let result = {
+            let _ <- Fs.makeDir(Path(directory), 5000);
+            let _ <- Fs.write(Path(moved), String.toUtf8(movedText), 5000);
+            Right(#(ports("deploy/config.json"), ports(moved)))
+        };
+        Test.equal(#(result, origin("ernest-lang.org", 443), origin("ernest-lang.org", 8443)),
+                   #(Right(#(Right(#("www.ernest-lang.org", 443, 80)),
+                             Right(#("www.ernest-lang.org", 8443, 8080)))),
+                     "https://ernest-lang.org",
+                     "https://ernest-lang.org:8443"))
+    })
+
 // What a test's process takes: a run of `ern run` on this module's
 // compiled form, by the index of its arguments.
 type Ran = Ran(index : Int, outcome : Either(Io.Error, Os.Finished))
@@ -687,11 +766,11 @@ type Ran = Ran(index : Int, outcome : Either(Io.Error, Os.Finished))
 // arguments than two, none, one and three, with the usage on standard
 // error, nothing on standard output, and the status 2; and a configuration
 // it cannot take, a file that is not there, one whose text breaks a rule,
-// `{}`, and one with no redirect host, the deployed one's emptied, with
-// `smoke: `, the path, `: ` and the reason on standard error, nothing on
-// standard output, and the status 2, before any check runs; each is run by
-// `ern run` on the module's own compiled form, as make smoke runs it, at
-// once.
+// `{}`, one with no redirect host, the deployed one's emptied, and one
+// without a tls listener, the example site's, with `smoke: `, the path,
+// `: ` and the reason on standard error, nothing on standard output, and
+// the status 2, before any check runs; each is run by `ern run` on the
+// module's own compiled form, as make smoke runs it, at once.
 let refusesTheCommandLine = Test.Case(name = "refuses a command line it cannot take", run = fn() = {
     let directory = "build/scratch/smoke-refusal";
     let missing = directory <> "/missing.json";
@@ -712,7 +791,8 @@ let refusesTheCommandLine = Test.Case(name = "refuses a command line it cannot t
                           ["ernest-lang.org", "deploy/config.json", "www.ernest-lang.org"],
                           ["ernest-lang.org", missing],
                           ["ernest-lang.org", empty],
-                          ["ernest-lang.org", unredirected]])))
+                          ["ernest-lang.org", unredirected],
+                          ["ernest-lang.org", "examples/site/config.json"]])))
     };
     let refusal = Right(#(2, Some(""), Some("usage: smoke host config.json\n")));
     let refused = fn(said) = Right(#(2, Some(""), Some("smoke: " <> said <> "\n")));
@@ -723,7 +803,8 @@ let refusesTheCommandLine = Test.Case(name = "refuses a command line it cannot t
                         refusal,
                         refused(missing <> ": cannot read the file: Io.NotFound"),
                         refused(empty <> ": listeners is required"),
-                        refused(unredirected <> ": redirect-hosts must not be empty: []")])))
+                        refused(unredirected <> ": redirect-hosts must not be empty: []"),
+                        refused("examples/site/config.json: listeners must hold a tls listener and a redirect listener")])))
 })
 
 // Each command line run by `ern run` on the module's compiled form, at

@@ -6,7 +6,7 @@ Read *Where we are* first, then the milestone under way, its steps by what each 
 
 ## Where we are
 
-Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way: its steps on 0.10.0 are ready, item 11, the shell client Ernest asked for, is built and served, and the rest waits on Ernest's MVP 4.4 release or on what the access log shows.
+Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way: item 11, the shell client Ernest asked for, is built and served, item 5's rehearsal serves it at https://ernest-lang.org:8443/ for Ernest's side to be built against, the other steps on 0.10.0 are ready, and the rest waits on Ernest's MVP 4.4 release or on what the access log shows.
 
 ## Milestone 2: after the first release
 
@@ -14,7 +14,7 @@ What the first release's readers found and the milestone's own items, each a ste
 
 ### Now, on Ernest's 0.10.0
 
-**Item 5, the rehearsal.** On Ernest's MVP 4.15 release, 0.10.0, as soon as it is out and before the steps below, the switch is rehearsed on the machine under a second unit on scratch ports, with the site Ernest's `make site` generates, the shell's member and the two-node image, the smoke test passing against it, while the live unit serves the one page on 0.1.0. It is walked again once the server serves item 11's client, so that the launch's switch walks the client's path too (decided 2026-11-10, the log's *The shell client*).
+**Item 5, the rehearsal.** Walked on 2026-11-10, once, with item 11's client (the log's *Milestone 2, item 5: the rehearsal*). Its second unit serves https://ernest-lang.org:8443/ for Ernest's side to be built against, and goes at the launch's switch, with `/home/httpd/rehearsal/` and the shell's image of 0.9.0.
 
 Ernest's session handed the site over on 2026-11-10: `make site TAG=v0.10.0` and `CONFIG=` the configuration this session names, which holds the shell's member, since the shell page states its limits from it. It writes the site to Ernest's `build/site/`, copied out as an archive is, every page's footer naming the release.
 
@@ -31,7 +31,7 @@ The design is taken (2026-11-10): §14 states the client, its response, its modu
 
 The build is done (the log's *Milestone 2, item 11: the shell client's build*).
 
-The server serves the client and answers the limits while it still speaks today's messages to the site as it stands, since this part adds and takes nothing away. The message telling Ernest's session that a server serves the client waits on the user's word (decided 2026-11-10). Then the rehearsal walks the switch again, with the client, on scratch ports. Until the launch's switch, design §11's messages stay as Ernest's site speaks them, and a change to them is told to Ernest's session before it is built.
+The server serves the client and answers the limits while it still speaks today's messages to the site as it stands, since this part adds and takes nothing away. Ernest's session was told so on 2026-11-10, and the rehearsal walked the switch with the client, item 5. Until the launch's switch, design §11's messages stay as Ernest's site speaks them, and a change to them is told to Ernest's session before it is built.
 
 Ernest's side is built against that rehearsal's server: the site's script calling the client, its generator taking no configuration, the shell page's numbers from the client's limits and a stub client in its browser test. Both go live in item 5's switch, the one day both repositories change, the client in the release made for it (Ernest's plan, its MVP 4.6 and its MVP 4.4's item 6; its log's *MVP 4.6 Before the Launch*).
 
@@ -53,7 +53,7 @@ Ernest's side is built against that rehearsal's server: the site's script callin
 
 **The proposal's reading and sweep.** Before that release, `docs/proposals/shell-client/` is read with the user for what it holds that no owner has yet, which goes to the design or the log, and the directory goes, its milestone's row naming the log entries that argue it, so that the release ships the owner and not the proposal. The six findings of the cold reading of §14's sentences are decided (the log's *The cold reading's six*).
 
-That release, with item 11's client, is installed in one switch on the path the second rehearsal walked: `deploy/config.json` takes the member `shell` that design §13 gives, and `deploy/README.md`'s step 7 builds the image and installs the wrapper (the log's *The wrapper and the smoke test's configuration*). The site, generated the same way from the tag of the MVP 4.4 release, is copied last, as step 5 copies `site/` today, so that every project it lists builds on the release it names (decided 2026-11-04, its release and its floor 2026-11-05, the log's *The release before the site*, *The site on Ernest's next minor* and *The floor at the reviews*). The `ernest-lang.org` repository, which holds the one page until then, goes (the log's *From the site's design*).
+That release, with item 11's client, is installed in one switch on the path the rehearsal walked: `deploy/config.json` takes the member `shell` that design §13 gives, and `deploy/README.md`'s step 7 builds the image and installs the wrapper (the log's *The wrapper and the smoke test's configuration*). The site, generated the same way from the tag of the MVP 4.4 release, is copied last, as step 5 copies `site/` today, so that every project it lists builds on the release it names (decided 2026-11-04, its release and its floor 2026-11-05, the log's *The release before the site*, *The site on Ernest's next minor* and *The floor at the reviews*). The `ernest-lang.org` repository, which holds the one page until then, goes (the log's *From the site's design*).
 
 Ernest's plan holds its side as its MVP 4.4's item 6, beside that release.
 

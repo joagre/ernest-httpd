@@ -235,7 +235,7 @@ ern VERSION
 ```console
 $ ern shell --config-dir ~/ops --attach node
 the peer node connected
-Ernest VERSION, session 1. :help for the commands, :quit to leave.
+Ernest VERSION, session 1. :help for help.
 > :processes
 > :quit
 ```
