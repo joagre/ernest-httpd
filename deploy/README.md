@@ -99,7 +99,7 @@ httpd$ chmod 0600 ernest-httpd/node/privkey.pem
 
 The certificate is the server's own until certbot's first replaces it, in step 9: the server listens on 443 only with a certificate, and certbot's webroot asks the server, on 80, for the challenge. A key that others may read, or that its user may not, is refused at the server's start, in step 8, and so is a certificate the server's user cannot read.
 
-`limits.connections` is 80, counted by listener, and `limits.connections-per-address` 16, so that the two `tls` listeners' 160 connections whose clients read nothing, each holding five times the site's largest file over TLS, xterm.js's 0.3 MiB, stay under 256 MiB; a site that gains a larger file sizes the two again by that rule. `timeouts.idle` is 15000, so that an idle connection gives back what it holds soon.
+`limits.connections` is 80, counted by listener, and `limits.connections-per-address` 16, so that the two `tls` listeners' 160 connections whose clients read nothing, each holding five times the site's largest file over TLS, stay under 256 MiB while that file is at most 0.32 MiB; a site that gains a larger file sizes the two again by that rule. `timeouts.idle` is 15000, so that an idle connection gives back what it holds soon.
 
 ## 7. The shell
 
