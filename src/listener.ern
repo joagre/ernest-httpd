@@ -545,6 +545,76 @@ let endsWithItsAcceptor = Test.Case(name = "ends when its acceptor ends", run = 
                  Some("cannot accept: Io.Closed\n")))
 })
 
+// The tests' configuration with the idle deadline and the caps given,
+// written beside the site, and its path.
+fn configured(idle : Int, connections : Int, perAddress : Int) : Either(Io.Error, String) = {
+    let path = scratch <> "/config.json";
+    let _ <- prepared();
+    let _ <-
+        Fs.write(Path(path), String.toUtf8(configuration(idle, connections, perAddress)), 5000);
+    Right(path)
+}
+
+// The first line the running program writes to standard error, each piece
+// read within 30000 milliseconds, what it writes to standard output
+// dropped.
+fn errorLine(program : Address(Os.ProgramMsg), acc : String) : Either(Io.Error, String) =
+    match String.splitOnce(acc, "\n") {
+        Some(#(line, _)) ->
+            Right(line)
+      | None ->
+            match Os.read(program, 30000) {
+                Right(Os.Stderr(bytes)) ->
+                    errorLine(program, acc <> Optional.withDefault(String.fromUtf8(bytes), "?"))
+              | Right(Os.Stdout(_)) ->
+                    errorLine(program, acc)
+              | Right(Os.Exited(status)) ->
+                    Left(Io.Other("exited with " <> Int.toString(status) <> " after " <> acc))
+              | Left(error) ->
+                    Left(error)
+            }
+    }
+
+// design §7: at the limit of open files an accept fails whether or not a
+// connection waits, the acceptor says so on standard error, and the
+// listener asks again an idle deadline later, a connection that comes
+// meanwhile waiting in the host's backlog. The server runs under a limit
+// of 64 open files (report §12), and as many connections are opened, more
+// than it can hold; once the line is read one more is opened and the 64
+// are closed, and that one is answered at the retry, no sooner than an
+// idle deadline after the first was opened, where a listener that asked
+// again at once would answer it as soon as they closed and one wedged at
+// the limit never. A regression test, written after the code: it does not
+// cover a retry that fails again, an accept that fails otherwise, nor a
+// stop while the alarm is set.
+let retriesAtTheLimit =
+    Test.Case(name = "accepts again an idle deadline after an accept fails", run = fn() = {
+        let idle = 1000;
+        let limit = 64;
+        let result = {
+            let path <- Either.mapLeft(configured(idle, 2 * limit, 2 * limit), Io.show);
+            let #(program, ports) <- Either.mapLeft(Smoke.launch(path, 1, Some(limit)), Io.show);
+            let port <- match ports {
+                [one] -> Right(one)
+              | _ -> Left("ports " <> Io.show(ports))
+            };
+            let start = Clock.monotonic();
+            let held <- List.tryMap(List.repeat(port, limit), client);
+            let line <- Either.mapLeft(errorLine(program, ""), Io.show);
+            let waiting <- client(port);
+            List.forEach(held, Tcp.close);
+            let answer = got(waiting, "/a.txt", [close], idle + 5000);
+            let waited = Clock.monotonic() - start >= idle;
+            let status <- Either.mapLeft(Smoke.terminate(program), Io.show);
+            Right(#(line, answer, waited, status))
+        };
+        Test.equal(result,
+                   Right(#("cannot accept: Io.Other(\"too many open files\")",
+                           Right(#(200, 5)),
+                           true,
+                           143)))
+    })
+
 // A stand-in for a connection, which waits until it is ended.
 fn standing() : Unit receiving Unit =
     receive {

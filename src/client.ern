@@ -466,7 +466,7 @@ let runsInABrowser = Test.Case(name = "runs a session in a browser", run = fn() 
 fn walked() : Either(String, List(String)) receiving Heard = {
     let path <-
         Either.mapLeft(written(), fn(error) = "cannot write " <> scratch <> ": " <> Io.show(error));
-    let #(server, ports) <- Either.mapLeft(Smoke.launch(path, 1), Io.show);
+    let #(server, ports) <- Either.mapLeft(Smoke.launch(path, 1, None), Io.show);
     let outcome = servedOn(server, ports);
     match outcome {
         Right(#(_, true)) -> Unit

@@ -530,7 +530,7 @@ let servesAndEnds = Test.Case(name = "serves the site and ends in order", run = 
             Right(Unit) or Left(Io.NotFound) -> Right(Unit)
           | Left(error) -> Left(error)
         };
-        let #(program, ports) <- Smoke.launch(path, 3);
+        let #(program, ports) <- Smoke.launch(path, 3, None);
         let #(plainPort, tlsPort, redirectPort) = match ports {
             [one, two, three] -> #(one, two, three)
           | _ -> #(0, 0, 0)
@@ -639,7 +639,7 @@ let servesTheExample = Test.Case(name = "serves the example site", run = fn() = 
         let text <- example("config.json");
         let path <-
             written("example.json", portsZeroed(Optional.withDefault(String.fromUtf8(text), "")));
-        let #(program, ports) <- Smoke.launch(path, 2);
+        let #(program, ports) <- Smoke.launch(path, 2, None);
         let #(plainPort, redirectPort) = match ports {
             [one, two] -> #(one, two)
           | _ -> #(0, 0)

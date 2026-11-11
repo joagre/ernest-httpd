@@ -42,8 +42,8 @@
 /// `get`; an upgrade's, `upgrade`; a message framed as a client frames it,
 /// `masked`; and a shell's attach and its output read until a test passes,
 /// `readOutput`. So is the server they run against, started by its
-/// launcher on a configuration, `launch`, and ended by the termination
-/// signal, `terminate`.
+/// launcher on a configuration, under a limit of open files where one is
+/// given, `launch`, and ended by the termination signal, `terminate`.
 ///
 /// ## Examples
 ///
@@ -495,18 +495,37 @@ fn ioError(error : Http.SocketError) : Io.Error =
 /// The server started by its launcher, `bin/ernest_httpd` from the
 /// repository's root, on the configuration at the path, whose listeners,
 /// the count of them, are on `127.0.0.1`, each line read within 30000
-/// milliseconds. It answers the running program, for `terminate`, and the
-/// port each listener says it listens on, in the configuration's order. A
-/// line that is not `listening on 127.0.0.1:` and a port answers `Other`
-/// naming it, and a program that exits first `Other` with its status and
-/// what it said.
+/// milliseconds. Where `limit` holds a number, `sh` sets the limit of open
+/// files to it by `ulimit -n` and runs the launcher in its place, so that
+/// the server runs under it (report §12). It answers the
+/// running program, for `terminate`, and the port each listener says it
+/// listens on, in the configuration's order. A line that is not
+/// `listening on 127.0.0.1:` and a port answers `Other` naming it, and a
+/// program that exits first `Other` with its status and what it said.
 export fn launch(path : String,
-                 count : Int) : Either(Io.Error, #(Address(Os.ProgramMsg), List(Int))) = {
-    let program <- Os.start(Os.command("bin/ernest_httpd", [path]));
+                 count : Int,
+                 limit : Optional(Int)) : Either(Io.Error, #(Address(Os.ProgramMsg), List(Int))) = {
+    let program <- Os.start(launcher(path, limit));
     let out <- said(program, "", count);
     let ports <- List.tryMap(String.lines(out), portSaid);
     Right(#(program, ports))
 }
+
+// The launcher's command on the configuration at the path, under the limit
+// of open files where one is given: no call of Os sets one, so sh sets it
+// and then runs the launcher in its own place, as the launcher runs ern.
+fn launcher(path : String, limit : Optional(Int)) : Os.Command =
+    match limit {
+        Some(count) ->
+            Os.command("sh",
+                       ["-c",
+                        "ulimit -n " <> Int.toString(count) <> " && exec \"$@\"",
+                        "sh",
+                        "bin/ernest_httpd",
+                        path])
+      | None ->
+            Os.command("bin/ernest_httpd", [path])
+    }
 
 // What the running program writes to standard output until its lines are
 // the count.
@@ -614,7 +633,7 @@ fn written() : Either(Io.Error, String) = {
 let checksASite = Test.Case(name = "checks a site and says what came", run = fn() = {
     let result = {
         let path <- written();
-        let #(program, ports) <- launch(path, 2);
+        let #(program, ports) <- launch(path, 2, None);
         let #(plainPort, redirectPort) = match ports {
             [one, two] -> #(one, two)
           | _ -> #(0, 0)
