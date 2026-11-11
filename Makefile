@@ -52,7 +52,9 @@ EXAMPLE_SUFFIX =
 CONFIG     ?= examples/site/config.json
 
 # The ern on PATH, or ERN=path/to/ern, whose directory then stands first on
-# PATH, so that what names ern by its name finds that one too (design §13).
+# PATH for every target, so that whatever names ern by its name, a test or an
+# example's shell, runs that one too; a file not called ern is not reached so
+# (design §13).
 ERN        ?= ern
 export PATH := $(if $(findstring /,$(ERN)),$(abspath $(dir $(ERN))):)$(PATH)
 # Where make install puts the program and make uninstall removes it from.
@@ -67,9 +69,9 @@ PREFIX     ?= /usr/local
 LOAD_PATH     = $(addprefix --load-path ,$(shell ls -d lib/*/build 2>/dev/null))
 RUN_LOAD_PATH = $(LOAD_PATH) --libs-dir lib
 DEP_DIRS      = $(addprefix lib/,$(notdir $(basename $(basename $(DEPS)))))
-VERSION       = $(shell cat VERSION)
-# The programs of examples/; a site under it is data, and is not built.
+# The programs of examples/; what else stands under it is data, not built.
 EXAMPLES      = $(wildcard examples/*.ern)
+VERSION       = $(shell cat VERSION)
 # What the build and make xterm write under examples/, which git ignores,
 # make clean removes and the documents leave out.
 EXAMPLES_MADE = examples/build examples/site/root/xterm
