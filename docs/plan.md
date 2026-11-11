@@ -6,13 +6,15 @@ Read *Where we are* first, then the milestone under way, its steps by what each 
 
 ## Where we are
 
-Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way: item 11, the shell client Ernest asked for, is built and served, item 5's rehearsal serves it at https://ernest-lang.org:8443/ for Ernest's side to be built against, the other steps on 0.10.0 are ready, and the rest waits on Ernest's MVP 4.4 release or on what the access log shows.
+Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way: item 11, the shell client Ernest asked for, is built and served, item 5's rehearsal serves it at https://ernest-lang.org:8443/ for Ernest's side to be built against, and the rest waits on Ernest's MVP 4.4 release or on what the access log shows.
 
 ## Milestone 2: after the first release
 
 What the first release's readers found and the milestone's own items, each a step with its log entry when built.
 
-Done: items 1 to 4, 6 and 7, the log's *Milestone 2, item 1: the refusal's form*, *Milestone 2, item 2: quiet tests*, *Milestone 2, items 3 and 4: the attach's word and a restart at the cap*, *Three cleanups* and *The code reader's findings*; item 8, the log's *Milestone 2, item 8: the listener's retry*; item 9, the log's *Milestone 2, item 9: the reset under load*; item 10, the log's *Milestone 2, item 10: the library's own*; the designed lines out of the test run, the log's *The lines in the test run*; the refused value on one line, the log's *A refused value on one line*; the server's signal in the tests, the log's *The server's signal in the tests*; and the two nodes in the visitor's container with a CPU cap, the log's *Two nodes and a core*.
+Done: items 1 to 4, 6 and 7, the log's *Milestone 2, item 1: the refusal's form*, *Milestone 2, item 2: quiet tests*, *Milestone 2, items 3 and 4: the attach's word and a restart at the cap*, *Three cleanups* and *The code reader's findings*; item 8, the log's *Milestone 2, item 8: the listener's retry*; item 9, the log's *Milestone 2, item 9: the reset under load*; item 10, the log's *Milestone 2, item 10: the library's own*.
+
+Done too, the steps between them: the designed lines out of the test run, the log's *The lines in the test run*; the refused value on one line, the log's *A refused value on one line*; the server's signal in the tests, the log's *The server's signal in the tests*; the two nodes in the visitor's container with a CPU cap, the log's *Two nodes and a core*; and the caps on 0.10.0, which stand, the log's *The caps on 0.10.0*.
 
 ### Now, on Ernest's 0.10.0
 
@@ -36,8 +38,6 @@ The build is done (the log's *Milestone 2, item 11: the shell client's build*).
 The server serves the client and answers the limits while it still speaks today's messages to the site as it stands, since this part adds and takes nothing away. Ernest's session was told so on 2026-11-10, and the rehearsal walked the switch with the client, item 5. Until the launch's switch, design §11's messages stay as Ernest's site speaks them, and a change to them is told to Ernest's session before it is built.
 
 Ernest's side is built against that rehearsal's server: the site's script calling the client, its generator taking no configuration, the shell page's numbers from the client's limits and a stub client in its browser test. Both go live in item 5's switch, the one day both repositories change, the client in the release made for it (Ernest's plan, its MVP 4.6 and its MVP 4.4's item 6; its log's *MVP 4.6 Before the Launch*).
-
-**The caps on 0.10.0 (2026-11-02).** `deploy/config.json`'s connection caps are sized by §13's rule with a factor of five, what an idle connection holds after a response (the log's *Item 6: the deployment*). No archive collects a process at its wait, and report §10 says a waiting process holds what it dropped until it runs again; that entry's measurement, a file of 1 MiB and a hundred connections that read nothing, is run once on 0.10.0, and the caps stand where it gives five again (the log's *Ernest 0.10.0*).
 
 ### On Ernest's MVP 4.4 release
 
