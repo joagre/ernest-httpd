@@ -6,7 +6,7 @@ Read *Where we are* first, then the milestone under way, its steps by what each 
 
 ## Where we are
 
-Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way, and what remains waits on Ernest's release answering lines 28 and 29, on its MVP 4.4 release or on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/ for Ernest's side to be built against.
+Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way, and what remains waits on Ernest's MVP 4.16 release, which answers lines 28 and 29, on its MVP 4.4 release or on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/ for Ernest's side to be built against.
 
 ## Milestone 2: after the first release
 
@@ -16,9 +16,11 @@ Done: items 1 to 4, 6 and 7, the log's *Milestone 2, item 1: the refusal's form*
 
 Done too, the steps between them: the designed lines out of the test run, the log's *The lines in the test run*; the refused value on one line, the log's *A refused value on one line*; the server's signal in the tests, the log's *The server's signal in the tests*; the two nodes in the visitor's container with a CPU cap, the log's *Two nodes and a core*; the caps on 0.10.0, which stand, the log's *The caps on 0.10.0*; the listener's one closer, the log's *The listener's one closer*; and the shell client's proposal read and swept, the log's *The shell client's proposal goes*.
 
-### On Ernest's release answering lines 28 and 29
+### On Ernest's MVP 4.16 release
 
-**Lines 28 and 29.** Ernest is answering `docs/language_feedback.md`'s two lines. Its release is installed, each verdict checked against the installation by a probe, and each line it answers goes, the log citing Ernest's number. Nothing of the program waits on line 28, since §7's retry stands whatever E.18 says (the log's *Milestone 2, item 8: the listener's retry*). Line 29 waits: where the release has `Http.target` read a target a browser sends raw, `GET /?a[]=1`, the server serves it, design §5's *The path* changing first where its rule moves, and a test holds it.
+**Lines 28 and 29.** Ernest decided both on 2026-11-11 and builds them in its MVP 4.16, whose archive its session names when built. Line 28 is its 249, taken: E.18 states that at the limit of open files `accept` answers at once. Line 29 is its 250: G.11's sentence is corrected, and whether `Http.target` reads a target a browser sends raw is the user's decision in Ernest, its MVP 4.16's item 18, recommended as each such character percent-encoded.
+
+The release is installed, each verdict checked against the installation by a probe, and each line it answers goes, the log citing Ernest's number. Nothing of the program waits on line 28, since §7's retry stands whatever E.18 says (the log's *Milestone 2, item 8: the listener's retry*). Line 29 waits: where the release has `Http.target` read a target a browser sends raw, the server serves `GET /?a[]=1` and `GET /a[b]`, design §5's *The path* changing first where its rule moves, and a test holds it.
 
 ### On Ernest's MVP 4.4 release
 
