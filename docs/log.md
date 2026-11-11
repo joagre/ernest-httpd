@@ -487,3 +487,7 @@ The template took it the same day, its `20c9b09`: a variable `SOURCES` beside `D
 ## The make block's comments
 
 *2026-11-11.* On the user's word, through Ernest's session, the README's block of make targets takes the template's lines, each description written with `#`, as Ernest's README writes its commands' comments: a block of commands is shell a reader pastes, so every line of it pastes safely (principle 1), and one form stands across the repositories (principle 2). The `make test` line takes the template's words, since the target is the template's. The template's `make examples` line stays out, since `examples/` here holds a site and no program, and the target says there is nothing to build. Where the template's session words a shared line otherwise, its words come with its next tag.
+
+## The commands held by the checker
+
+*2026-11-11.* `tools/docs.ern` comes whole from the template's `5797262`, which refuses a command in a fenced block, an Ernest block aside, whose description does not stand after `#`, and a line indented under it that does not begin with `#`; the README's `make test` line names the refusal in the template's words. The rule *The make block's comments* took by hand is held by the check, so that a later block cannot lose it unseen (principle 3), and Ernest's style test takes the same rule. This tree had nothing to refuse.

@@ -12,8 +12,9 @@ It needs [Ernest](https://ernest-lang.org) on your `PATH`, the floor the Makefil
 make            # builds: lib/ filled, each dependency and then the program compiled
 make test       # the layout, every module's tests, test/ and the examples where they exist,
                 # then the documents and the design's citations,
-                # refusing any paragraph past 150 words and any comment or
-                # text a user reads that names the project's history
+                # refusing any paragraph past 150 words, any comment or
+                # text a user reads that names the project's history,
+                # and any command whose description stands without its #
 make run        # runs the example site through the launcher, bin/ernest_httpd, on
                 # examples/site/config.json; CONFIG=path make run serves another configuration
 make smoke      # the smoke test against the deployed site whose canonical host HOST

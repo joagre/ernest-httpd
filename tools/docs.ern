@@ -11,6 +11,15 @@
 // *Writing*); the log and the proposals are left out. Fenced code is read as
 // neither.
 //
+// A command in a fenced block, an Ernest block aside, gives its description
+// after `#`, so that the block pastes as shell: a line that begins with make,
+// or with ern or a launcher under bin/ and a word, after an optional sudo and
+// words VAR=value, holds no two spaces before its `#`, and a line indented
+// under it begins with `#`. A command that ends in `\` runs on to the next
+// line. Each line that does not is a line on standard error naming the file
+// and the line, and the program ends with status 1; the log and the proposals
+// are left out.
+//
 // The design's sections are held both ways, as CLAUDE.md's *Tests* asks. A
 // section is a heading of docs/design.md, `## n. Title`; a citation is a
 // `§n` after the word design in a comment of a tracked module under src/,
@@ -63,6 +72,13 @@ type Word = Word(line : Int, text : String)
 // A section a comment cites, and the line the citation stands on.
 type Citation = Citation(line : Int, section : Int)
 
+// Where the reading of a document's blocks of commands stands as its lines go
+// by: whether it is inside a fence and whether that block is read, whether
+// the line before was a command or a line under one, whether that command
+// runs on, and the lines found.
+type CommandReading =
+    CommandReading(fence : Bool, read : Bool, under : Bool, runsOn : Bool, found : List(String))
+
 let design : String = "docs/design.md"
 
 let changes : String = "CHANGES.md"
@@ -86,7 +102,8 @@ export fn main() : Unit = {
     };
     let missing =
         List.unique(List.flatMap(List.filter(files, isChecked), fn(file) = missingIn(file, tops)));
-    let failures = missing <> uncited(files, modules) <> timeline(files, modules);
+    let failures =
+        missing <> commands(files) <> uncited(files, modules) <> timeline(files, modules);
     List.forEach(failures, Io.printlnError);
     if List.isEmpty(failures) && List.isEmpty(long) then Unit else Os.exit(1)
 }
@@ -312,6 +329,93 @@ fn shown(paragraph : Paragraph) : String =
         <> Int.toString(paragraph.words)
         <> " words  "
         <> paragraph.first
+
+//
+// The commands
+//
+
+// Each line of a block of commands whose description is not after "#", in
+// the files whose paragraphs are measured, as a line for standard error.
+fn commands(files : List(String)) : List(String) =
+    List.flatMap(List.filter(files, isMeasured),
+                 fn(file) = commandsOf(file, String.lines(contents(file))))
+
+// The lines of every fenced block but an Ernest one that give a description
+// not after "#": a command with two spaces before its "#", or in the whole
+// line where it has none, and a line indented under a command, or under
+// another such line, that does not begin with "#". A command that ends in
+// "\" runs on to the next line, which is read as the command.
+fn commandsOf(file : String, lines : List(String)) : List(String) = {
+    let begun =
+        CommandReading(fence = false, read = false, under = false, runsOn = false, found = []);
+    let last =
+        List.foldLeft(List.indexed(lines),
+                      begun,
+                      fn(reading, #(index, line)) =
+                          readCommand(file <> ":" <> Int.toString(index + 1) <> ": ",
+                                      reading,
+                                      line));
+    List.reverse(last.found)
+}
+
+fn readCommand(place : String, reading : CommandReading, line : String) : CommandReading = {
+    let trimmed = String.trim(line);
+    if isFence(line) then
+        CommandReading(..reading,
+                       fence = reading.fence == false,
+                       read = isRead(trimmed),
+                       under = false,
+                       runsOn = false)
+    else if reading.fence == false || reading.read == false then
+        reading
+    else if reading.runsOn || isCommand(trimmed) then {
+        let found = if isBare(trimmed) then
+            (place <> "a description beside a command does not begin with `#`") :: reading.found
+        else
+            reading.found;
+        CommandReading(..reading, under = true, runsOn = String.endsWith(trimmed, "\\"), =found)
+    } else if reading.under && indentation(line) > 0 && String.isEmpty(trimmed) == false then {
+        let found = if String.startsWith(trimmed, "#") then
+            reading.found
+        else
+            (place <> "a line under a command does not begin with `#`") :: reading.found;
+        CommandReading(..reading, =found)
+    } else
+        CommandReading(..reading, under = false, runsOn = false)
+}
+
+// Whether the block a fence opens is read: every block but one whose fence
+// names Ernest as its language.
+fn isRead(fence : String) : Bool =
+    match String.words(String.drop(fence, 3)) {
+        language :: _ -> language != "ernest"
+      | [] -> true
+    }
+
+// A command: make and its words, or ern or a launcher under bin/ and a word
+// at least, after an optional sudo and words VAR=value.
+fn isCommand(trimmed : String) : Bool = {
+    let #(_, words) =
+        List.span(String.words(trimmed), fn(word) = word == "sudo" || isAssignment(word));
+    match words {
+        program :: _ when program == "make" -> true
+      | program :: _ :: _ -> program == "ern" || String.startsWith(program, "bin/")
+      | _ -> false
+    }
+}
+
+fn isAssignment(word : String) : Bool =
+    String.contains(word, "=") && String.startsWith(word, "-") == false
+
+// Whether a command's description is bare: two spaces stand before the
+// command's "#", or in the whole line where it has none.
+fn isBare(trimmed : String) : Bool = {
+    let command = match String.splitOnce(trimmed, " #") {
+        Some(#(before, _)) -> before
+      | None -> trimmed
+    };
+    String.contains(String.trimEnd(command), "  ")
+}
 
 //
 // The design's citations
@@ -781,4 +885,34 @@ let findsNotes = Test.Case(name = "finds what a release's note leaves out", run 
                 "CHANGES.md:10: the note names the plan",
                 "CHANGES.md:11: the note names a reader",
                 "CHANGES.md:11: the note names a review"])
+})
+
+/// A command in a fenced block gives its description after "#", and a line
+/// indented under it begins with "#"; a "VAR=value" or a sudo before the
+/// command is read past, a "\" runs the command on to the next line, and a
+/// launcher with no word, a line outside a fence and an Ernest block are not
+/// read as commands.
+let findsCommands = Test.Case(name = "finds a command's description not after #", run = fn() = {
+    let text =
+        "```\n"
+            <> "make test       the layout,\n"
+            <> "                then the documents\n"
+            <> "make            # builds\n"
+            <> "                # and more\n"
+            <> "sudo make install  into /usr/local\n"
+            <> "ERN=bin/ern make  builds\n"
+            <> "ern run a.erc \\\n"
+            <> "    --load-path build  # the path\n"
+            <> "bin/name\n"
+            <> "    what it is\n"
+            <> "```\n"
+            <> "make test       outside a block\n"
+            <> "```ernest\n"
+            <> "make  x\n"
+            <> "```\n";
+    Test.equal(commandsOf("f.md", String.lines(text)),
+               ["f.md:2: a description beside a command does not begin with `#`",
+                "f.md:3: a line under a command does not begin with `#`",
+                "f.md:6: a description beside a command does not begin with `#`",
+                "f.md:7: a description beside a command does not begin with `#`"])
 })
