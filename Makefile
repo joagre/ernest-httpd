@@ -87,6 +87,12 @@ DOCS          = $(wildcard README.md LICENSE THIRD_PARTY_LICENSES CHANGES.md doc
                         examples deploy assets),\
                     $(shell find examples deploy assets -type f \
                         $(foreach dir,$(EXAMPLES_MADE),! -path '$(dir)/*') 2>/dev/null))
+# The sources make release takes: the files git tracks under src/ in a
+# checkout, so that no untracked file goes in, read as DOCS is; or in an
+# unpacked archive every file there.
+SOURCES       = $(if $(wildcard .git),\
+                    $(shell git -c safe.directory=$(CURDIR) ls-files src),\
+                    $(shell find src -type f))
 # An installation's own directories under PREFIX, beside its launcher.
 TREE          = $(PREFIX)/lib/$(NAME)
 DOC_DIR       = $(PREFIX)/share/doc/$(NAME)
@@ -205,10 +211,10 @@ format:
 	$(ERN) format src tools $(wildcard test) $(if $(EXAMPLES),examples)
 
 # The archive unpacks to NAME-VERSION/: the launcher where there is one, the
-# source and the compiled modules, lib/ with each link copied through, the
-# documents of DOCS, the README, the license, deploy/ and examples/ among
-# them, and the Makefile with VERSION, so that make install and make run
-# run in it. A library's carries its pages as well: those ern doc wrote
+# sources of SOURCES and the compiled modules, lib/ with each link copied
+# through, the documents of DOCS, the README, the license, deploy/ and
+# examples/ among them, and the Makefile with VERSION, so that make install
+# and make run run in it. A library's carries its pages as well: those ern doc wrote
 # under build/, the one copy a checkout holds, mirrored into docs/man/ with
 # the index as its README, and neither the staging directory nor what the
 # examples wrote among them. One shape for an application and a library, so
@@ -218,14 +224,13 @@ release: test doc
 	@case "$$($(ERN) --version)" in \
 	    *-dev|*+*) echo "a release is not made with a development build of ern"; exit 1 ;; esac
 	rm -rf build/$(NAME)-$(VERSION) && mkdir -p build/$(NAME)-$(VERSION)
-	cp -R src build/$(NAME)-$(VERSION)/src
 	mkdir -p build/$(NAME)-$(VERSION)/build && \
 	    find build -path build/$(NAME)-$(VERSION) -prune -o -name '*.erc' -print | \
 	    cpio -pdm --quiet build/$(NAME)-$(VERSION)/
 	test -d lib && cp -RL lib build/$(NAME)-$(VERSION)/lib || true
 	test -x bin/$(NAME) && mkdir -p build/$(NAME)-$(VERSION)/bin && \
 	    cp bin/$(NAME) build/$(NAME)-$(VERSION)/bin/ || true
-	tar cf - $(DOCS) Makefile VERSION | \
+	tar cf - $(SOURCES) $(DOCS) Makefile VERSION | \
 	    tar xf - -C build/$(NAME)-$(VERSION)
 	test -x bin/$(NAME) || { mkdir -p build/$(NAME)-$(VERSION)/docs/man && cd build && \
 	    find . -name '*.md' ! -name index.md ! -path './$(NAME)-*/*' ! -path './examples/*' | \
