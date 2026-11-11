@@ -9,22 +9,22 @@ ernest-httpd serves one site, ernest-lang.org: static pages, and one WebSocket p
 It needs [Ernest](https://ernest-lang.org) on your `PATH`, the floor the Makefile names, `ern 0.10`; `make` says so where another is found. `ERN=path/to/ern make` names another `ern`: its directory stands first on `PATH` for everything the build starts, so whatever names `ern` by its name, a test or the example's shell, runs that one too. A file not called `ern` is not reached this way. An Ernest installed under a prefix of your own, `make install PREFIX=<prefix>` in its unpacked archive, builds it with `ERN=<prefix>/bin/ern make`. `make test` needs Chromium too, `chromium` on `PATH`, Debian's package of that name, since the client's test runs the client in it.
 
 ```
-make            builds: lib/ filled, each dependency and then the program compiled
-make test       the layout, every module's tests, test/ where it exists, each Ernest
-                program of examples/, then the documents and the design's citations,
-                failing any paragraph past 150 words and any comment or text a
-                user reads that names the project's history
-make run        runs the example site through the launcher, bin/ernest_httpd, on
-                examples/site/config.json; CONFIG=path make run serves another configuration
-make smoke      the smoke test against the deployed site whose canonical host HOST
-                names, make smoke HOST=ernest-lang.org, the checks its configuration,
-                deploy/config.json, takes
-make xterm      fetches xterm.js and its fit addon into the example site, once
-make release    the archive, build/ernest_httpd-VERSION.tar.gz, and its checksum beside it
-make install    installs what stands built under PREFIX, /usr/local by default, from a
-                checkout or an unpacked archive: make install PREFIX=/home/httpd/opt/local
-make uninstall  removes from PREFIX what make install put there, then share/doc, share,
-                lib and bin under it, each where it is empty, and nothing else
+make            # builds: lib/ filled, each dependency and then the program compiled
+make test       # the layout, every module's tests, test/ and the examples where they exist,
+                # then the documents and the design's citations,
+                # refusing any paragraph past 150 words and any comment or
+                # text a user reads that names the project's history
+make run        # runs the example site through the launcher, bin/ernest_httpd, on
+                # examples/site/config.json; CONFIG=path make run serves another configuration
+make smoke      # the smoke test against the deployed site whose canonical host HOST
+                # names, make smoke HOST=ernest-lang.org, the checks its configuration,
+                # deploy/config.json, takes
+make xterm      # fetches xterm.js and its fit addon into the example site, once
+make release    # the archive, build/ernest_httpd-VERSION.tar.gz, and its checksum beside it
+make install    # installs what stands built under PREFIX, /usr/local by default, from a
+                # checkout or an unpacked archive: make install PREFIX=/home/httpd/opt/local
+make uninstall  # removes from PREFIX what make install put there, then share/doc, share,
+                # lib and bin under it, each where it is empty, and nothing else
 ```
 
 `make lib` fills `lib/` with each dependency `DEPS` names by the URL of its release archive, fetched and unpacked once, and each Erlang application `ERL_DEPS` names, a git submodule under `erl/` built by its own `make` and linked.
