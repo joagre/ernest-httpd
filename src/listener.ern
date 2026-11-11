@@ -78,22 +78,15 @@ export fn serve(socket : Address(Tcp.ListenerMsg),
 
 // The acceptor: one connection accepted for each Accept, in rounds of the
 // idle deadline until one comes or the accept fails otherwise, its socket
-// given to the listener, and the outcome told it; at Closed, the socket
-// closed by another process, it ends and tells nothing, since its end has
-// no order with what it told (report §6.9) and the line is said already.
+// given to the listener, and the outcome told it.
 fn accepting(socket : Address(Tcp.ListenerMsg),
              listener : Address(ListenerMsg),
              idle : Int) : Unit receiving AcceptorMsg =
     receive {
-        Accept ->
-            match accepted(socket, listener, idle) {
-                Left(Io.Closed) ->
-                    Unit
-              | outcome -> {
-                    send(listener, Accepted(outcome));
-                    accepting(socket, listener, idle)
-                }
-            }
+        Accept -> {
+            send(listener, Accepted(accepted(socket, listener, idle)));
+            accepting(socket, listener, idle)
+        }
     }
 
 // An accept that fails is said here, by the process that met it.
@@ -484,23 +477,11 @@ fn spawnedInServe(process : Process) : Bool =
       | None -> false
     }
 
-// Whether the process is an acceptor waiting in its accept: spawned in
-// serve, and waiting for a call's answer.
-fn isAccepting(process : Process) : Bool =
-    match Process.status(process) {
-        Some(Process.Status(=site, activity = Process.Calling)) ->
-            String.startsWith(site, "Listener.serve:")
-      | _ ->
-            false
-    }
-
-// design §7: an accept answered Closed, since another process closed the
-// socket, is said on standard error and ends the acceptor, which returns
-// and tries no accept on the closed socket; an acceptor that ends before
-// the stop ends the listener, which returns, and no process of the
-// acceptor's is left. The line's check is a regression test's, written
-// after the code: it holds Closed, not another error, after which the
-// listener asks again.
+// design §7: an acceptor that ends before the stop, here killed wherever it
+// stands in its round, ends the listener, which returns, no process of the
+// acceptor's is left, and nothing is said. A regression test, written after
+// the code; it does not cover a close of the socket by another process,
+// which §7 rules out.
 let endsWithItsAcceptor = Test.Case(name = "ends when its acceptor ends", run = fn() = {
     let #(result, captured) = Test.capture(fn() = {
         let _ <- Either.mapLeft(prepared(), Io.show);
@@ -513,23 +494,17 @@ let endsWithItsAcceptor = Test.Case(name = "ends when its acceptor ends", run = 
                               log = adapted(self(), Logged),
                               sessions = None);
         let _ = spawnMonitored(fn() = serve(socket, server), Ended);
-        // the acceptor, spawned in serve, waits in its accept, which the
-        // socket has taken, before the close
-        let taken =
-            fn() =
-                Optional.map(Process.status(Process.fromAddress(socket)),
-                             fn(status) = status.queued)
-                    == Some(0);
-        let accepting =
+        let spawned =
             Test.until(fn() =
-                           if List.any(Process.live(), isAccepting) && taken() then
+                           if List.any(Process.live(), spawnedInServe) then
                                Test.Passed
                            else
-                               Test.Failed("no acceptor waits in an accept"),
+                               Test.Failed("no acceptor"),
                        5000);
-        let acceptor <- Either.fromOptional(List.find(Process.live(), isAccepting), "no acceptor");
+        let acceptor <-
+            Either.fromOptional(List.find(Process.live(), spawnedInServe), "no acceptor");
         monitor(acceptor, Watched);
-        Tcp.closeListener(socket);
+        kill(acceptor);
         let acceptorEnd = receive {
             Watched(down) -> Io.show(down.reason)
           | after 5000 -> "the acceptor lives"
@@ -538,11 +513,10 @@ let endsWithItsAcceptor = Test.Case(name = "ends when its acceptor ends", run = 
             Ended(down) -> Io.show(down.reason)
           | after 5000 -> "no end"
         };
-        Right(#(accepting, acceptorEnd, end, List.any(Process.live(), spawnedInServe)))
+        Right(#(spawned, acceptorEnd, end, List.any(Process.live(), spawnedInServe)))
     });
     Test.equal(#(result, String.fromUtf8(captured.stderr)),
-               #(Right(#(Test.Passed, "Returned", "Returned", false)),
-                 Some("cannot accept: Io.Closed\n")))
+               #(Right(#(Test.Passed, "Killed", "Returned", false)), Some("")))
 })
 
 // The tests' configuration with the idle deadline and the caps given,
