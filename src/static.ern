@@ -355,7 +355,7 @@ fn header(name : String, value : String) : Http.Header =
 
 // The scratch directory the tests write their sites under: `site` with its
 // 404.html, served as `withPage`, `bare` without one, and `locked` with one
-// no one may read.
+// no one may read; and `outside`, which `site` links to.
 let scratch : String = "build/scratch/static"
 
 // The modification time of every file written, Sun, 06 Nov 1994 08:49:37 GMT.
@@ -381,11 +381,21 @@ fn prepared() : Either(Io.Error, Unit) = {
     let _ <- written("site/docs/index.html", "docs");
     let _ <- written("site/404.html", "<p>none</p>");
     let _ <- written("bare/a.txt", "alpha");
-    match Fs.makeSymlink(Path(scratch <> "/bare/loop"), Path("loop"), 5000) {
+    let _ <- Fs.makeDir(Path(scratch <> "/outside"), 5000);
+    let _ <- written("outside/away.txt", "away");
+    let _ <- written("outside/index.html", "outer");
+    let _ <- linked("site/away.txt", "../outside/away.txt");
+    let _ <- linked("site/out", "../outside");
+    linked("bare/loop", "loop")
+}
+
+// A symbolic link at the name under the scratch directory to the target as
+// written; one made before kept.
+fn linked(name : String, target : String) : Either(Io.Error, Unit) =
+    match Fs.makeSymlink(Path(scratch <> "/" <> name), Path(target), 5000) {
         Right(Unit) or Left(Io.Exists) -> Right(Unit)
       | Left(error) -> Left(error)
     }
-}
 
 let withPage : Site = site(Path(scratch <> "/site"), Map.empty)
 
@@ -488,6 +498,18 @@ let answersNotFound =
                           getting(bare, "/loop/a.txt", plainError(404)),
                           getting(bare, "/" <> String.repeat("a", 300), plainError(404)),
                           getting(bare, "/%CC%81/a.txt", plainError(404))]))
+
+// design §5: links are followed out of the root: a link under the root to
+// a file outside it is served, 200 with the file's bytes, and a link to a
+// directory outside it serves the directory, its index.html and a file in
+// it. A regression test, written after the code: it does not cover a link
+// out of the root that leads nowhere, nor one whose target is absolute.
+let followsLinksOutOfTheRoot =
+    Test.Case(name = "follows a link out of the root",
+              run = fn() =
+                  served([getting(withPage, "/away.txt", textFile("away")),
+                          getting(withPage, "/out/", htmlFile("outer")),
+                          getting(withPage, "/out/away.txt", textFile("away"))]))
 
 // design §5: a method other than GET and HEAD answers 405 with Allow,
 // methodNotAllowed.

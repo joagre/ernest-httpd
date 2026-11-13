@@ -9,17 +9,22 @@
 ///
 /// `serve` is the shell's life after the 101, in the process that owns the
 /// socket. A reader of its own alone reads the socket and decodes the
-/// client's messages; the shell writes the socket itself. The page's first
-/// resize attaches the shell to the session its cookie names, or to one the
-/// sessions start for it, and from then on the visitor's keys go to the
-/// session and the program's output comes back, each as a binary message,
-/// the session told each piece is written so that it reads its program on,
-/// with the page's resizes, extensions and stop beside them as small JSON
-/// texts, and the attach's completion, whether it started the session or
-/// joined it, and the session's warning as two more. A shell closes with a
-/// close code that says why: 4001 its session expired, 4002 another shell
-/// took it over, 4003 no session was to be had and 4004 it was stopped, or
-/// a code of RFC 6455's.
+/// client's messages, answering each time the shell asks, from the bytes
+/// after the request's head first and then from one read at a time; the
+/// shell asks again once it has handled the last answer, so that what a
+/// client sends faster than the shell handles waits unread. The shell
+/// writes the socket itself.
+///
+/// The page's first resize attaches the shell to the session its cookie
+/// names, or to one the sessions start for it, and from then on the
+/// visitor's keys go to the session and the program's output comes back,
+/// each as a binary message, the session told each piece is written so that
+/// it reads its program on, with the page's resizes, extensions and stop
+/// beside them as small JSON texts, and the attach's completion, whether it
+/// started the session or joined it, and the session's warning as two more.
+/// A shell closes with a close code that says why: 4001 its session
+/// expired, 4002 another shell took it over, 4003 no session was to be had
+/// and 4004 it was stopped, or a code of RFC 6455's.
 
 //
 // Types
@@ -33,18 +38,24 @@ export type Refusal = Refusal(status : Int, headers : List(Http.Header))
 /// names its session.
 export type Accepted = Accepted(response : Http.Response, cookie : String)
 
-/// What a shell takes: from its reader, a message the client sent, an
-/// error of the client's frames, a round of the idle deadline that read
-/// nothing, and the connection's close; the reader's end; what its session
-/// or the sessions tell it; and its session's end.
+/// What a shell takes: from its reader, the messages the client sent that
+/// one read completed, in order, an error of the client's frames, a read
+/// that took the whole idle deadline, and the connection's close; the
+/// reader's end; what its session or the sessions tell it; and its
+/// session's end.
 export type ShellMsg =
-    Received(WebSocket.Message)
+    Received(List(WebSocket.Message))
   | Failed(WebSocket.Error)
   | Idle
   | Closed
   | ReaderEnded(Down)
   | Told(Session.Told)
   | SessionEnded(Down)
+
+/// What the reader takes: the request for its next answer, from the bytes
+/// after the request's head at the first and from one read of the socket at
+/// each after it; and the end of its shell, which it monitors.
+export type ReaderMsg = Read | ShellEnded(Down)
 
 // What a shell holds for its life: its socket, the sessions, its cookie,
 // its remote address, the deadlines, and its own address as its session
@@ -58,8 +69,8 @@ type Connected =
               told : Address(Session.Told))
 
 // The state of the shell's attach: no session, an attach under way with
-// what is for the session meanwhile, the latest first, or the session
-// attached.
+// what followed the first resize in its Received for the session, the
+// latest first, or the session attached.
 type AttachState =
     Unattached
   | Attaching(List(Session.SessionMsg))
@@ -207,55 +218,110 @@ export fn serve(socket : Address(Tcp.SocketMsg),
     let me = self();
     let decoder = WebSocket.decoder(WebSocket.FromClient, sessions.shell.messageLimit);
     let idle = timeouts.idle;
-    let reader = spawnMonitored(fn() = reading(socket, me, decoder, carried, idle), ReaderEnded);
+    let reader =
+        spawnMonitored(fn() = startReading(socket, me, decoder, carried, idle), ReaderEnded);
+    send(reader, Read);
     serving(Connected(=socket, =sessions, =cookie, =remote, =timeouts, told = adapted(me, Told)),
             Unattached,
-            Some(Process.fromAddress(reader)))
+            Some(reader))
 }
 
-// The reader: the bytes decoded, the carried ones first and then each read
-// of the socket within the idle deadline, and the shell told each message,
-// a round that read nothing, an error of the frames, or the connection's
-// close.
+// The reader's start: the shell monitored, since a process the program
+// spawns ends with no other (report §6.9), and the first Read waited for.
+fn startReading(socket : Address(Tcp.SocketMsg),
+                shell : Address(ShellMsg),
+                decoder : WebSocket.Decoder,
+                carried : Bytes,
+                idle : Int) : Unit receiving ReaderMsg = {
+    monitor(Process.fromAddress(shell), ShellEnded);
+    reading(socket, shell, decoder, Some(carried), idle)
+}
+
+// The reader: one message to the shell for each Read it sends, the first
+// from the carried bytes alone, with no read, and each after it from one
+// read of the socket within the idle deadline: the messages the bytes
+// completed, Idle for a read that took the whole deadline, an error of the
+// frames, or the connection's close (design §11). It waits for the next
+// Read after the messages and after Idle, and returns after the other two,
+// and, where it waits for a Read, at the end of the shell, which it
+// monitors; in a read it ends by the read's fault, the socket ending with
+// the shell (Appendix E.18).
 fn reading(socket : Address(Tcp.SocketMsg),
            shell : Address(ShellMsg),
            decoder : WebSocket.Decoder,
-           bytes : Bytes,
-           idle : Int) : Unit =
+           carried : Optional(Bytes),
+           idle : Int) : Unit receiving ReaderMsg =
+    receive {
+        Read ->
+            match carried {
+                Some(bytes) ->
+                    answered(socket, shell, decoder, bytes, idle)
+              | None ->
+                    match Tcp.read(socket, idle) {
+                        Right(bytes) ->
+                            answered(socket, shell, decoder, bytes, idle)
+                      | Left(Io.Timeout) -> {
+                            send(shell, Idle);
+                            reading(socket, shell, decoder, None, idle)
+                        }
+                      | Left(_) ->
+                            send(shell, Closed)
+                    }
+            }
+      | ShellEnded(_) ->
+            Unit
+    }
+
+// A Read answered from the bytes: the shell told the messages they
+// completed, in order, the empty list where they completed none, and the
+// reader then waiting for the next Read; or the shell told the error.
+fn answered(socket : Address(Tcp.SocketMsg),
+            shell : Address(ShellMsg),
+            decoder : WebSocket.Decoder,
+            bytes : Bytes,
+            idle : Int) : Unit receiving ReaderMsg =
     match WebSocket.decode(decoder, bytes) {
         Right(#(messages, rest)) -> {
-            List.forEach(messages, fn(message) = send(shell, Received(message)));
-            match Tcp.read(socket, idle) {
-                Right(more) ->
-                    reading(socket, shell, rest, more, idle)
-              | Left(Io.Timeout) -> {
-                    send(shell, Idle);
-                    reading(socket, shell, rest, <<>>, idle)
-                }
-              | Left(_) ->
-                    send(shell, Closed)
-            }
+            send(shell, Received(messages));
+            reading(socket, shell, rest, None, idle)
         }
       | Left(error) ->
             send(shell, Failed(error))
     }
 
 // The shell waiting on its mailbox: each message taken as it comes, until
-// the connection closes. `reader` is the reader's process while it lives.
+// the connection closes. `reader` is the reader's address while it lives,
+// asked to read again once the shell has handled its last answer, every
+// message of a Received or an Idle it drops; where a Received leaves an
+// attach under way, it is asked once Attached comes instead, so that no
+// read is asked for meanwhile (design §11).
 fn serving(connected : Connected,
            attachState : AttachState,
-           reader : Optional(Process)) : Unit receiving ShellMsg =
+           reader : Optional(Address(ReaderMsg))) : Unit receiving ShellMsg =
     receive {
-        Received(message) ->
-            received(connected, attachState, reader, message)
+        Received(messages) ->
+            match received(connected, attachState, reader, messages) {
+                Some(Attaching(_) as attaching) ->
+                    serving(connected, attaching, reader)
+              | Some(next) -> {
+                    readNext(reader);
+                    serving(connected, next, reader)
+                }
+              | None ->
+                    Unit
+            }
       | Failed(error) ->
             closedWith(connected, attachState, reader, WebSocket.closeCode(error))
       | Closed ->
             closed(connected, attachState, reader)
       | Idle ->
             match attachState {
-                AttachedTo(_) -> serving(connected, attachState, reader)
-              | Unattached or Attaching(_) -> closed(connected, attachState, reader)
+                AttachedTo(_) -> {
+                    readNext(reader);
+                    serving(connected, attachState, reader)
+                }
+              | Unattached or Attaching(_) ->
+                    closed(connected, attachState, reader)
             }
       | ReaderEnded(down) ->
             // a reader that returned has told its last message, which may
@@ -265,35 +331,70 @@ fn serving(connected : Connected,
               | _ -> closed(connected, attachState, None)
             }
       | Told(told) ->
-            toldBy(connected, attachState, reader, told)
+            match toldBy(connected, attachState, reader, told) {
+                Some(next) -> serving(connected, next, reader)
+              | None -> Unit
+            }
       | SessionEnded(_) ->
             closedWith(connected, attachState, reader, 1011)
     }
 
-// A message the client sent: a text of the page's, the visitor's keys, a
-// ping answered with its pong, a pong dropped, and a close answered with
-// its code.
+// The reader asked to read again, where it lives.
+fn readNext(reader : Optional(Address(ReaderMsg))) : Unit =
+    match reader {
+        Some(address) -> send(address, Read)
+      | None -> Unit
+    }
+
+// The messages of a Received handled in order, each in the attach state
+// the one before it left: the state after the last, or None where one
+// closed the connection, the messages after it dropped.
 fn received(connected : Connected,
             attachState : AttachState,
-            reader : Optional(Process),
-            message : WebSocket.Message) : Unit receiving ShellMsg =
+            reader : Optional(Address(ReaderMsg)),
+            messages : List(WebSocket.Message)) : Optional(AttachState) receiving ShellMsg =
+    match messages {
+        [] ->
+            Some(attachState)
+      | message :: rest ->
+            match handled(connected, attachState, reader, message) {
+                Some(next) -> received(connected, next, reader, rest)
+              | None -> None
+            }
+    }
+
+// A message the client sent: a text of the page's, the visitor's keys, a
+// ping answered with its pong, a pong dropped, and a close answered with
+// its code; the attach state after it, or None where it closed the
+// connection.
+fn handled(connected : Connected,
+           attachState : AttachState,
+           reader : Optional(Address(ReaderMsg)),
+           message : WebSocket.Message) : Optional(AttachState) receiving ShellMsg =
     match message {
         WebSocket.Text(text) ->
             match asked(text) {
-                Some(Resize(size)) -> resized(connected, attachState, reader, size)
-              | Some(Extend) -> serving(connected, toSession(attachState, Session.Extend), reader)
-              | Some(Stop) -> serving(connected, toSession(attachState, Session.Stop), reader)
-              | None -> closedWith(connected, attachState, reader, 1008)
+                Some(Resize(size)) ->
+                    Some(resized(connected, attachState, size))
+              | Some(Extend) ->
+                    Some(toSession(attachState, Session.Extend))
+              | Some(Stop) ->
+                    Some(toSession(attachState, Session.Stop))
+              | None -> {
+                    closedWith(connected, attachState, reader, 1008);
+                    None
+                }
             }
       | WebSocket.Binary(bytes) ->
-            serving(connected, toSession(attachState, Session.Keys(bytes)), reader)
+            Some(toSession(attachState, Session.Keys(bytes)))
       | WebSocket.Ping(payload) ->
             written(connected, attachState, reader, WebSocket.Pong(payload))
       | WebSocket.Pong(_) ->
-            serving(connected, attachState, reader)
+            Some(attachState)
       | WebSocket.Close(=code) -> {
             let _ = write(connected, WebSocket.Close(=code, reason = ""));
-            closed(connected, attachState, reader)
+            closed(connected, attachState, reader);
+            None
         }
     }
 
@@ -325,11 +426,8 @@ fn resize(rows : Int, columns : Int) : Optional(Asked) =
         None
 
 // A resize: the shell attached where no session is, and otherwise the
-// session told it.
-fn resized(connected : Connected,
-           attachState : AttachState,
-           reader : Optional(Process),
-           size : Terminal.Size) : Unit receiving ShellMsg =
+// session told it; the attach state after it.
+fn resized(connected : Connected, attachState : AttachState, size : Terminal.Size) : AttachState =
     match attachState {
         Unattached -> {
             send(connected.sessions.address,
@@ -337,10 +435,10 @@ fn resized(connected : Connected,
                                  remote = connected.remote,
                                  =size,
                                  shell = connected.told));
-            serving(connected, Attaching([]), reader)
+            Attaching([])
         }
       | Attaching(_) or AttachedTo(_) ->
-            serving(connected, toSession(attachState, Session.Resize(size)), reader)
+            toSession(attachState, Session.Resize(size))
     }
 
 // The message sent to the attached session, held while the attach is under
@@ -359,14 +457,15 @@ fn toSession(attachState : AttachState, message : Session.SessionMsg) : AttachSt
 
 // What the session, or the sessions, told: the session attached and
 // monitored, told what was held for it meanwhile, in order, and the
-// attachment written as a text, before any output; no session to be had;
-// the program's output written as a binary message, and the session told
-// it is written; the warning as a text; and the session's end with its
-// close code.
+// attachment written as a text, before any output, the reader then asked
+// to read again where the attach was under way; no session to be had; the
+// program's output written as a binary message, and the session told it
+// is written; the warning as a text; and the session's end with its close
+// code. The attach state after it, or None where it closed the connection.
 fn toldBy(connected : Connected,
           attachState : AttachState,
-          reader : Optional(Process),
-          told : Session.Told) : Unit receiving ShellMsg =
+          reader : Optional(Address(ReaderMsg)),
+          told : Session.Told) : Optional(AttachState) receiving ShellMsg =
     match told {
         Session.Attached(=session, =attachment) -> {
             monitor(Process.fromAddress(session), SessionEnded);
@@ -380,10 +479,17 @@ fn toldBy(connected : Connected,
               | Session.Joined -> "joined"
             };
             let text = Json.format(Json.Object(Map.fromList([#("attached", Json.Text(word))])));
-            written(connected, AttachedTo(session), reader, WebSocket.Text(text))
+            let attached = written(connected, AttachedTo(session), reader, WebSocket.Text(text));
+            match attachState {
+                Attaching(_) when Optional.isSome(attached) -> readNext(reader)
+              | _ -> Unit
+            };
+            attached
         }
-      | Session.Unavailable ->
-            closedWith(connected, attachState, reader, 4003)
+      | Session.Unavailable -> {
+            closedWith(connected, attachState, reader, 4003);
+            None
+        }
       | Session.Output(bytes) ->
             outputWritten(connected, attachState, reader, bytes)
       | Session.Warning(seconds) -> {
@@ -391,39 +497,48 @@ fn toldBy(connected : Connected,
                 Json.format(Json.Object(Map.fromList([#("warning", Json.Integer(seconds))])));
             written(connected, attachState, reader, WebSocket.Text(text))
         }
-      | Session.Ended(code) ->
-            closedWith(connected, attachState, reader, code)
+      | Session.Ended(code) -> {
+            closedWith(connected, attachState, reader, code);
+            None
+        }
     }
 
-// The message written as a frame within the write deadline; a write that
-// fails or does not end in time closes the connection.
+// The message written as a frame within the write deadline: the attach
+// state, or None where the write failed or did not end in time, which
+// closes the connection.
 fn written(connected : Connected,
            attachState : AttachState,
-           reader : Optional(Process),
-           message : WebSocket.Message) : Unit receiving ShellMsg =
+           reader : Optional(Address(ReaderMsg)),
+           message : WebSocket.Message) : Optional(AttachState) receiving ShellMsg =
     match write(connected, message) {
-        Right(Unit) -> serving(connected, attachState, reader)
-      | Left(_) -> closed(connected, attachState, reader)
+        Right(Unit) ->
+            Some(attachState)
+      | Left(_) -> {
+            closed(connected, attachState, reader);
+            None
+        }
     }
 
 // The program's output written as a binary message within the write
 // deadline, and the session told it is written once it is on the socket,
-// so that it reads its program on; a write that fails or does not end in
-// time closes the connection.
+// so that it reads its program on: the attach state, or None where the
+// write failed or did not end in time, which closes the connection.
 fn outputWritten(connected : Connected,
                  attachState : AttachState,
-                 reader : Optional(Process),
-                 bytes : Bytes) : Unit receiving ShellMsg =
+                 reader : Optional(Address(ReaderMsg)),
+                 bytes : Bytes) : Optional(AttachState) receiving ShellMsg =
     match write(connected, WebSocket.Binary(bytes)) {
         Right(Unit) -> {
             match attachState {
                 AttachedTo(session) -> send(session, Session.Written(connected.told))
               | Unattached or Attaching(_) -> Unit
             };
-            serving(connected, attachState, reader)
+            Some(attachState)
         }
-      | Left(_) ->
-            closed(connected, attachState, reader)
+      | Left(_) -> {
+            closed(connected, attachState, reader);
+            None
+        }
     }
 
 fn write(connected : Connected, message : WebSocket.Message) : Either(Io.Error, Unit) =
@@ -437,7 +552,7 @@ fn write(connected : Connected, message : WebSocket.Message) : Either(Io.Error, 
 // the connection closed.
 fn closedWith(connected : Connected,
               attachState : AttachState,
-              reader : Optional(Process),
+              reader : Optional(Address(ReaderMsg)),
               code : Int) : Unit receiving ShellMsg = {
     let _ = write(connected, WebSocket.Close(code = Some(code), reason = ""));
     closed(connected, attachState, reader)
@@ -448,10 +563,10 @@ fn closedWith(connected : Connected,
 // told the shell is detached.
 fn closed(connected : Connected,
           attachState : AttachState,
-          reader : Optional(Process)) : Unit receiving ShellMsg = {
+          reader : Optional(Address(ReaderMsg))) : Unit receiving ShellMsg = {
     match reader {
-        Some(process) -> {
-            kill(process);
+        Some(address) -> {
+            kill(Process.fromAddress(address));
             readerEnded()
         }
       | None ->
@@ -928,6 +1043,88 @@ let warnsAndExpires = Test.Case(name = "writes the warning and closes at the exp
                  true))
 })
 
+// The payload of the tests' pings, 125 bytes, the most a control frame
+// holds.
+let pingPayload : Bytes = Bytes.repeat(<<0x70>>, 125)
+
+// The count of pings one write of the client holds.
+let pingsAWrite : Int = 64
+
+// What one write of the client holds: the pings, each masked as a client
+// sends it.
+let pings : Bytes = Bytes.repeat(Smoke.masked(WebSocket.Ping(pingPayload)), pingsAWrite)
+
+// The bytes a client that reads nothing writes before the test fails where
+// no write of its is held: a bound well past what the host and the kernel
+// hold for one connection, both ends' buffers together.
+let mostUnread : Int = 33554432
+
+// The client's writes of the pings, each within 200 milliseconds, until one
+// does not end in time, `held`, or the bytes written pass `mostUnread`;
+// and the count of the writes that ended.
+fn pinged(client : Client, count : Int) : #(String, Int) = {
+    let sent = count * Bytes.size(pings);
+    if sent > mostUnread then
+        #("not held after " <> Int.toString(sent) <> " bytes", count)
+    else match Tcp.write(client.socket, pings, 200) {
+        Right(Unit) -> pinged(client, count + 1)
+      | Left(Io.Timeout) -> #("held", count)
+      | Left(error) -> #(Io.show(error), count)
+    }
+}
+
+// The client's socket read until the count of bytes has come, as they are,
+// and the client after them, the bytes past the count decoded.
+fn drained(client : Client, count : Int) : Either(Io.Error, Client) =
+    if count == 0 then
+        Right(client)
+    else {
+        let bytes <- Tcp.read(client.socket, 5000);
+        let size = Bytes.size(bytes);
+        if size <= count then
+            drained(client, count - size)
+        else {
+            let decoded <-
+                Either.mapLeft(WebSocket.decode(client.decoder, Bytes.slice(bytes, count, size)),
+                               fn(_) = Io.Invalid);
+            let #(messages, decoder) = decoded;
+            Right(Client(..client, =decoder, pending = client.pending <> messages))
+        }
+    }
+
+// The client's next message that is not a pong, and the client after it.
+fn afterPongs(client : Client) : #(String, Client) =
+    match nextMessage(client) {
+        #(message, next) when String.startsWith(message, "Pong(") -> afterPongs(next)
+      | other -> other
+    }
+
+// design §11: a client that sends and reads nothing is held: upgraded, it
+// writes pings and reads none of their pongs, and one of its writes does
+// not end within 200 milliseconds before it has written `mostUnread`
+// bytes, since the shell, waiting in its write of a pong, asks its reader
+// for no more and what the client sends waits unread. The shell's write
+// deadline is past the test's time, so that only the client's reading
+// ends that wait: it then reads a pong for each ping of the writes that
+// ended, and its close is answered after the pongs, the shell returning.
+let holdsAClientThatReadsNothing =
+    Test.Case(name = "holds a client that sends and reads nothing", run = fn() = {
+        let timeouts = Config.Timeouts(head = 5000, idle = 60000, write = 60000, file = 5000);
+        let sessions = Sessions.start(configured(1, 60000, 30000, 1024), timeouts);
+        let pongSize = Bytes.size(WebSocket.encode(WebSocket.Pong(pingPayload)));
+        let result = {
+            let client <- opened(sessions, timeouts, [], <<>>);
+            let #(held, count) = pinged(client, 0);
+            let _ <- if held == "held" then Right(Unit) else Left(held);
+            let client <- Either.mapLeft(drained(client, count * pingsAWrite * pongSize), Io.show);
+            let _ = sent(client, WebSocket.Close(code = Some(1000), reason = ""));
+            let #(closing, client) = afterPongs(client);
+            Right(#(held, closing, messages(client, 1), ended()))
+        };
+        Test.equal(#(result, stopped(sessions)),
+                   #(Right(#("held", "Close(1000)", ["closed"], "Returned")), true))
+    })
+
 // A stand-in for the sessions, which attaches each shell to the session
 // given, `New`, and tells the test's process the shell's address.
 fn attachingTo(test : Address(Seen),
@@ -994,10 +1191,10 @@ fn toldSession(message : Session.SessionMsg, shell : Process) : String =
     }
 
 // design §11: before the first resize keys, extend and stop are dropped,
-// and keys after it are held while the attach is under way and told once
-// Attached comes; the program's output is written as a binary message, and
-// the session then told Written with the shell's address, and at the close
-// Detach.
+// and keys after it in its Received, the carried bytes here, are held while
+// the attach is under way and told once Attached comes; the program's
+// output is written as a binary message, and the session then told Written
+// with the shell's address, and at the close Detach.
 let dropsBeforeTheResize =
     Test.Case(name = "drops what comes before the first resize", run = fn() = {
         let #(sessions, session) = standingIn();
@@ -1046,3 +1243,136 @@ let dropsBeforeTheResize =
                            "Returned",
                            ["Keys(late)", "Written by the shell", "Detach of the shell"])))
     })
+
+// A client whose shell is attached to the sessions' stand-in: the client,
+// the text it was written at the attach, as a test compares it, and the
+// shell's address as the stand-in was given it.
+type AttachedClient = AttachedClient(client : Client, text : String, shell : Address(Session.Told))
+
+// The shell's attach to the sessions' stand-in, with the bytes after the
+// head given.
+fn attachedClient(sessions : Sessions.Sessions,
+                  beyond : Bytes) : Either(String, AttachedClient) receiving Seen = {
+    let client <- opened(sessions, deadlines(60000), [], beyond);
+    let #(text, client) = nextMessage(client);
+    let shell <- receive {
+        ShellAttached(shell) -> Right(shell)
+      | after 5000 -> Left("no shell")
+    };
+    Right(AttachedClient(=client, =text, =shell))
+}
+
+// The next message the session's stand-in took, as toldSession shows it,
+// within 5000 milliseconds.
+fn takenBySession(shell : Address(Session.Told)) : String receiving Seen =
+    receive {
+        ToSession(message) -> toldSession(message, Process.fromAddress(shell))
+      | after 5000 -> "nothing"
+    }
+
+// design §11: the messages of a Received are handled in order, and those
+// after one that closes the connection are dropped: a close and then keys
+// in one write, the shell attached, answer the close, and the session
+// takes no keys, its first message the shell's Detach. A regression test,
+// written after the code: it does not cover the two in one read for
+// certain, which one write of both does not promise, nor a text closed
+// with 1008 or a write that fails before what follows it.
+let dropsWhatFollowsAClose =
+    Test.Case(name = "drops what follows a close in one read", run = fn() = {
+        let #(sessions, session) = standingIn();
+        let result = {
+            let AttachedClient(=client, text = attached, =shell) <-
+                attachedClient(sessions, Smoke.masked(page("{\"resize\": [24, 80]}")));
+            let _ =
+                Tcp.write(client.socket,
+                          Smoke.masked(WebSocket.Close(code = Some(1000), reason = ""))
+                              <> Smoke.masked(WebSocket.Binary(String.toUtf8("late"))),
+                          5000);
+            let closing = messages(client, 2);
+            let end = ended();
+            Right(#(attached, closing, end, takenBySession(shell)))
+        };
+        kill(Process.fromAddress(session));
+        kill(Process.fromAddress(sessions.address));
+        Test.equal(result,
+                   Right(#(attachedText("new"),
+                           ["Close(1000)", "closed"],
+                           "Returned",
+                           "Detach of the shell")))
+    })
+
+// The live process whose spawn site is the shell's reader's, in `serve`.
+fn shellReader() : Optional(Process) =
+    List.find(Process.live(), fn(process) = match Process.status(process) {
+        Some(status) -> String.startsWith(status.site, "Shell.serve:")
+      | None -> false
+    })
+
+// design §11: a reader that ends otherwise than by returning, `kill`ed
+// here, closes the shell without a frame, its session told Detach. A
+// regression test, written after the code: the reader is found by its
+// spawn site among the live processes, which holds one shell's reader
+// alone, since a module's tests run one at a time (report §11.2); it does
+// not cover a reader that faults.
+let closesAtItsReadersEnd =
+    Test.Case(name = "closes where its reader ends otherwise", run = fn() = {
+        let #(sessions, session) = standingIn();
+        let result = {
+            let AttachedClient(=client, text = attached, =shell) <-
+                attachedClient(sessions, Smoke.masked(page("{\"resize\": [24, 80]}")));
+            let reader <- Either.fromOptional(shellReader(), "no reader");
+            kill(reader);
+            Right(#(attached, messages(client, 1), ended(), takenBySession(shell)))
+        };
+        kill(Process.fromAddress(session));
+        kill(Process.fromAddress(sessions.address));
+        Test.equal(result,
+                   Right(#(attachedText("new"), ["closed"], "Returned", "Detach of the shell")))
+    })
+
+// A stand-in for the sessions that answers no attach, and tells the test's
+// process the shell's address at each.
+fn answeringNone(test : Address(Seen)) : Unit receiving Sessions.SessionsMsg =
+    receive {
+        Sessions.Attach(=shell) -> {
+            send(test, ShellAttached(shell));
+            answeringNone(test)
+        }
+      | _ ->
+            answeringNone(test)
+    }
+
+// The end of the process, monitored by the test's process, as Io.show
+// writes its reason, within 5000 milliseconds.
+fn endOf(process : Process) : String receiving Seen =
+    receive {
+        Ended(down) when down.process == process -> Io.show(down.reason)
+      | after 5000 -> "no end"
+    }
+
+// design §11: the reader monitors its shell and returns at the shell's end:
+// the process that serves a shell is killed while the shell's attach is
+// under way, its reader having answered the first Read and waiting for the
+// next, and the reader returns. A regression test, written after the code:
+// it does not cover a shell that ends while its reader is in a read, whose
+// end the reader takes after the read.
+let endsItsReaderWithIt = Test.Case(name = "ends its reader with it", run = fn() = {
+    let me = self();
+    let sessions =
+        Sessions.Sessions(shell = configured(1, 60000, 30000, 1024),
+                          address = spawn(fn() = answeringNone(me)));
+    let result = {
+        let _ <-
+            opened(sessions, deadlines(60000), [], Smoke.masked(page("{\"resize\": [24, 80]}")));
+        let shell <- receive {
+            ShellAttached(shell) -> Right(Process.fromAddress(shell))
+          | after 5000 -> Left("no attach")
+        };
+        let reader <- Either.fromOptional(shellReader(), "no reader");
+        monitor(reader, Ended);
+        kill(shell);
+        Right(#(endOf(shell), endOf(reader)))
+    };
+    kill(Process.fromAddress(sessions.address));
+    Test.equal(result, Right(#("Killed", "Returned")))
+})

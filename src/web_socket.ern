@@ -753,6 +753,21 @@ let refusesAStrayContinuation =
                               decoded(FromServer, fragmentHel <> fragmentLo <> fragmentLo)],
                              List.repeat(Left(ProtocolError), 4)))
 
+// design §10: the messages the same bytes completed before an error are
+// dropped: a whole binary message and then a frame the RFC forbids, one
+// not masked from a client, in one call answer the error alone, though the
+// binary message given alone is answered. A regression test, written after
+// the code: it does not cover a control message completed before the
+// error, nor a TooBig or a NotUtf8 after a message.
+let dropsTheMessagesBeforeAnError =
+    Test.Case(name = "answers an error alone, the messages before it dropped",
+              run = fn() =
+                  Test.equal(#(decoded(FromClient, maskedFrame(0x82, hello) <> unmaskedPing),
+                               answers(FromClient,
+                                       testLimit,
+                                       [maskedFrame(0x82, hello), unmaskedPing])),
+                             #(Left(ProtocolError), [Right([Binary(hello)]), Left(ProtocolError)])))
+
 // design §10: a text or a binary message's first frame inside a message
 // under way is refused, final or not.
 let refusesAMessageInsideOne =
