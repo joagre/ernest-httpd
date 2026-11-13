@@ -533,3 +533,13 @@ One build after Ernest's MVP 4.16 was weighed and left out. That release has no 
 It was installed the same day. `make release`'s archive of `75faac8`, sha256 `482850ea…`, named 0.1.0 as `VERSION` is, went under the rehearsal's prefix by step 4's `make install`, its 13 modules the build's by their checksums. Ernest's 0.10.0, the configuration, the certificate and the shell's image stand as item 5 left them, and the archive of `bd1ff9e` stands beside the new one under its commit's name. `make release` took 19 seconds, its `make test` among them.
 
 The unit restarted in two seconds, the journal's five lines in the configuration's order. The smoke test from outside the machine passed six of six in 4 seconds, and no container was left. The probe of *The shell's reader asked* was not run against the unit, since it sends 64 MB to a machine the live site shares; the regression test holds the client held.
+
+## The launch's minor
+
+*2026-11-13.* Ernest answered line 30 as its 252 in an archive of `271a0ba5`, `ern 0.11.0+271a0ba5`, made for that verdict alone (its log, *What One Read Answers*). Installed into a scratch prefix, the archive's E.18 holds 252's sentences and 249's, and its G.11 has `target` percent-encode what a browser sends raw, 250 decided as the plan recommended. MVP 4.16 makes no release of its own: 0.11.0 is MVP 4.4's, the launch's minor, so the plan's steps on 4.16 move under 4.4, at the floor's rise.
+
+The archive stays out of the shared prefix and the floor stays at 0.10. The three repositories' floors rise together when the reviews begin, on the archive the readers read, and `ernest-epx` and `ernest-template` stand on 0.10, which a 0.11.0 under the prefix would refuse (*The floor at the reviews*). Raising this floor first was weighed and left out: it buys nothing the rise will not, and refuses its neighbors meanwhile (principle 1).
+
+Against the archive, the suite needs two changes, which the plan holds. `Process.Calling` has named fields, so two tests of the session that compared an activity no longer build. Static's test of a bad path answers 404 or 200 for targets 0.10.0 refused, since `target` encodes them. That is line 29's effect, and design §5's *The path* changes before the test does.
+
+The probe found what line 30 did not ask: on 0.10.0 the host's TLS process of a connection nobody reads holds 0.7 to 0.9 MB, outside `Process.status`, where 0.11.0 holds 20 to 30 KB. The rehearsal's unit stands on 0.10.0 until the switch, so each shell connection a client leaves unread costs it that much. The switch removes it, and nothing is done meanwhile, since the unit serves Ernest's side alone.

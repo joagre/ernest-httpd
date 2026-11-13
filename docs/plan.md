@@ -6,7 +6,7 @@ Read *Where we are* first, then the milestone under way, its steps by what each 
 
 ## Where we are
 
-Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way: its steps wait on Ernest's MVP 4.16 release, which answers lines 28 and 29 and decides line 30, and on its MVP 4.4 release; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/, from a build of `75faac8`, for Ernest's side to be built against.
+Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way: its steps wait on Ernest's MVP 4.4 release, 0.11.0, whose archive of `271a0ba5` answers lines 28 to 30; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/, from a build of `75faac8`, for Ernest's side to be built against.
 
 ## Milestone 2: after the first release
 
@@ -18,17 +18,13 @@ Done too, the steps between them: the designed lines out of the test run, the lo
 
 Done after them, from a reading of the design from outside: the shell's reader asked, with what else the reading found, the log's *The shell's reader asked*; the session's helpers, the log's *The session's helpers*; and the rehearsal's build, the log's *The rehearsal's build*.
 
-### On Ernest's MVP 4.16 release
-
-**Lines 28 and 29.** Ernest decided both on 2026-11-11 and builds them in its MVP 4.16, whose archive its session names when built. Line 28 is its 249, taken: E.18 states that at the limit of open files `accept` answers at once. Line 29 is its 250: G.11's sentence is corrected, and whether `Http.target` reads a target a browser sends raw is the user's decision in Ernest, its MVP 4.16's item 18, recommended as each such character percent-encoded.
-
-The release is installed, each verdict checked against the installation by a probe, and each line it answers goes, the log citing Ernest's number. Nothing of the program waits on line 28, since §7's retry stands whatever E.18 says (the log's *Milestone 2, item 8: the listener's retry*). Line 29 waits: where the release has `Http.target` read a target a browser sends raw, the server serves `GET /?a[]=1` and `GET /a[b]`, design §5's *The path* changing first where its rule moves, and a test holds it.
-
-**Line 30.** Ernest holds it as its 252 and its MVP 4.16's item 33, a design session that runs the line's probe over TCP and over TLS and then decides what E.18 states of a read: the most one `Tcp.read` answers, and that what no read has taken holds the far end. Nothing of the program waits on it, since §11's reader asks for one read at a time whatever a read's size, and a test holds the client held (the log's *The shell's reader asked*). The line goes when the release answers it, checked by a probe.
-
 ### On Ernest's MVP 4.4 release
 
-**Item 5, the release and the switch.** When the reviews of Ernest's MVP 4.4 begin, the floor rises to the minor of its release, 0.11 or 0.12 as Ernest says, on the archive of the commit its readers read. Once that release is tagged, the same week and after `ernest-template`'s release and `ernest-epx`'s, it is installed, and a release of this program is made by `docs/release.md`, its readers among it, which `make release` refuses before the tag.
+**The floor's rise.** When the reviews of Ernest's MVP 4.4 begin, the floor rises to 0.11, the minor of its release, on the archive of the commit its readers read, which Ernest's session names to the three repositories on the user's word (the log's *The floor at the reviews* and *The launch's minor*). The archive is installed, and each of Ernest's verdicts is checked against it by a probe: line 28 is its 249, line 29 its 250 and line 30 its 252, and each line goes, the log citing the number.
+
+Two changes come with the rise. `Process.Calling` takes named fields, so the session's tests ask a helper's activity by a pattern and not by equality. `Http.target` reads a target a browser sends raw, percent-encoding `[`, `]`, `{`, `}` and the rest of G.11's set, so the server serves `GET /?a[]=1` and `GET /a[b]`: design §5's *The path* changes first where its rule moves, and the test that refuses a bad path with 400 holds what it now answers. Nothing of the program waits on line 28 or line 30 (the log's *Milestone 2, item 8: the listener's retry* and *The shell's reader asked*).
+
+**Item 5, the release and the switch.** Once Ernest's release is tagged, the same week and after `ernest-template`'s release and `ernest-epx`'s, it is installed, and a release of this program is made by `docs/release.md`, its readers among it, which `make release` refuses before the tag.
 
 That release, with item 11's client, is installed in one switch on the path the rehearsal walked: `deploy/config.json` takes the member `shell` that design §13 gives, and `deploy/README.md`'s step 7 builds the image and installs the wrapper (the log's *The wrapper and the smoke test's configuration*). The rehearsal's unit goes with it, with `/home/httpd/rehearsal/` and the shell's image of 0.9.0. Until then, design §11's messages stay as Ernest's site speaks them, and a change to them is told to Ernest's session before it is built.
 
