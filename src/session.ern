@@ -937,7 +937,7 @@ let waitsOutATimedOutWrite = Test.Case(name = "waits out a write past its deadli
         Right(program) -> {
             let ready = readUntil(program, "ready\r\n", "");
             let session = adapted(self(), FromWriter);
-            let writer = spawn(fn() = writing(program, session, 100));
+            let writer = spawn(fn() = startWriting(program, session, 100));
             let wrote = fn(ms) = receive {
                 FromWriter(Wrote) -> "Wrote"
               | after ms -> "nothing"

@@ -6,7 +6,7 @@ Read *Where we are* first, then the milestone under way, its steps by what each 
 
 ## Where we are
 
-Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way: a decision of the user's waits on nothing, the rehearsal's build, and the steps wait on Ernest's MVP 4.16 release, which answers lines 28 and 29 and decides line 30, and on its MVP 4.4 release; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/ for Ernest's side to be built against.
+Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way: one step waits on nothing but the user's word, the rehearsal's build, and the rest wait on Ernest's MVP 4.16 release, which answers lines 28 and 29 and decides line 30, and on its MVP 4.4 release; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/ for Ernest's side to be built against.
 
 ## Milestone 2: after the first release
 
@@ -18,7 +18,7 @@ Done too, the steps between them: the designed lines out of the test run, the lo
 
 ### Waiting on nothing
 
-**The rehearsal's build.** A decision of the user's: whether the rehearsal's unit, which serves the shell at https://ernest-lang.org:8443/ with the reader and the session's helpers of the build it was walked on, takes a build with the reader asked and the helpers ending with their session before the switch, or stands as it is until the switch removes it.
+**The rehearsal's build.** The rehearsal's unit takes a build of this repository with the reader asked and the session's helpers, before the switch: `make release`'s archive installed under `/home/httpd/rehearsal/` as the rehearsal installed its first, the unit restarted, and the smoke test passing against 8443 from outside the machine (the log's *The rehearsal's build*). It is an item of its own, on the machine, and begins on the user's word.
 
 ### On Ernest's MVP 4.16 release
 

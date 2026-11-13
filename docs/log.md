@@ -521,3 +521,11 @@ Dropped: the tests under load, each already decided or bounded, the largest file
 In a read or a write a helper ends by the call's fault, the program ending with its session (Appendix E.23). A probe on `ern 0.10.0` killed a program's owner during a read, a write and an empty write waited out, and each caller ended with `Fault("callee was killed")`, which the runtime reports on standard error. So the regression test kills a session of `cat` whose helpers wait and holds that both return. A helper caught in a call is left untested, since the fault's report would stand in the test run.
 
 The two events take two names, `ReaderSessionEnded` and `WriterSessionEnded`, where the shell's reader takes `ShellEnded`: a module's constructors are unique across its types (report §4.2). Each is named for its helper's session, which keeps the form of an end's name. One type for both helpers was weighed and left out, since a reader's type would then admit a `Write` it never takes (principle 3). `make test` takes 18 s as before, for one more case.
+
+The test of a write waited out started its writer by `writing`, a writer the program never starts, and starts it by `startWriting` now, so that every test runs a helper as `serve` spawns it.
+
+## The rehearsal's build
+
+*2026-11-13.* The rehearsal's unit takes a new build before the switch. It serves https://ernest-lang.org:8443/ from the archive of `bd1ff9e`, whose shell's reader reads unasked: a client that sends pings and reads nothing grows that server's memory, 278 MB for 64 MB sent in the probe (*The shell's reader asked*). The unit has no cap on its memory and shares the machine with the live site. A known defect is fixed when found, and this one stands on a public port. Ernest's side is built against that unit too, and should meet the server it goes live with.
+
+One build after Ernest's MVP 4.16 was weighed and left out. That release has no date, and the defect stands meanwhile. What it may change in the server, a target read with the characters a browser sends raw, does not touch the shell. The build is an item on the machine and begins on the user's word.
