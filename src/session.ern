@@ -31,6 +31,11 @@
 /// on until its program exits or `hangup` milliseconds pass, kills the
 /// program where it has not exited, and tells every shell whose attach has
 /// reached it the end's code.
+///
+/// A session that ends otherwise, by a fault or a kill, ends its program
+/// with it. Its reader and its writer each monitor it, and return at its
+/// end where they wait for its next request; in a read or a write they end
+/// by the call's fault.
 
 //
 // Types
@@ -73,11 +78,13 @@ export type SessionMsg =
   | WriterEnded(Down)
   | Alarm(Int)
 
-/// What the reader takes: the request to read the terminal once.
-export type ReaderMsg = Read
+/// What the reader takes: the request to read the terminal once, and the
+/// end of its session, which it monitors.
+export type ReaderMsg = Read | ReaderSessionEnded(Down)
 
-/// What the writer takes: the request to write the keys to the program.
-export type WriterMsg = Write(Bytes)
+/// What the writer takes: the request to write the keys to the program, and
+/// the end of its session, which it monitors.
+export type WriterMsg = Write(Bytes) | WriterSessionEnded(Down)
 
 /// The call a session makes of the sessions as its end begins, with its own
 /// process, which the sessions answer once its cookie names it no more.
@@ -138,8 +145,8 @@ export fn serve(shell : Config.Shell,
             let me = self();
             let idle = timeouts.idle;
             let write = timeouts.write;
-            let reader = spawnMonitored(fn() = reading(program, me, idle), ReaderEnded);
-            let writer = spawnMonitored(fn() = writing(program, me, write), WriterEnded);
+            let reader = spawnMonitored(fn() = startReading(program, me, idle), ReaderEnded);
+            let writer = spawnMonitored(fn() = startWriting(program, me, write), WriterEnded);
             let state =
                 Serving(attached = None,
                         attachment = New,
@@ -161,8 +168,20 @@ export fn serve(shell : Config.Shell,
     }
 }
 
+// The reader's start: the session monitored, since a process the program
+// spawns ends with no other (report §6.9), and the first Read waited for.
+fn startReading(program : Address(Os.ProgramMsg),
+                session : Address(SessionMsg),
+                idle : Int) : Unit receiving ReaderMsg = {
+    monitor(Process.fromAddress(session), ReaderSessionEnded);
+    reading(program, session, idle)
+}
+
 // The reader: the terminal read once for each Read, within the idle
-// deadline, and what the read answered told to the session.
+// deadline, and what the read answered told to the session (design §12).
+// Where it waits for a Read it returns at the end of the session, which it
+// monitors; in a read it ends by the read's fault, the program ending with
+// the session (Appendix E.23).
 fn reading(program : Address(Os.ProgramMsg),
            session : Address(SessionMsg),
            idle : Int) : Unit receiving ReaderMsg =
@@ -171,10 +190,25 @@ fn reading(program : Address(Os.ProgramMsg),
             send(session, Answered(Os.read(program, idle)));
             reading(program, session, idle)
         }
+      | ReaderSessionEnded(_) ->
+            Unit
     }
 
+// The writer's start: the session monitored, as the reader's start
+// monitors it, and the first Write waited for.
+fn startWriting(program : Address(Os.ProgramMsg),
+                session : Address(SessionMsg),
+                write : Int) : Unit receiving WriterMsg = {
+    monitor(Process.fromAddress(session), WriterSessionEnded);
+    writing(program, session, write)
+}
+
 // The writer: the keys of each Write written to the program within the
-// write deadline, waited out, and the session told the write is done.
+// write deadline, waited out, and the session told the write is done
+// (design §12). Where it waits for a Write it returns at the end of the
+// session, which it monitors; in a write, or an empty write waited out, it
+// ends by the write's fault, the program ending with the session
+// (Appendix E.23).
 fn writing(program : Address(Os.ProgramMsg),
            session : Address(SessionMsg),
            write : Int) : Unit receiving WriterMsg =
@@ -184,6 +218,8 @@ fn writing(program : Address(Os.ProgramMsg),
             send(session, Wrote);
             writing(program, session, write)
         }
+      | WriterSessionEnded(_) ->
+            Unit
     }
 
 // A write waited out: one that did not end within the deadline is not
@@ -520,13 +556,15 @@ fn drained(code : Int) : Unit receiving SessionMsg =
 // What a test's process takes: what a shell is told, by the shell's name;
 // the sessions' stand-in's word that a session called Ending, with its
 // process; a session's call of Ending, where the test answers it; a
-// session's end; and what a writer tells the test's process in its
-// session's place.
+// session's end; the end of a session's reader or writer, where the test
+// monitors it; and what a writer tells the test's process in its session's
+// place.
 type Seen =
     Heard(shell : String, told : Told)
   | EndingTold(Process)
   | EndingCalled(Ending)
   | SessionEnded(Down)
+  | HelperEnded(Down)
   | FromWriter(SessionMsg)
 
 let timeouts : Config.Timeouts =
@@ -1213,6 +1251,34 @@ let endsWithItsHelpers =
         Test.equal([ending(Process.Calling), ending(Process.Receiving)],
                    [#("Attached(New) Test.Passed", "Ended(1011)", "Returned"),
                     #("Attached(New) Test.Passed", "Ended(1011)", "Returned")])
+    })
+
+// The end of a session's reader or writer, monitored by the test's process,
+// as Io.show writes its reason, within 5000 milliseconds.
+fn endOfHelper(process : Process) : String receiving Seen =
+    receive {
+        HelperEnded(down) when down.process == process -> Io.show(down.reason)
+      | after 5000 -> "no end"
+    }
+
+// design §12: the reader and the writer each monitor the session and
+// return at its end where they wait: a session of `cat` that no shell has
+// attached to, its reader waiting for its Read and its writer for its
+// Write, the three with nothing in their mailboxes, is killed, and both
+// return. A regression test, written after the code: it does not cover a
+// session that ends while its reader is in a read or its writer in a
+// write, where the helper ends by the call's fault.
+let endsItsReaderAndWriterWithIt =
+    Test.Case(name = "ends its reader and its writer with it", run = fn() = {
+        let session =
+            startedUnder(configured(["cat"], 60000, 30000, 5000), adapted(self(), EndingCalled));
+        let waiting = Test.until(fn() = readerWaits(session), 5000);
+        let helpers = spawnedInServe(Process.Receiving);
+        List.forEach(helpers, fn(helper) = monitor(helper, HelperEnded));
+        kill(Process.fromAddress(session));
+        let ended = endOf();
+        Test.equal(#(waiting, ended, List.map(helpers, endOfHelper)),
+                   #(Test.Passed, "Killed", ["Returned", "Returned"]))
     })
 
 // design §12: a write that fails is dropped, its Exited being read: keys

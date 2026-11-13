@@ -6,7 +6,7 @@ Read *Where we are* first, then the milestone under way, its steps by what each 
 
 ## Where we are
 
-Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way, and one step of it waits on nothing, the session's helpers, and the rest on Ernest's MVP 4.16 release, which answers lines 28 and 29, and on its MVP 4.4 release, line 30 on Ernest's verdict; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/ for Ernest's side to be built against.
+Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way: a decision of the user's waits on nothing, the rehearsal's build, and the steps wait on Ernest's MVP 4.16 release, which answers lines 28 and 29 and decides line 30, and on its MVP 4.4 release; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/ for Ernest's side to be built against.
 
 ## Milestone 2: after the first release
 
@@ -14,13 +14,11 @@ What the first release's readers found and the milestone's own items, each a ste
 
 Done: items 1 to 4, 6 and 7, the log's *Milestone 2, item 1: the refusal's form*, *Milestone 2, item 2: quiet tests*, *Milestone 2, items 3 and 4: the attach's word and a restart at the cap*, *Three cleanups* and *The code reader's findings*; item 8, the log's *Milestone 2, item 8: the listener's retry*; item 9, the log's *Milestone 2, item 9: the reset under load*; item 10, the log's *Milestone 2, item 10: the library's own*; item 11, the log's *The shell client*, *The shell client's design* and *Milestone 2, item 11: the shell client's build*; and item 5's rehearsal, the log's *Milestone 2, item 5: the rehearsal*.
 
-Done too, the steps between them: the designed lines out of the test run, the log's *The lines in the test run*; the refused value on one line, the log's *A refused value on one line*; the server's signal in the tests, the log's *The server's signal in the tests*; the two nodes in the visitor's container with a CPU cap, the log's *Two nodes and a core*; the caps on 0.10.0, which stand, the log's *The caps on 0.10.0*; the listener's one closer, the log's *The listener's one closer*; the shell client's proposal read and swept, the log's *The shell client's proposal goes*; the archive's tree, the log's *The archive's tree and the four cores*; and the shell's reader asked, with what a reading of the design from outside found, the log's *The shell's reader asked*.
+Done too, the steps between them: the designed lines out of the test run, the log's *The lines in the test run*; the refused value on one line, the log's *A refused value on one line*; the server's signal in the tests, the log's *The server's signal in the tests*; the two nodes in the visitor's container with a CPU cap, the log's *Two nodes and a core*; the caps on 0.10.0, which stand, the log's *The caps on 0.10.0*; the listener's one closer, the log's *The listener's one closer*; the shell client's proposal read and swept, the log's *The shell client's proposal goes*; the archive's tree, the log's *The archive's tree and the four cores*; the shell's reader asked, with what a reading of the design from outside found, the log's *The shell's reader asked*; and the session's helpers, the log's *The session's helpers*.
 
 ### Waiting on nothing
 
-**The session's helpers.** Found on 2026-11-13 and built before item 5's release: a session's reader and its writer wait for a `Read` and a `Write`, and outlive a session that faults, since a process the program spawns belongs to no one (report §6.9). Each monitors its session and returns at its end, as the shell's reader does its shell, design §12 changing first and a test holding each (the log's *The shell's reader asked*).
-
-**The rehearsal's build.** A decision of the user's: whether the rehearsal's unit, which serves the shell at https://ernest-lang.org:8443/ with the reader of the build it was walked on, takes a build with the reader asked before the switch, or stands as it is until the switch removes it.
+**The rehearsal's build.** A decision of the user's: whether the rehearsal's unit, which serves the shell at https://ernest-lang.org:8443/ with the reader and the session's helpers of the build it was walked on, takes a build with the reader asked and the helpers ending with their session before the switch, or stands as it is until the switch removes it.
 
 ### On Ernest's MVP 4.16 release
 
@@ -28,7 +26,7 @@ Done too, the steps between them: the designed lines out of the test run, the lo
 
 The release is installed, each verdict checked against the installation by a probe, and each line it answers goes, the log citing Ernest's number. Nothing of the program waits on line 28, since §7's retry stands whatever E.18 says (the log's *Milestone 2, item 8: the listener's retry*). Line 29 waits: where the release has `Http.target` read a target a browser sends raw, the server serves `GET /?a[]=1` and `GET /a[b]`, design §5's *The path* changing first where its rule moves, and a test holds it.
 
-**Line 30.** Told to Ernest's session on 2026-11-13, the release that answers it Ernest's to name: E.18 states the most one `Tcp.read` answers, and that what no read has taken holds the far end. Nothing of the program waits on it, since §11's reader asks for one read at a time whatever a read's size, and a test holds the client held (the log's *The shell's reader asked*). The line goes when a release answers it, checked by a probe.
+**Line 30.** Ernest holds it as its 252 and its MVP 4.16's item 33, a design session that runs the line's probe over TCP and over TLS and then decides what E.18 states of a read: the most one `Tcp.read` answers, and that what no read has taken holds the far end. Nothing of the program waits on it, since §11's reader asks for one read at a time whatever a read's size, and a test holds the client held (the log's *The shell's reader asked*). The line goes when the release answers it, checked by a probe.
 
 ### On Ernest's MVP 4.4 release
 

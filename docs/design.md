@@ -299,8 +299,8 @@ type Session.Attachment = New | Joined // whether the shell attached is the sess
 type Session.SessionMsg = Attach(Address(Told)) | Detach(Address(Told)) | ShellEnded(Down) | Keys(Bytes) | Written(Address(Told))
   | Resize(Terminal.Size) | Extend | Stop | End(Int) | Answered(Either(Io.Error, Os.Output)) | ReaderEnded(Down)
   | Wrote | WriterEnded(Down) | Alarm(Int)
-type Session.ReaderMsg = Read
-type Session.WriterMsg = Write(Bytes)
+type Session.ReaderMsg = Read | ReaderSessionEnded(Down)
+type Session.WriterMsg = Write(Bytes) | WriterSessionEnded(Down)
 type Session.Ending = Ending(process : Process, reply : Reply(Unit)) // the call a session makes of the sessions as its end begins
 Session.serve : (Config.Shell, Config.Timeouts, Terminal.Size, Address(Ending)) -> Unit receiving SessionMsg
 ```
@@ -314,6 +314,8 @@ A session is spawned, monitored, with `Session.serve` of the size, and told `Att
 **The program.** The session starts `shell.command` under a terminal of the size, `Os.startTerminal`, the first word the program and the rest its arguments, and spawns the reader and the writer, monitored. A start that fails is said on standard error as a line of `cannot start `, the program, `: ` and the error as `Io.show` writes it, and the session ends with 4003 at its attach.
 
 The reader reads the terminal once for each `Read` the session sends, `Os.read` within `timeouts.idle`, and tells the session what it answered, `Answered`. The session sends `Read` when a shell attaches, and again once the attached shell has written every piece it was sent, a `Written` for each, or at once after an answer that gave the shell nothing, so that neither a detached session nor one whose page takes its output slowly reads further, its program waiting on its output as on a full terminal; a `Written` from a shell no longer attached is dropped; the output of a read answered while none was attached is held, one piece, and written to the next shell attached.
+
+The reader and the writer each monitor the session, and one that waits for its `Read` or its `Write` returns at the session's end, `ReaderSessionEnded` or `WriterSessionEnded`, since a process the program spawns ends with no other (report §6.9); in a read or a write it ends by the call's fault, the program ending with the session (Appendix E.23).
 
 **The deadline.** The session keeps the time of the last key or `Extend`, its start at first, and one alarm at a time: set for the warning's time, `shell.lifetime - shell.warning` after that time, and once warned, for the end's time, `shell.lifetime` after it. An alarm that fires at the warning's time tells the attached shell `Warning` with the seconds left, `shell.warning / 1000`; one that fires at the end's time ends the session with 4001; one that fires before its time, the time having moved, is set again for the warning's time.
 
