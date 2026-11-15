@@ -549,3 +549,9 @@ The probe found what line 30 did not ask: on 0.10.0 the host's TLS process of a 
 *2026-11-15.* `CLAUDE.md` is the template's `v0.10.3`'s, tagged on `e00e193`, but for its title and the sentence under it. The tag changes that file alone since `v0.10.2`, and this copy had no difference of its own. It brings the rules of 2026-11-14: a no-brainer is stated and made and everything else is discussed first, a round takes a few issues at a time, a build's sentences hold while it runs, and a defense names its attacker (Ernest's log, *In Doubt, Discuss*, *A Few at a Time* and *A Defense Names Its Attacker*).
 
 It brings the cuts of Ernest's reading of the file too. The cold reading of a batch's design sentences goes, a silence of the design is held to what a user meets, and a report names each thing that remains (Ernest's log, *The Rules Read Against Each Other*).
+
+## The template's v0.10.4
+
+*2026-11-15.* `CLAUDE.md` is the template's `v0.10.4`'s, tagged on `2113dd3`, but for its title and the sentence under it, and `docs/agents.md` comes from the tag whole. `CLAUDE.md` is rewritten where a rule could be taken two ways: a gap has one path, the design's silence is answered by a sentence, and "the report" alone is Ernest's (Ernest's log, *The Rules Read for Clarity*).
+
+The agents' rules stand in `docs/agents.md`, which the template now gives: the brief, an agent's report, what is checked before and after, and the models. `docs/full_review.md` takes the template's three sentences that name the page, `docs/release.md` cites it for a reader's model, and `docs/README.md` lists it. This copy had no difference of its own in what it took.

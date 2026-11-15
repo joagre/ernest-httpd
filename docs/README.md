@@ -7,6 +7,7 @@ What each document of this repository is. [`README.md`](../README.md) says what 
 - **[`log.md`](log.md)**: the dated rationale, never normative.
 - **[`release.md`](release.md)**: what a release runs to be ready.
 - **[`full_review.md`](full_review.md)**: what a review of the whole repository runs, on the user's word alone.
+- **[`agents.md`](agents.md)**: how a session works with its agents: the brief, an agent's report, what is checked before and after, and the model each job gets.
 - **[`examples/README.md`](../examples/README.md)**: the example site, what it shows and how it is run.
 - **[`deploy/README.md`](../deploy/README.md)**: the deployment, the operator's steps in their order.
 - **`language_feedback.md`**, under `docs/` from its first line and gone when it is empty: what writing Ernest felt against the principles, a queue, carried to Ernest as `CLAUDE.md`'s *Defects and gaps* says.
