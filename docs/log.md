@@ -559,3 +559,7 @@ The agents' rules stand in `docs/agents.md`, which the template now gives: the b
 ## The template's v0.10.5
 
 *2026-11-15.* `CLAUDE.md` is the template's `v0.10.5`'s, tagged on `66f949d`, but for its title and the sentence under it. The tag changes that file alone since `v0.10.4`, and this copy had no difference of its own. It brings one rule: a private function whose type names no type of the program's own is read against Appendix E.0's admission rules before it is written, and the reading at an item's close searches the Ernest the item wrote for one, by its count (Ernest's log, *A Library's Function in a Program*, *The Sweep's Reading*).
+
+## The template's v0.10.6
+
+*2026-11-15.* `CLAUDE.md` is the template's `v0.10.6`'s, tagged on `755d9ba`, but for its title and the sentence under it. The tag changes that file alone since `v0.10.5`, and this copy had no difference of its own. It brings the search Ernest's own file has, so that the repositories keep the same rules: a form the code repeats at site after site is a gap of Ernest's, a line of `language_feedback.md` with its count, and the reading at an item's close runs two searches, for such a form and for a private function over the library's types alone (Ernest's log, *The Sweep's Reading*).

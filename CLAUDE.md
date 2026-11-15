@@ -92,7 +92,7 @@ Before that release, an item of the milestone that built the proposal reads it f
 - **Nothing routes around a defect or a gap**, the program's own or Ernest's. Code that meets one does not work around it, and does not hide it by choosing another example. A sentence that teaches a way around the program or Ernest, "the shortest way to", "write it as ... instead", is such a gap with its workaround beside it. Stop and say so: the gap takes its path, the next rule's.
 - **A gap has one path.** It is said to the user at once. A defect of the program's own is fixed when found. One too large to fix now, or not yet diagnosed, goes in the plan with the date it was found and the shape of its fix, never in a comment.
 
-  A gap the program meets in Ernest is fixed in Ernest, in its next release. What writing Ernest felt against a principle is such a gap: a workaround, a second way, something invisible, a function the library lacks, a refusal, a line the tool should say or a defect of the toolchain. It is a line of `language_feedback.md`, written as a change request: the finding, the program that shows it, the principle, and the ask.
+  A gap the program meets in Ernest is fixed in Ernest, in its next release. What writing Ernest felt against a principle is such a gap: a workaround, a second way, something invisible, a function the library lacks, a form the code repeats at site after site, a refusal, a line the tool should say or a defect of the toolchain. It is a line of `language_feedback.md`, written as a change request: the finding, the program that shows it, the principle, and the ask.
 
   One gap of Ernest's does not wait. A function the library lacks, which Ernest can express over what the library has, is written in the program, and its line names it. It goes when a release brings the library's own. Every other gap waits: what needed the line stands in the plan, and nothing here goes around it.
 
@@ -130,7 +130,7 @@ In this file "the report" alone is Ernest's, the language's. The session's is "t
 
 - **Read the result back before reporting it.** The session reads each diff as its agent returns it (*The repository*). At an item's close it reads what the item made as a reader who knows Ernest would, against the principles and the design, and says what surprised.
 
-  The reading at an item's close searches the Ernest the item wrote for a private function whose type names no type of the program's own (*Defects and gaps*). The search runs over the sources and gives its count, never the feel of one site.
+  The reading at an item's close runs two searches over the Ernest the item wrote, each over the sources with its count, never by the feel of one site. One looks for a form the code repeats, which is a line of `language_feedback.md` with its count. The other looks for a private function whose type names no type of the program's own (*Defects and gaps*).
 
   Decide every surprise: act on it in the same item or leave it with its reason, and record it where its owner keeps it. One that needs the user goes to the user with a recommendation in the same report to the user.
 - **A report to the user names each thing that remains**, specific enough to act on or to drop, and says nothing where there is none.
