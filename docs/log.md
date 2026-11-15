@@ -543,3 +543,9 @@ The archive stays out of the shared prefix and the floor stays at 0.10. The thre
 Against the archive, the suite needs two changes, which the plan holds. `Process.Calling` has named fields, so two tests of the session that compared an activity no longer build. Static's test of a bad path answers 404 or 200 for targets 0.10.0 refused, since `target` encodes them. That is line 29's effect, and design §5's *The path* changes before the test does.
 
 The probe found what line 30 did not ask: on 0.10.0 the host's TLS process of a connection nobody reads holds 0.7 to 0.9 MB, outside `Process.status`, where 0.11.0 holds 20 to 30 KB. The rehearsal's unit stands on 0.10.0 until the switch, so each shell connection a client leaves unread costs it that much. The switch removes it, and nothing is done meanwhile, since the unit serves Ernest's side alone.
+
+## The template's v0.10.3
+
+*2026-11-15.* `CLAUDE.md` is the template's `v0.10.3`'s, tagged on `e00e193`, but for its title and the sentence under it. The tag changes that file alone since `v0.10.2`, and this copy had no difference of its own. It brings the rules of 2026-11-14: a no-brainer is stated and made and everything else is discussed first, a round takes a few issues at a time, a build's sentences hold while it runs, and a defense names its attacker (Ernest's log, *In Doubt, Discuss*, *A Few at a Time* and *A Defense Names Its Attacker*).
+
+It brings the cuts of Ernest's reading of the file too. The cold reading of a batch's design sentences goes, a silence of the design is held to what a user meets, and a report names each thing that remains (Ernest's log, *The Rules Read Against Each Other*).

@@ -33,7 +33,7 @@ Each fact has one owner. Every other document points at the owner and does not r
 
 **Proposals.** `docs/proposals/` holds what is designed, a directory for each: the proposal, its reasons, what other systems do, and its experiments or programs. Each directory's `README.md` says what its files are and which is current.
 
-Until a proposal is decided all of it is tentative, and nothing flows from it into the design, the plan or the log.
+Until a proposal is decided all of it is tentative.
 
 A proposal refused or not taken up stays, its README's status line saying which. Only a built one goes.
 
@@ -55,7 +55,7 @@ A `scratch/` directory inside a proposal's own directory, untracked, is the user
 - An agent follows this file. Its report comes back to the user and is written to a file under the session's scratchpad, which a compaction keeps whole. A step of many commands keeps its checklist in such a file too. An agent drafts its log paragraph in that file and never edits the log: the session places it, so that the log keeps one voice and two agents never edit one file at once.
 - An untracked file is the user's. `git status --short` is read before agents start and compared after they end, untracked files among it, and an agent is told in one line to leave them. An agent that dies leaves its processes running: they are looked for and killed by their process numbers, never by a pattern.
 - Every session runs on the stronger model, since the design, the weighing against the five principles and the read-back have no test to catch their errors. The session keeps conclusions in its context, not working material: an agent's report from its file, a test's exit status and its failures, and no file read just to follow along. The models' names and their efforts are the session's memory's, not this repository's.
-- An agent is given its model and its effort when it is started. The coding model runs at the stronger effort for a build in what a test shows least, a process's protocol, foreign code or what takes input from outside, for a diagnosis, and for a review's reader of the code. It runs at the lesser effort for any other build from a settled brief, re-run once at the stronger from a brief naming the failure and then returned to the session. The stronger model reads the documents in a review, and the design's sentences cold. The smallest model runs a search or a digest of long output that asks no judgment. A test run or a probe needs no model: the session runs it.
+- An agent is given its model and its effort when it is started. The coding model runs at the stronger effort for a build in what a test shows least, a process's protocol, foreign code or what takes input from outside, for a diagnosis, and for a review's reader of the code. It runs at the lesser effort for any other build from a settled brief, re-run once at the stronger from a brief naming the failure and then returned to the session. The stronger model reads the documents in a review. The smallest model runs a search or a digest of long output that asks no judgment. A test run or a probe needs no model: the session runs it.
 - Where one pass must be right with nobody reading along, a design's section or a large read-back, the user is asked to raise the session's effort, in one line saying why and when to come back down.
 - Context is most of what a session costs, so sessions stay short and the thinking stays strong. One item, one session: `/clear` follows its report, and the plan, the log, the commit and a scratch file hold what matters. Each suggestion of `/clear` gives, word for word, the message to send after it. A large session is finished or compacted before a long break, since the next message past the cache's life rebuilds it.
 - Where a check that costs cycles and one that costs tokens would find the same thing, the one that costs cycles runs: a full test run, a probe or a make target before a reader or a rework.
@@ -67,20 +67,23 @@ A `scratch/` directory inside a proposal's own directory, untracked, is the user
 - **A design is discussed in its proposal until the user says it is ready.** Until then bring nothing of it to the plan, the log or the design. At a pause offer another reading back or a harder question: the principles, a real program written against it, the operator's day.
 
   A proposal, or a plan section written over one, is reported ready only after it has been read, unasked, against every owner it touches: the design's sections it changes or cites, the plan's items for it, and each proposal it meets at a seam. A seam is read from both sides, so that what one requires the other provides and no fact stands twice. The report to the user names the owners read.
-- **State a change to the design or the plan and make it; do not ask.** Give the change and its argument, make it, and report it under *Design conformance*. Stop and wait only where the answer decides what gets built and a guess would throw the work away.
+- **A no-brainer is stated and made; everything else is discussed first.** A change to the design or the plan that nobody would argue about once it is read is made, with its argument, and reported under *Design conformance*. Any other, a wider rule than the one agreed, another error's text or a finding of the session's own among them, is brought to the user before it is written, with a recommendation and its reason, and discussed carefully.
 
-  Such a case is a design question, and design questions are discussed one at a time, in prose, the argument before the verdict, with a recommendation. Smaller decisions come together, as one numbered list with a recommendation each.
+  A design question is discussed one at a time, in prose, the argument before the verdict, with a recommendation. Smaller decisions come as a numbered list, with a recommendation each.
 
   A session opened to discuss alone writes nothing until the user asks. Then each write to the plan or the log is named in one line before it is made. A "go" covers the piece just discussed and not the topic. Where more rounds are coming, the writes are gathered into one commit at the pause.
+- **One issue at a time, or a few.** A round of findings, a build's brief and a message to the user each take one issue, or a few that belong together, never everything at once. What waits stands in the findings file or the plan meanwhile.
+- **Once a build has started, the sentences it builds to do not change until it is back.**
 - **Where a step looks wrong, say so once, hard**: the verdict, the principle that decides, the argument. If the user insists, build it whole, and the log entry records the decision with the argument against it. The code carries no trace of the dissent.
 - **A finding is argued only after the log and the program.** The log is searched for the decision a finding may sharpen, and the program that shows it is run in the session. A verdict recommended on a reader's probe alone says so. A batch of findings that changes what the program refuses, prints or exits with is run over the repository's own programs and tests, once a batch before it is decided.
-- **Leave no decision pending.** A question a step raises is decided in the same turn and recorded in the plan and the log. One that needs the user stands in the plan meanwhile as a named decision in a named milestone, never as "open".
+- **Leave no decision pending.** A question that waits for the user stands in the plan as a named decision in a named milestone, never as "open".
 
 ## Design
 
 - **Prefer minimal, direct implementations** over speculative abstraction. A feature enters or stays out by the five principles, and the log names the principle that decided (§0, principle 5).
 - **Bring options, not defenses.** When a simplification seems to conflict with a principle, first check whether the principle is being applied too dogmatically.
-- **The tools are fast.** A test or a tool that costs more than its work is a defect: measure it, and fix it at its cause or plan it with a date. Every run is timed against its work, and one that costs more is named to the user in the same message.
+- **A defense names its attacker.** A rule or a check against a hostile or broken input says who can make that input and what they could do without it. Where they could already do more, it is a robustness fix: one guard at the cause, one sentence, and no rule for each place.
+- **The tools are fast.** A test or a tool that costs more than its work is a defect: measure it. Every run is timed against its work, and one that costs more is named to the user in the same message.
 - **The program is lean.** Memory counts as much as time. A run and each resource it opens hold only what their work needs. What would be held in every run for a rare case is a cost every run pays, and is weighed as one.
 - **The program is beautiful, inside and out.** Keep no code only to make it go faster. Measure first, and where the plain form is fast enough it stays plain.
 - **A measurement ends when its number stops deciding anything.** A number that confirms the plain form goes to the log once, and its item closes. Following it further is an item of its own, planned with the decision it would change.
@@ -100,7 +103,7 @@ A `scratch/` directory inside a proposal's own directory, untracked, is the user
   The user carries a line to Ernest by its issue tracker. For an application built in Ernest's clean room, the session carries it by a message to Ernest's session. Ernest's verdict comes with its next release, which the session installs and checks each verdict against. A line the release answers goes, the log citing Ernest's number. One not answered, or not agreed with, stays, the verdict and the reason beneath it. The file goes when it is empty.
 - **A refusal is a decision, and a workaround in prose is a gap.** A refusal the design states is weighed on the principles in its log entry. One whose only reason is how the code was built was never decided, and is weighed when found. A sentence that teaches a way around the program or Ernest, "the shortest way to", "write it as ... instead", is a gap with its workaround beside it, and goes as the rule above says.
 - **A published specification or a general-purpose engine is a library's work**: a pattern language, a data format, a protocol, dates and times. Where the program finds itself writing one, stop. Whether it becomes a library of the program's own, a dependency, or an ask of Ernest is decided with the user first.
-- **Where the design is silent, add the sentence to the design or reject the input with an error.** Never accept it silently, and state the choice to the user.
+- **Where the design is silent on what a user meets, add the sentence to the design or reject the input with an error.** Never accept it silently. A corner no user meets gets a test and no sentence.
 
 ## Tests
 
@@ -110,7 +113,7 @@ A `scratch/` directory inside a proposal's own directory, untracked, is the user
 - **`make test` runs before every commit.** Where a plan item touched the build, it runs from a fresh clone as well, after the item's closing commit and before its report.
 - **A new file is added before its check runs**, since the documents' test reads tracked files alone.
 - **Edits to a proposal under discussion are committed at a pause**, by their paths, and pushed then.
-- **Readers run before a release**, as [`docs/release.md`](docs/release.md) says. A finding is fixed, planned or dropped, and the commit messages say which. The batches' design sentences are read cold, one reader over their diff, before the build starts: a sentence built on costs more to reword than one read. The full review's readers read every area whole, on the user's word, as [`docs/full_review.md`](docs/full_review.md) says.
+- **Readers run before a release**, as [`docs/release.md`](docs/release.md) says. A finding is fixed, planned or dropped, and the commit messages say which. The full review's readers read every area whole, on the user's word, as [`docs/full_review.md`](docs/full_review.md) says.
 
 ## Writing
 
@@ -127,7 +130,8 @@ A `scratch/` directory inside a proposal's own directory, untracked, is the user
 ## Done
 
 - **Read the result back before reporting it**, as a reader who knows Ernest would, against the principles and the design, and say what surprised. Decide every surprise: act on it in the same item or leave it with its reason, recorded where its owner keeps it.
-- **A step forward sweeps what it leaves behind.** What a step makes redundant goes in the step's own commit, never left for a review to find: a sentence, a file or a directory, a built proposal, a decided finding, a citation of what went. A done item's paragraph goes too, one line naming its log entry in its place until the milestone's row takes it.
+- **A report names each thing that remains**, specific enough to act on or to drop, and says nothing where there is none.
+- **A step forward sweeps what it leaves behind.** What a step makes redundant goes in the step's own commit, never left for a review to find: a sentence, a file or a directory, a decided finding, a citation of what went. A done item's paragraph goes too, one line naming its log entry in its place until the milestone's row takes it.
 - **Commit only after the checks pass**, on make's own exit status read in a call of its own, never chained after them with `;` and never on a pipe's, which a `grep` of the output would give. A deletion of tracked files is committed by path at once, or stays staged until the test has run. Push only when the user says so, a proposal's pause excepted.
 - **Every message that reports an item that touched the design, the plan or an error's text ends with a "Design conformance" section**: the sections of the design applied; every place the design was silent and what was done, or "none"; every deliberate omission, with the plan item that lifts it; and every line added to `language_feedback.md`, or "none". A report of any other item says in one line that the design was not touched.
 - **Stop after each plan item.** Finish it whole, report it, and wait. The next step the report names is the plan's next item, in the order the plan gives.
@@ -141,7 +145,7 @@ A `scratch/` directory inside a proposal's own directory, untracked, is the user
 5. The result read back, and every surprise decided.
 6. `make test` green, and the conformance section written where it is due.
 7. A commit that names its paths. It sweeps what the item made redundant, every sentence elsewhere that says the item still waits among it.
-8. The report to the user, naming the plan's next item as the next step and ending with *Design conformance* where it is due, then a stop until the user's word.
+8. The report to the user, naming each thing that remains and the plan's next item as the next step, and ending with *Design conformance* where it is due, then a stop until the user's word.
 
 ## Style
 
