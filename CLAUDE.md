@@ -97,6 +97,7 @@ Before that release, an item of the milestone that built the proposal reads it f
   One gap of Ernest's does not wait. A function the library lacks, which Ernest can express over what the library has, is written in the program, and its line names it. It goes when a release brings the library's own. Every other gap waits: what needed the line stands in the plan, and nothing here goes around it.
 
   The user carries a line to Ernest by its issue tracker. For an application built in Ernest's clean room, the session carries it by a message to Ernest's session. Ernest's verdict comes with its next release, which the session installs and checks each verdict against. A line the release answers goes, the log citing Ernest's number. One not answered, or not agreed with, stays, the verdict and the reason beneath it. The file goes when it is empty.
+- **A function over the library's types is weighed before it is written.** A private function whose type names no type of the program's own is read against the admission rules of the report's Appendix E.0, as the installation holds them. Where a rule admits it, it is a function the library lacks: it is written in the program and its line is written, as the gap's path says. Where none admits it, it stays the program's, and no line is written. The reading is a first cut, and the verdict is Ernest's.
 - **A refusal is a decision.** One the design states was decided, and its log entry weighs it on the principles. One whose only reason is how the code was built was never decided: when found, it is brought to the user and weighed.
 - **Memory that no collection reclaims is a defect, fixed at its cause.** Never fix it by capping a list, a table or a cache.
 - **A published specification or a general-purpose engine is a library's work**: a pattern language, a data format, a protocol, dates and times. Where the program finds itself writing one, stop. Whether it becomes a library of the program's own, a dependency, or an ask of Ernest is decided with the user first.
@@ -128,6 +129,8 @@ Before that release, an item of the milestone that built the proposal reads it f
 In this file "the report" alone is Ernest's, the language's. The session's is "the report to the user", and an agent's is "its report".
 
 - **Read the result back before reporting it.** The session reads each diff as its agent returns it (*The repository*). At an item's close it reads what the item made as a reader who knows Ernest would, against the principles and the design, and says what surprised.
+
+  The reading at an item's close searches the Ernest the item wrote for a private function whose type names no type of the program's own (*Defects and gaps*). The search runs over the sources and gives its count, never the feel of one site.
 
   Decide every surprise: act on it in the same item or leave it with its reason, and record it where its owner keeps it. One that needs the user goes to the user with a recommendation in the same report to the user.
 - **A report to the user names each thing that remains**, specific enough to act on or to drop, and says nothing where there is none.

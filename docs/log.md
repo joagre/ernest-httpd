@@ -555,3 +555,7 @@ It brings the cuts of Ernest's reading of the file too. The cold reading of a ba
 *2026-11-15.* `CLAUDE.md` is the template's `v0.10.4`'s, tagged on `2113dd3`, but for its title and the sentence under it, and `docs/agents.md` comes from the tag whole. `CLAUDE.md` is rewritten where a rule could be taken two ways: a gap has one path, the design's silence is answered by a sentence, and "the report" alone is Ernest's (Ernest's log, *The Rules Read for Clarity*).
 
 The agents' rules stand in `docs/agents.md`, which the template now gives: the brief, an agent's report, what is checked before and after, and the models. `docs/full_review.md` takes the template's three sentences that name the page, `docs/release.md` cites it for a reader's model, and `docs/README.md` lists it. This copy had no difference of its own in what it took.
+
+## The template's v0.10.5
+
+*2026-11-15.* `CLAUDE.md` is the template's `v0.10.5`'s, tagged on `66f949d`, but for its title and the sentence under it. The tag changes that file alone since `v0.10.4`, and this copy had no difference of its own. It brings one rule: a private function whose type names no type of the program's own is read against Appendix E.0's admission rules before it is written, and the reading at an item's close searches the Ernest the item wrote for one, by its count (Ernest's log, *A Library's Function in a Program*, *The Sweep's Reading*).
