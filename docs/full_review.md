@@ -12,7 +12,7 @@ It does not run while `findings.md` stands, a release's findings or a review's.
 
 - `make test` passes from a fresh clone before a reader starts: `git clone`, with `--recursive` where there is an `erl/`, then `make test`, in a directory of its own.
 - Each reader is an agent of its own, on the model [`agents.md`](agents.md) gives its kind of reader: C and S read the code, K and D the documents. It is given its brief and the files it reads, and nothing that argues for them, such as the log or another reader's list.
-- A reader is handed `CLAUDE.md` as every agent is. Its brief stands in place of it, and the one rule of it a reader keeps is to leave untracked files alone. The cold reader has read nothing but what its brief names: neither the log, the plan, a proposal, the code nor another reader's list.
+- A reader is handed `CLAUDE.md` as every agent is. Its brief stands in place of it and says so in one line, and the one rule of it a reader keeps is to leave untracked files alone. The cold reader has read nothing but what its brief names: neither the log, the plan, a proposal, the code nor another reader's list.
 - A reader edits nothing in the repository. It builds and tries the program in a clone of the commit, in a scratch directory of its own, with the `ern` the Makefile names.
 - The readers read one commit, which the findings name, and run side by side.
 - Each reader hands in a numbered list, most serious first. A finding gives its place, a file and line or a section; a short quote; what is wrong; a program or a command that shows it, where there is one; and a one-line fix. Defects stand apart from matters of clarity.
