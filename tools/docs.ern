@@ -20,6 +20,16 @@
 // and the line, and the program ends with status 1; the log and the proposals
 // are left out.
 //
+// An Ernest block of the README is quoted from the program and never written
+// for the page. Each part of a block of README.md fenced as `ernest`, the
+// block's lines between two blank lines, stands as consecutive lines in one
+// tracked module under src/, test/ or examples/, once the module's comment
+// lines, each that begins with `//`, its indentation aside, are taken out;
+// lines are compared whole, indentation and all. Each part that does not is
+// a line on standard error naming the file and the line the part begins on,
+// and the program ends with status 1. Where the README is not tracked,
+// nothing is held.
+//
 // The design's sections are held both ways, as CLAUDE.md's *Tests* asks. A
 // section is a heading of docs/design.md, `## n. Title`; a citation is a
 // `§n` after the word design in a comment of a tracked module under src/,
@@ -79,6 +89,16 @@ type Citation = Citation(line : Int, section : Int)
 type CommandReading =
     CommandReading(fence : Bool, read : Bool, under : Bool, runsOn : Bool, found : List(String))
 
+// A part of an Ernest block: the line it begins on, from 1, and its lines.
+type Part = Part(line : Int, lines : List(String))
+
+// Where the reading of a document's Ernest blocks stands as its lines go by:
+// whether it is inside a fence and whether that block is Ernest, the part
+// begun, none while its lines are empty, and the parts found.
+type BlockReading = BlockReading(fence : Bool, ernest : Bool, part : Part, parts : List(Part))
+
+let readme : String = "README.md"
+
 let design : String = "docs/design.md"
 
 let changes : String = "CHANGES.md"
@@ -103,7 +123,11 @@ export fn main() : Unit = {
     let missing =
         List.unique(List.flatMap(List.filter(files, isChecked), fn(file) = missingIn(file, tops)));
     let failures =
-        missing <> commands(files) <> uncited(files, modules) <> timeline(files, modules);
+        missing
+            <> commands(files)
+            <> quoted(files, modules)
+            <> uncited(files, modules)
+            <> timeline(files, modules);
     List.forEach(failures, Io.printlnError);
     if List.isEmpty(failures) && List.isEmpty(long) then Unit else Os.exit(1)
 }
@@ -322,13 +346,15 @@ fn indentation(line : String) : Int =
     String.size(line) - String.size(String.trimStart(line))
 
 fn shown(paragraph : Paragraph) : String =
-    paragraph.file
-        <> ":"
-        <> Int.toString(paragraph.line)
-        <> ": "
+    placeOf(paragraph.file, paragraph.line)
         <> Int.toString(paragraph.words)
         <> " words  "
         <> paragraph.first
+
+// The place a finding's line on standard error begins with: the file, the
+// line, from 1, and ": ".
+fn placeOf(file : String, line : Int) : String =
+    file <> ":" <> Int.toString(line) <> ": "
 
 //
 // The commands
@@ -352,9 +378,7 @@ fn commandsOf(file : String, lines : List(String)) : List(String) = {
         List.foldLeft(List.indexed(lines),
                       begun,
                       fn(reading, #(index, line)) =
-                          readCommand(file <> ":" <> Int.toString(index + 1) <> ": ",
-                                      reading,
-                                      line));
+                          readCommand(placeOf(file, index + 1), reading, line));
     List.reverse(last.found)
 }
 
@@ -384,12 +408,15 @@ fn readCommand(place : String, reading : CommandReading, line : String) : Comman
         CommandReading(..reading, under = false, runsOn = false)
 }
 
-// Whether the block a fence opens is read: every block but one whose fence
-// names Ernest as its language.
+// Whether the block a fence opens is read: every block but an Ernest one.
 fn isRead(fence : String) : Bool =
+    isErnest(fence) == false
+
+// Whether a fence names Ernest as its block's language.
+fn isErnest(fence : String) : Bool =
     match String.words(String.drop(fence, 3)) {
-        language :: _ -> language != "ernest"
-      | [] -> true
+        language :: _ -> language == "ernest"
+      | [] -> false
     }
 
 // A command: make and its words, or ern or a launcher under bin/ and a word
@@ -416,6 +443,80 @@ fn isBare(trimmed : String) : Bool = {
     };
     String.contains(String.trimEnd(command), "  ")
 }
+
+//
+// The README's Ernest blocks
+//
+
+// Each part of the README's Ernest blocks that stands in no module of the
+// program, as a line for standard error; none where the README is not
+// tracked.
+fn quoted(files : List(String), modules : List(#(String, List(String)))) : List(String) =
+    if List.contains(files, readme) then {
+        let programs = List.filter(modules, fn(#(module, _)) = isProgram(module));
+        unquoted(readme,
+                 String.lines(contents(readme)),
+                 List.map(programs, fn(#(_, lines)) = lines))
+    } else
+        []
+
+// Each part of the file's Ernest blocks that stands as consecutive lines in
+// none of the modules, once each module's comment lines are taken out, as a
+// line for standard error.
+fn unquoted(file : String, lines : List(String), modules : List(List(String))) : List(String) = {
+    let sources = List.map(modules, fn(module) = framed(uncommented(module)));
+    List.filterMap(partsOf(lines), fn(part) = unquotedPart(file, part, sources))
+}
+
+fn unquotedPart(file : String, part : Part, sources : List(String)) : Optional(String) =
+    if List.any(sources, fn(source) = String.contains(source, framed(part.lines))) then
+        None
+    else
+        Some(placeOf(file, part.line) <> "a part of an Ernest block stands in no tracked module")
+
+// The lines as one text with a line break before and after, so that one
+// framed text holds another only where the other's lines stand whole and
+// consecutive among its own.
+fn framed(lines : List(String)) : String =
+    "\n" <> String.join(lines, "\n") <> "\n"
+
+fn uncommented(lines : List(String)) : List(String) =
+    List.filter(lines, fn(line) = isComment(line) == false)
+
+// The parts of the Ernest blocks among the lines: each block's lines between
+// two blank lines, or between a blank line and a fence.
+fn partsOf(lines : List(String)) : List(Part) = {
+    let begun =
+        BlockReading(fence = false, ernest = false, part = Part(line = 0, lines = []), parts = []);
+    let last =
+        List.foldLeft(List.indexed(lines),
+                      begun,
+                      fn(reading, #(index, line)) = readBlock(index + 1, reading, line));
+    List.reverse(last.parts)
+}
+
+fn readBlock(number : Int, reading : BlockReading, line : String) : BlockReading =
+    if isFence(line) then
+        BlockReading(..partEnded(reading),
+                     fence = reading.fence == false,
+                     ernest = isErnest(String.trim(line)))
+    else if reading.fence == false || reading.ernest == false then
+        reading
+    else if String.isEmpty(String.trim(line)) then
+        partEnded(reading)
+    else if List.isEmpty(reading.part.lines) then
+        BlockReading(..reading, part = Part(line = number, lines = [line]))
+    else
+        BlockReading(..reading, part = Part(..reading.part, lines = reading.part.lines <> [line]))
+
+// The part begun, where one is, kept among the parts found.
+fn partEnded(reading : BlockReading) : BlockReading =
+    if List.isEmpty(reading.part.lines) then
+        reading
+    else
+        BlockReading(..reading,
+                     part = Part(line = 0, lines = []),
+                     parts = reading.part :: reading.parts)
 
 //
 // The design's citations
@@ -456,10 +557,8 @@ fn unknownIn(module : String, lines : List(String), sections : List(Int)) : List
 }
 
 fn shownUnknown(module : String, citation : Citation) : String =
-    module
-        <> ":"
-        <> Int.toString(citation.line)
-        <> ": design §"
+    placeOf(module, citation.line)
+        <> "design §"
         <> Int.toString(citation.section)
         <> " is no section of "
         <> design
@@ -568,7 +667,7 @@ fn cited(text : String) : Optional(Int) =
 
 // What the history's checks find, as lines for standard error.
 fn timeline(files : List(String), modules : List(#(String, List(String)))) : List(String) = {
-    let read = List.filter(["README.md", changes], fn(file) = List.contains(files, file));
+    let read = List.filter([readme, changes], fn(file) = List.contains(files, file));
     let documents = List.map(read, fn(file) = #(file, String.lines(contents(file))));
     let sources =
         List.filter(modules,
@@ -590,7 +689,7 @@ fn naming(file : String,
           kindAt : (List(#(String, String))) -> Optional(String)) : List(String) =
     List.flatMap(lines, fn(#(index, line)) = {
         let words = List.map(String.words(line), fn(word) = #(word, bare(word)));
-        let place = file <> ":" <> Int.toString(index + 1) <> ": " <> what <> " names ";
+        let place = placeOf(file, index + 1) <> what <> " names ";
         List.map(List.unique(List.filterMap(tailsOf(words), kindAt)), fn(kind) = place <> kind)
     })
 
@@ -603,9 +702,12 @@ fn tailsOf(words : List(#(String, String))) : List(List(#(String, String))) =
 // The module's comment lines by index, each without `the log's *Title*`, a
 // title that runs on cut to the line's end.
 fn commentsOf(lines : List(String)) : List(#(Int, String)) =
-    List.map(List.filter(List.indexed(lines),
-                         fn(#(_, line)) = String.startsWith(String.trimStart(line), "//")),
+    List.map(List.filter(List.indexed(lines), fn(#(_, line)) = isComment(line)),
              fn(#(index, line)) = #(index, untitled(line)))
+
+// A comment line: one that begins with "//", its indentation aside.
+fn isComment(line : String) : Bool =
+    String.startsWith(String.trimStart(line), "//")
 
 fn untitled(line : String) : String =
     match String.splitOnce(line, "the log's *") {
@@ -915,4 +1017,68 @@ let findsCommands = Test.Case(name = "finds a command's description not after #"
                 "f.md:3: a line under a command does not begin with `#`",
                 "f.md:6: a description beside a command does not begin with `#`",
                 "f.md:7: a description beside a command does not begin with `#`"])
+})
+
+let quotedSource : List(String) =
+    String.lines("// The counter.\n"
+                     <> "fn count(total : Int) : Int =\n"
+                     <> "    // one more\n"
+                     <> "    total + 1\n\n"
+                     <> "fn double(total : Int) : Int = {\n"
+                     <> "    let twice = total * 2;\n"
+                     <> "    twice\n"
+                     <> "}\n")
+
+let quotedNowhere : String = ": a part of an Ernest block stands in no tracked module"
+
+/// A part of an Ernest block that stands in one of the modules holds.
+let holdsAQuotedPart = Test.Case(name = "holds a part quoted from a module", run = fn() = {
+    let text =
+        "# Name\n\n```ernest\nfn double(total : Int) : Int = {\n    let twice = total * 2;\n```\n";
+    Test.equal(unquoted("README.md", String.lines(text), [["other"], quotedSource]), [])
+})
+
+/// A part holds where it stands once the module's comment lines are taken
+/// out, a comment between two of its lines in the module.
+let readsPastComments =
+    Test.Case(name = "holds a part the module's comments stand within", run = fn() = {
+        let text = "```ernest\nfn count(total : Int) : Int =\n    total + 1\n```\n";
+        Test.equal(unquoted("README.md", String.lines(text), [quotedSource]), [])
+    })
+
+/// A part with a line changed is found at the line it begins on; a line is
+/// compared whole, so one indented less, or cut short, is a change.
+let findsAChangedPart = Test.Case(name = "finds a part with a line changed", run = fn() = {
+    let text =
+        "intro\n\n```ernest\nfn count(total : Int) : Int =\n    total + 2\n```\n\n"
+            <> "```ernest\n  let twice = total * 2;\n\nfn count(total : Int)\n```\n";
+    Test.equal(unquoted("README.md", String.lines(text), [quotedSource]),
+               ["README.md:4" <> quotedNowhere,
+                "README.md:9" <> quotedNowhere,
+                "README.md:11" <> quotedNowhere])
+})
+
+/// A block's parts are its lines between blank lines, each held alone, so
+/// only the part that stands nowhere is named.
+let findsOnlyThePart = Test.Case(name = "names only the part that stands nowhere", run = fn() = {
+    let text =
+        "```ernest\nfn count(total : Int) : Int =\n    total + 1\n\n"
+            <> "fn double(total : Int) : Int =\n    total * 2\n```\n";
+    Test.equal(unquoted("README.md", String.lines(text), [quotedSource]),
+               ["README.md:5" <> quotedNowhere])
+})
+
+/// Only a block fenced as Ernest is read: neither a bare block, one of
+/// another language, nor a line outside a fence.
+let readsOnlyErnest = Test.Case(name = "reads only a block fenced as ernest", run = fn() = {
+    let text = "```\nfn nowhere() = 1\n```\n```erlang\nnowhere() -> 1.\n```\nfn nowhere() = 1\n";
+    Test.equal(unquoted("README.md", String.lines(text), [quotedSource]), [])
+})
+
+/// A part whose lines stand in the module, but with a line of code between
+/// two of them there, is found.
+let findsLinesApart = Test.Case(name = "finds a part whose lines stand apart", run = fn() = {
+    let text = "```ernest\nfn double(total : Int) : Int = {\n    twice\n}\n```\n";
+    Test.equal(unquoted("README.md", String.lines(text), [quotedSource]),
+               ["README.md:2" <> quotedNowhere])
 })

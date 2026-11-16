@@ -595,3 +595,7 @@ The review documents were read against the rules (Ernest's log, *The Review Docu
 **What stayed.** Everything from *Building* down is as it was. The floor is named there alone, and the top points at it.
 
 **Checked.** A fresh clone from GitHub ran `make run` under `ern 0.10.0`, and `/`, `/shell.html` and `/shell/client.js` each answered 200. `make test` passed. The quoted lines were compared with the module by a script, its comment lines aside; the template's next tag has `make test` hold them.
+
+## The template's v0.10.11
+
+*2026-11-16.* `tools/docs.ern` is the template's `v0.10.11`'s, tagged on `1fe427a`. The tag changes that file and the README's form since `v0.10.10`. The tool holds an Ernest block of the README to the program: each part of it, its lines between blank lines, stands as consecutive lines in one tracked module under `src/`, `test/` or `examples/`, once the module's comment lines are taken out, and `make test` refuses a part that stands nowhere. So the access log's lines on the front page cannot drift from `src/access_log.ern`. The README's comment on `make test` names the check. Ernest's session wrote it here (the template's log, *The front page shows the program*).
