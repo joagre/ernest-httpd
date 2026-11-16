@@ -577,3 +577,7 @@ The review documents were read against the rules (Ernest's log, *The Review Docu
 ## The template's v0.10.9
 
 *2026-11-16.* `docs/full_review.md` is the template's `v0.10.9`'s, tagged on `8520ec0`, but for the reader L. The tag changes that file alone since `v0.10.8`, by one clause: a reader's brief says in one line that it stands in place of `CLAUDE.md`, since `CLAUDE.md` says of itself that it overrides and a reader has it in its context (Ernest's log, *The Review Documents Read Against the Rules*). Ernest's session wrote it here.
+
+## The template's v0.10.10
+
+*2026-11-16.* `CLAUDE.md` is the template's `v0.10.10`'s, tagged on `4fbc638`, but for its title and the sentence under it. The tag changes that file alone since `v0.10.9`, and this copy had no difference of its own. It brings one rule, so that the repositories keep the same rules. Hard work is done, and stupid work is not: nothing is left, or recommended left, for its size or its difficulty, and work is left only where it would hold nothing, decide nothing and remove nothing (Ernest's log, *Hard Work and Stupid Work*).
