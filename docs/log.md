@@ -581,3 +581,17 @@ The review documents were read against the rules (Ernest's log, *The Review Docu
 ## The template's v0.10.10
 
 *2026-11-16.* `CLAUDE.md` is the template's `v0.10.10`'s, tagged on `4fbc638`, but for its title and the sentence under it. The tag changes that file alone since `v0.10.9`, and this copy had no difference of its own. It brings one rule, so that the repositories keep the same rules. Hard work is done, and stupid work is not: nothing is left, or recommended left, for its size or its difficulty, and work is left only where it would hold nothing, decide nothing and remove nothing (Ernest's log, *Hard Work and Stupid Work*).
+
+## The front page shows the server
+
+*2026-11-16.* The README's top is written again, in the manner Ernest's own took the same day (Ernest's log, *The Front Page in the Announcement's Manner*). Ernest's session wrote it here, on the user's word, while this repository's session was idle.
+
+**Why.** Ernest's front page links this repository as its one proof that Ernest runs a real program, so a reader of the launch arrives here. The top was one sentence and then *Building*: it said what the server serves and showed nothing of it.
+
+**What it holds.** One sentence of what the server is. Its two things as bullets, the pages and the shell, with the client in a sentence after them. A paragraph saying that every part is a process that owns one thing, with a mailbox whose type names what it takes. The access log's mailbox type and its loop, quoted from `src/access_log.ern`. The site's Try it, and three lines from a clone to `make run`. Then the design's link and the template's sentence.
+
+**The access log is the showing.** It is the smallest process of the server, and its loop is whole in under twenty lines. It also shows a mailbox at work: a batch is every message waiting when the process takes one, so nothing but what has arrived decides it.
+
+**What stayed.** Everything from *Building* down is as it was. The floor is named there alone, and the top points at it.
+
+**Checked.** A fresh clone from GitHub ran `make run` under `ern 0.10.0`, and `/`, `/shell.html` and `/shell/client.js` each answered 200. `make test` passed. The quoted lines were compared with the module by a script, its comment lines aside; the template's next tag has `make test` hold them.

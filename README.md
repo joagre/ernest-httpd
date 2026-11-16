@@ -2,7 +2,57 @@
 
 *The Importance of Being Ernest, a Trivial Comedy for Serious People*
 
-ernest-httpd serves one site, ernest-lang.org: static pages, and one WebSocket per visitor that connects a terminal in the browser to a shell on the server, with the client, the module a page imports to speak it. It implements what that needs of HTTP/1.1 and nothing more, and is written in Ernest against an installed Ernest. Its design is [`docs/design.md`](docs/design.md). This repository was begun from [`ernest-template`](https://github.com/joagre/ernest-template).
+ernest-httpd is the web server of [ernest-lang.org](https://ernest-lang.org), written in [Ernest](https://github.com/joagre/ernest). It does two things:
+
+- It serves the site's pages over HTTP/1.1 and TLS, with what one site needs of the protocol and nothing more: `GET` and `HEAD`, no request body, no ranges, no compression.
+- It gives each visitor a shell. The terminal in the page opens a WebSocket, and the server runs a program under a terminal for that visitor and carries the keys and the output between the two. A visitor who reloads the page comes back to the same session. On ernest-lang.org the program is `ern shell` in a container.
+
+It serves the client as well, the JavaScript module a page imports to speak to its shell.
+
+Every part of the server is a process that owns one thing: a listener the connections of its socket, a connection its socket, a session one visitor's program and its deadline. Each has a mailbox whose type names every message it takes, so the compiler has checked each send between them.
+
+The access log is the smallest of them. Its mailbox's type and its loop:
+
+```ernest
+export type LogMsg =
+    Entry(remote : String, time : Int, request : Optional(String), status : Int, size : Int)
+  | Flush(Reply(Unit))
+
+fn logging(path : Path, ms : Int) : Unit receiving LogMsg = {
+    let messages = receive {
+        message -> waiting([message])
+    };
+    match List.filterMap(messages, line) {
+        [] -> Unit
+      | lines -> appended(path, lines, ms)
+    };
+    List.forEach(messages, fn(message) = match message {
+        Flush(reply) -> answer(reply, Unit)
+      | _ -> Unit
+    });
+    logging(path, ms)
+}
+
+fn waiting(acc : List(LogMsg)) : List(LogMsg) receiving LogMsg =
+    receive {
+        message -> waiting(message :: acc)
+      | after 0 -> List.reverse(acc)
+    }
+```
+
+A connection sends it an `Entry` for each response it has written. The process takes one message and every other that waits, and appends their lines to the file in one write. So a busy server opens the file once for many lines, with no count and no timer to tune. `Flush` is the program's end, asking that every entry sent before it be written.
+
+To see the server at work, open [ernest-lang.org](https://ernest-lang.org) and press Try it. To run it on your own machine, with the Ernest that *Building* names on your `PATH`:
+
+```
+git clone https://github.com/joagre/ernest-httpd.git
+cd ernest-httpd
+make run
+```
+
+It serves the example site at http://localhost:8080, whose shell page runs your own `ern shell`. [`examples/README.md`](examples/README.md) says what the site shows, with a `curl` line for each answer a browser hides.
+
+[`docs/design.md`](docs/design.md) states the program as rules: each process and what it owns, each module's job, the configuration, and what the server leaves out of HTTP/1.1 and WebSocket. This repository was begun from [`ernest-template`](https://github.com/joagre/ernest-template).
 
 ## Building
 
