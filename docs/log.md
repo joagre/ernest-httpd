@@ -567,3 +567,9 @@ The agents' rules stand in `docs/agents.md`, which the template now gives: the b
 ## The template's v0.10.7
 
 *2026-11-16.* `CLAUDE.md` is the template's `v0.10.7`'s, tagged on `8491145`, but for its title and the sentence under it. The tag changes that file alone since `v0.10.6`, and this copy had no difference of its own. It brings one rule, so that the repositories keep the same rules. A flake is hunted for two hours at most, and the hunt ends at its first sighting. One that does not show is closed as not reproducible. A fix that a probe shows is followed by no hunt, and otherwise the hunt runs to its third sighting, with three times a sighting's runs after the fix (Ernest's log, *Two Hours for a Hunt*).
+
+## The template's v0.10.8
+
+*2026-11-16.* `docs/agents.md` and `docs/release.md` are the template's `v0.10.8`'s, tagged on `859bff5`, and `docs/full_review.md` is too but for the reader L. The tag changes those three files since `v0.10.7`, written here by Ernest's session, and this copy had no difference of its own in them.
+
+The review documents were read against the rules (Ernest's log, *The Review Documents Read Against the Rules*). The full review states the clone step and the sorting, which it took from `release.md`. A reader is an agent whose brief stands in place of `CLAUDE.md`. An agent runs a finding's program before it makes the fix. The release names the full review's readers, puts the note before the tag, and leaves the push and the release on GitHub to the user's word. The step for the milestone's proposal went, since `CLAUDE.md`'s *Proposals* holds it.
