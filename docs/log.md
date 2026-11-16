@@ -599,3 +599,7 @@ The review documents were read against the rules (Ernest's log, *The Review Docu
 ## The template's v0.10.11
 
 *2026-11-16.* `tools/docs.ern` is the template's `v0.10.11`'s, tagged on `1fe427a`. The tag changes that file and the README's form since `v0.10.10`. The tool holds an Ernest block of the README to the program: each part of it, its lines between blank lines, stands as consecutive lines in one tracked module under `src/`, `test/` or `examples/`, once the module's comment lines are taken out, and `make test` refuses a part that stands nowhere. So the access log's lines on the front page cannot drift from `src/access_log.ern`. The README's comment on `make test` names the check. Ernest's session wrote it here (the template's log, *The front page shows the program*).
+
+## The template's v0.10.12
+
+*2026-11-17.* `CLAUDE.md` is the template's `v0.10.12`'s, tagged on `5f109c3`, but for its title and the sentence under it. The tag changes that file alone since `v0.10.11`, and this copy had no difference of its own. It brings one sentence to the rule for a step that looks wrong, so that the repositories keep the same rules. A plan's item and the user's own idea are steps too: before work starts on one, the session says whether it is worth doing, and says no where it is not (Ernest's log, *Twenty-Six Hosts Are the Cost*). Ernest's session wrote it here.
