@@ -6,7 +6,7 @@ Read *Where we are* first, then the milestone under way, its steps by what each 
 
 ## Where we are
 
-Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way: its steps wait on Ernest's MVP 4.4 release, 0.11.0, whose archive of `271a0ba5` answers lines 28 to 30; what the hostile inputs' tests leave out waits on Ernest's answers to lines 31 and 32; the stop time waits on Ernest's item 98; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/, from a build of `75faac8`, for Ernest's side to be built against.
+Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way: its steps wait on Ernest's MVP 4.4 release, 0.11.0, whose archive of `271a0ba5` answers lines 28 to 30; what the hostile inputs' tests leave out waits on Ernest's answers to lines 31 and 32; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/, from a build of `75faac8`, for Ernest's side to be built against.
 
 ## Milestone 2: after the first release
 
@@ -18,15 +18,11 @@ Done too, the steps between them: the designed lines out of the test run, the lo
 
 Done after them, from a reading of the design from outside: the shell's reader asked, with what else the reading found, the log's *The shell's reader asked*; the session's helpers, the log's *The session's helpers*; and the rehearsal's build, the log's *The rehearsal's build*.
 
-Done from the reviews from outside: the hostile inputs' tests, the log's *Three points from outside* and *The hostile inputs' tests*.
+Done from the reviews from outside: the hostile inputs' tests, the log's *Three points from outside* and *The hostile inputs' tests*; and the stop time, 130 seconds against a silent peer's 85, the log's *The stop time at 85 seconds*.
 
 ### On Ernest's answers to lines 31 and 32
 
 **What the hostile inputs' tests leave out.** Line 31 is the time of a close after bytes the host held, and line 32 what a write that fails loses of what had arrived. Once Ernest answers them, the tests of a write past its deadline, `Connection`'s and `Shell`'s, hold what the client reads after the responses told written, and the close; and the test of a head that trickles holds the 408's bytes. Each holds what the answer lets a test wait for (the log's *The hostile inputs' tests*).
-
-### On Ernest's item 98
-
-**The stop time read again.** Told 2026-11-17 by Ernest's session: where more than 1 MB waits for a peer that stands still, Ernest's tests lost the peer about 85 seconds after it stopped, not within the 75 that design §13's rule adds, and a node whose program had ended did not end until the peer ran again (Ernest's log, *What Waits for a Peer*). Neither cause is proven, and the probe here had nothing waiting, so it saw 74.5. The fix is Ernest's MVP 4.16, item 98. When its message comes, §13's rule, the unit's 120 seconds and the smoke test's check are read against it.
 
 ### On Ernest's MVP 4.4 release
 
@@ -36,7 +32,7 @@ Two changes come with the rise. `Process.Calling` takes named fields, so the ses
 
 **Item 5, the release and the switch.** Once Ernest's release is tagged, the same week and after `ernest-template`'s release and `ernest-epx`'s, it is installed, and a release of this program is made by `docs/release.md`, its readers among it, which `make release` refuses before the tag.
 
-That release, with item 11's client, is installed in one switch on the path the rehearsal walked: `deploy/config.json` takes the member `shell` that design §13 gives, and `deploy/README.md`'s step 7 builds the image and installs the wrapper (the log's *The wrapper and the smoke test's configuration*). The rehearsal's unit goes with it, with `/home/httpd/rehearsal/` and the shell's image of 0.9.0. Until then, design §11's messages stay as Ernest's site speaks them, and a change to them is told to Ernest's session before it is built.
+That release, with item 11's client, is installed in one switch on the path the rehearsal walked: `deploy/config.json` takes the member `shell` that design §13 gives, and `deploy/README.md`'s step 7 builds the image and installs the wrapper (the log's *The wrapper and the smoke test's configuration*). The unit is installed again from the release, for its stop time of 130 seconds (the log's *The stop time at 85 seconds*). The rehearsal's unit goes with it, with `/home/httpd/rehearsal/` and the shell's image of 0.9.0. Until then, design §11's messages stay as Ernest's site speaks them, and a change to them is told to Ernest's session before it is built.
 
 Ernest's side goes live in the same switch, the one day both repositories change: the site's script calling the client, its generator taking no configuration, the shell page's numbers from the client's limits and a stub client in its browser test. Ernest's plan holds it as its MVP 4.4's item 6, beside that release (its MVP 4.6, and its log's *MVP 4.6 Before the Launch*).
 

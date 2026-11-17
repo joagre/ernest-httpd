@@ -28,12 +28,12 @@ ExecStart=/home/httpd/opt/local/bin/ernest_httpd --config-dir /home/httpd/ernest
 ExecReload=/home/httpd/opt/local/bin/ern reload --config-dir /home/httpd/ernest-httpd/node
 Restart=on-failure
 # Above timeouts.write of config.json, 30 seconds, timeouts.file, 5, where
-# it has a shell, shell.hangup, 5, and the 75 seconds for which a peer that
-# has fallen silent, an attached shell's node, holds the node's end,
-# together: the sessions end before the listeners, and the node tells its
-# peers after them, so that the orderly stop ends before systemd kills what
-# is left.
-TimeoutStopSec=120
+# it has a shell, shell.hangup, 5, and the 85 seconds for which a peer that
+# has fallen silent, an attached shell's node, holds the node's end where
+# output waits for it, together: the sessions end before the listeners, and
+# the node tells its peers after them, so that the orderly stop ends before
+# systemd kills what is left.
+TimeoutStopSec=130
 # The stop's signal goes to the server alone, which ends each session's
 # program itself, by its terminal's hangup; what is left once the server
 # has ended is killed.

@@ -938,7 +938,7 @@ fn differences(config : Config.Config, home : String) : List(String) = {
 // AmbientCapabilities=CAP_NET_BIND_SERVICE, ProtectSystem=strict,
 // PrivateTmp=yes and the ReadWritePaths, and a TimeoutStopSec above
 // timeouts.write and timeouts.file of config.json, where it has a shell,
-// shell.hangup, and the 75 seconds for which a silent peer holds the
+// shell.hangup, and the 85 seconds for which a silent peer holds the
 // node's end together; the shell's wrapper makes its directory
 // under /run/user, traps HUP and TERM, runs podman run with --cidfile, and
 // removes the container by its id with podman rm -f -t 0; the shell's start
@@ -963,13 +963,14 @@ let holdsTheDeployment = Test.Case(name = "holds the files of deploy/", run = fn
             let hangup =
                 Optional.withDefault(Optional.map(config.shell, fn(shell) = shell.hangup), 0);
             // a peer that has fallen silent holds the node's end for at most
-            // 75 seconds (report §8.7)
-            let needed = timeouts.write + timeouts.file + hangup + 75000;
+            // 85 seconds, output waiting for it, and 75 where none does
+            // (report §8.7)
+            let needed = timeouts.write + timeouts.file + hangup + 85000;
             let above = if seconds * 1000 > needed then
                 []
             else
                 [unit
-                     <> "'s TimeoutStopSec is not above timeouts.write, timeouts.file, shell.hangup and a silent peer's 75 seconds together"];
+                     <> "'s TimeoutStopSec is not above timeouts.write, timeouts.file, shell.hangup and a silent peer's 85 seconds together"];
             differences(config, home) <> above
         }
       | #(_, None) ->

@@ -669,3 +669,18 @@ This repository agreed to the second and objected to the first's wording, by a m
 ## The template's v0.10.18
 
 *2026-11-17.* `CLAUDE.md` is the template's `v0.10.18`'s, tagged on `ef5e4c4`, but for its title and the sentence under it. The tag changes that file alone since `v0.10.17`, and this copy had no difference of its own. It rewords the rule on a timing test, as this repository asked. A timing test is one whose failing assertion compares a measured time, or a ratio of measured times. The failure's text is read first, and a test whose wait ran out of its deadline is a flake, whatever the load (the template's log, *What a timing test is*). "Failing assertion" is Ernest's addition, since a test may both wait and measure, as the tests here of a write past its deadline do. This repository agreed, by a message to the template's session.
+
+## The stop time at 85 seconds
+
+*2026-11-17.* Ernest's session told that its tests lost a silent peer about 85 seconds after it stopped where more than 1 MB waited for it, not within the 75 of report §8.7, and that it read the unit's 120 seconds as standing against that. By §13's rule they do not stand. The deployed deadlines are 30 and 5 seconds, and 5 more once the configuration has a shell, so 85 needs more than 125.
+
+The number was measured here before the design took it, on `ern 0.10.0`, by a probe of two nodes on the loopback with the peer's processes stopped. With nothing waiting for the peer the node ended 74.9 seconds after the peer's last traffic, in five runs, by SIGTERM and by `ern stop` alike. With 4.7 to 5.4 MB waiting it ended at 84.9 seconds, in five runs. The loss itself is late there: `the peer p was lost: it fell silent` came at 84.9 seconds with an end begun or without one, and the end followed within 0.05 seconds.
+
+So §13's rule adds 85 seconds where it added 75, the unit's `TimeoutStopSec` is 130, its margin of 5 seconds kept, and the smoke test's check holds the sum (principle 1: an operator predicts an orderly stop before the kill). At 120 systemd would have cut an orderly stop where an operator's stopped shell had output waiting. The unit on the machine takes the time when the switch installs it again, which the plan's step now says.
+
+**A program's end that hangs.** The probe showed more. A node whose program ended by `Os.exit` or by its return, output waiting for the silent peer, did not end within 240 seconds, in six runs of six, and ended once the peer ran again. A SIGTERM sent into that wait did not end it, in three runs of three. The server exits by `Os.exit` where a listener ends early (§2). With a stopped shell holding output it would stay, serving nothing, until the unit's stop time kills it. Nothing here goes around it. It is line 33, and Ernest's item 98 is its fix for the hang, in no release yet.
+
+Three smaller things of the probe went to Ernest's session by a message and are no lines, since nothing of the program rests on them. A lost connection stays open and delivers once the peer runs. The "1 MB" of the host's buffer for a peer does not say what the sockets hold beside it. A node is three processes of the operating system and not one.
+
+**No line for the mapped error.** `Either.mapLeft(step, Io.show)` stands at 72 sites of the program and was weighed as a line. It is none: `step |> Either.mapLeft(Io.show)` writes the same in a binding chain with the step first, as a probe showed, built and taken by the formatter. The form is this program's spelling, and no gap of Ernest's. The sites stay as they are written.
+
