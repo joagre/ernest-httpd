@@ -6,7 +6,7 @@ Read *Where we are* first, then the milestone under way, its steps by what each 
 
 ## Where we are
 
-Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way: its steps wait on Ernest's MVP 4.4 release, 0.11.0, whose archive of `271a0ba5` answers lines 28 to 30; what the hostile inputs' tests leave out waits on Ernest's answers to lines 31 and 32; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/, from a build of `75faac8`, for Ernest's side to be built against.
+Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way: its steps wait on Ernest's MVP 4.4 release, 0.11.0, whose archive of `271a0ba5` answers lines 28 to 30; what the hostile inputs' tests leave out waits on Ernest's answers to lines 31 and 32; the stop time waits on Ernest's item 98; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/, from a build of `75faac8`, for Ernest's side to be built against.
 
 ## Milestone 2: after the first release
 
@@ -23,6 +23,10 @@ Done from the reviews from outside: the hostile inputs' tests, the log's *Three 
 ### On Ernest's answers to lines 31 and 32
 
 **What the hostile inputs' tests leave out.** Line 31 is the time of a close after bytes the host held, and line 32 what a write that fails loses of what had arrived. Once Ernest answers them, the tests of a write past its deadline, `Connection`'s and `Shell`'s, hold what the client reads after the responses told written, and the close; and the test of a head that trickles holds the 408's bytes. Each holds what the answer lets a test wait for (the log's *The hostile inputs' tests*).
+
+### On Ernest's item 98
+
+**The stop time read again.** Told 2026-11-17 by Ernest's session: where more than 1 MB waits for a peer that stands still, Ernest's tests lost the peer about 85 seconds after it stopped, not within the 75 that design §13's rule adds, and a node whose program had ended did not end until the peer ran again (Ernest's log, *What Waits for a Peer*). Neither cause is proven, and the probe here had nothing waiting, so it saw 74.5. The fix is Ernest's MVP 4.16, item 98. When its message comes, §13's rule, the unit's 120 seconds and the smoke test's check are read against it.
 
 ### On Ernest's MVP 4.4 release
 
