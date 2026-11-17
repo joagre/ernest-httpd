@@ -825,22 +825,31 @@ fn sent(client : Client, message : WebSocket.Message) : Client = {
 // the connection closed and `refused` where the frames are not the server's;
 // and the client after it.
 fn nextMessage(client : Client) : #(String, Client) =
+    match decodedNext(client) {
+        #(Right(message), next) -> #(shown(message), next)
+      | #(Left(text), next) -> #(text, next)
+    }
+
+// The next message the client is sent, or where none comes, `closed` where
+// the connection closed and `refused` where the frames are not the server's;
+// and the client after it.
+fn decodedNext(client : Client) : #(Either(String, WebSocket.Message), Client) =
     match client.pending {
         message :: rest ->
-            #(shown(message), Client(..client, pending = rest))
+            #(Right(message), Client(..client, pending = rest))
       | [] ->
             match Tcp.read(client.socket, 5000) {
                 Right(bytes) ->
                     match WebSocket.decode(client.decoder, bytes) {
                         Right(#(messages, decoder)) ->
-                            nextMessage(Client(..client, =decoder, pending = messages))
+                            decodedNext(Client(..client, =decoder, pending = messages))
                       | Left(error) ->
-                            #("refused " <> Io.show(error), client)
+                            #(Left("refused " <> Io.show(error)), client)
                     }
               | Left(Io.Closed) ->
-                    #("closed", client)
+                    #(Left("closed"), client)
               | Left(error) ->
-                    #(Io.show(error), client)
+                    #(Left(Io.show(error)), client)
             }
     }
 
@@ -1054,9 +1063,9 @@ let pingsAWrite : Int = 64
 // sends it.
 let pings : Bytes = Bytes.repeat(Smoke.masked(WebSocket.Ping(pingPayload)), pingsAWrite)
 
-// The bytes a client that reads nothing writes before the test fails where
-// no write of its is held: a bound well past what the host and the kernel
-// hold for one connection, both ends' buffers together.
+// The bytes written by a client that reads nothing, or to one, before a
+// test fails where no write is held: a bound well past what the host and
+// the kernel hold for one connection, both ends' buffers together.
 let mostUnread : Int = 33554432
 
 // The client's writes of the pings, each within 200 milliseconds, until one
@@ -1249,11 +1258,11 @@ let dropsBeforeTheResize =
 // shell's address as the stand-in was given it.
 type AttachedClient = AttachedClient(client : Client, text : String, shell : Address(Session.Told))
 
-// The shell's attach to the sessions' stand-in, with the bytes after the
-// head given.
+// The shell's attach to the sessions' stand-in, with the deadlines given,
+// by a resize written with the upgrade.
 fn attachedClient(sessions : Sessions.Sessions,
-                  beyond : Bytes) : Either(String, AttachedClient) receiving Seen = {
-    let client <- opened(sessions, deadlines(60000), [], beyond);
+                  timeouts : Config.Timeouts) : Either(String, AttachedClient) receiving Seen = {
+    let client <- opened(sessions, timeouts, [], Smoke.masked(page("{\"resize\": [24, 80]}")));
     let #(text, client) = nextMessage(client);
     let shell <- receive {
         ShellAttached(shell) -> Right(shell)
@@ -1282,7 +1291,7 @@ let dropsWhatFollowsAClose =
         let #(sessions, session) = standingIn();
         let result = {
             let AttachedClient(=client, text = attached, =shell) <-
-                attachedClient(sessions, Smoke.masked(page("{\"resize\": [24, 80]}")));
+                attachedClient(sessions, deadlines(60000));
             let _ =
                 Tcp.write(client.socket,
                           Smoke.masked(WebSocket.Close(code = Some(1000), reason = ""))
@@ -1319,7 +1328,7 @@ let closesAtItsReadersEnd =
         let #(sessions, session) = standingIn();
         let result = {
             let AttachedClient(=client, text = attached, =shell) <-
-                attachedClient(sessions, Smoke.masked(page("{\"resize\": [24, 80]}")));
+                attachedClient(sessions, deadlines(60000));
             let reader <- Either.fromOptional(shellReader(), "no reader");
             kill(reader);
             Right(#(attached, messages(client, 1), ended(), takenBySession(shell)))
@@ -1328,6 +1337,96 @@ let closesAtItsReadersEnd =
         kill(Process.fromAddress(sessions.address));
         Test.equal(result,
                    Right(#(attachedText("new"), ["closed"], "Returned", "Detach of the shell")))
+    })
+
+// design §11: `Closed` closes: the client of an attached shell closes its
+// connection with no Close frame, its reader's read answers the close, and
+// the shell closes, its session told Detach, and returns. A regression
+// test, written after the code: it does not cover a read that fails
+// otherwise than by the close, nor an unattached shell, nor that the shell
+// writes no frame, which a client that has closed cannot read.
+let closesAtItsClientsClose =
+    Test.Case(name = "closes where its client closes with no Close frame", run = fn() = {
+        let #(sessions, session) = standingIn();
+        let result = {
+            let AttachedClient(=client, text = attached, =shell) <-
+                attachedClient(sessions, deadlines(60000));
+            Tcp.close(client.socket);
+            Right(#(attached, ended(), takenBySession(shell)))
+        };
+        kill(Process.fromAddress(session));
+        kill(Process.fromAddress(sessions.address));
+        Test.equal(result, Right(#(attachedText("new"), "Returned", "Detach of the shell")))
+    })
+
+// The program's output the session's stand-in tells a shell, 256 KiB, many
+// times the 8 KB a socket's host holds before it holds a write back
+// (Appendix E.18), and a quarter of the message the tests' client decodes.
+let output : Bytes = Bytes.repeat(<<0x6f>>, 262144)
+
+// The messages the session's stand-in takes, as toldSession shows them,
+// until one is not the shell's Written: the count of the Writtens, and that
+// message.
+fn writtenUntil(shell : Address(Session.Told), count : Int) : #(Int, String) receiving Seen = {
+    let taken = takenBySession(shell);
+    if taken == "Written by the shell" then writtenUntil(shell, count + 1) else #(count, taken)
+}
+
+// The count of outputs read from the client, each a binary message of the
+// output's size; a Left for anything else.
+fn outputsRead(client : Client, count : Int) : Either(String, Unit) =
+    if count == 0 then
+        Right(Unit)
+    else match decodedNext(client) {
+        #(Right(WebSocket.Binary(bytes)), next) when Bytes.size(bytes) == Bytes.size(output) ->
+            outputsRead(next, count - 1)
+      | #(Right(WebSocket.Binary(bytes)), _) ->
+            Left("Binary of " <> Int.toString(Bytes.size(bytes)) <> " bytes")
+      | #(Right(message), _) ->
+            Left(shown(message))
+      | #(Left(text), _) ->
+            Left(text)
+    }
+
+// design §11: a frame whose write does not end within the write deadline,
+// 200 milliseconds here, closes the connection: the shell attached, its
+// session's stand-in tells it outputs that together pass `mostUnread`, and
+// the client reads none of them; the shell writes each, telling its session
+// Written, until the host holds what the kernel will not, and the next
+// write is held past its deadline; the shell then closes, its session told
+// Detach, and returns no sooner than the deadline after the first output
+// was told; and the client then reads each output told written, whole. A
+// regression test, written after the code: it does not cover a write that
+// fails, a frame other than an output's, nor what the client reads after
+// the outputs told written, the one cut short, whose bytes may still be
+// sent, and the close, which the host makes once it has sent what it held,
+// at a time Appendix E.18 does not state.
+let closesWhereAWriteWaits =
+    Test.Case(name = "closes where a write does not end in time", run = fn() = {
+        let #(sessions, session) = standingIn();
+        let timeouts = Config.Timeouts(head = 5000, idle = 60000, write = 200, file = 5000);
+        let result = {
+            let AttachedClient(=client, text = attached, =shell) <-
+                attachedClient(sessions, timeouts);
+            let start = Clock.monotonic();
+            List.forEach(List.range(1, mostUnread / Bytes.size(output) + 1),
+                         fn(_) = send(shell, Session.Output(output)));
+            let #(count, last) = writtenUntil(shell, 0);
+            let end = ended();
+            let waited = if Clock.monotonic() - start >= 200 then
+                "past the deadline"
+            else
+                "before the deadline";
+            Right(#(attached, last, end, waited, outputsRead(client, count)))
+        };
+        kill(Process.fromAddress(session));
+        kill(Process.fromAddress(sessions.address));
+        Test.equal(result,
+                   Right(#(attachedText("new"),
+                           "Detach of the shell",
+                           "Returned",
+                           "past the deadline",
+                           Right(Unit))))
     })
 
 // A stand-in for the sessions that answers no attach, and tells the test's

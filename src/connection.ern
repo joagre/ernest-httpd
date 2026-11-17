@@ -628,28 +628,30 @@ fn told(count : Int) : #(List(String), List(String)) receiving Seen = {
         if count == 0 then
             #(entries, heard)
         else receive {
-            Logged(AccessLog.Entry(=remote, =request, =status, =size)) ->
-                taken(count,
-                      entries
-                          <> [remote
-                                  <> " "
-                                  <> Optional.withDefault(request, "-")
-                                  <> " "
-                                  <> Int.toString(status)
-                                  <> " "
-                                  <> Int.toString(size)],
-                      heard)
-          | Heard(RequestRead(_)) ->
-                taken(count, entries, heard <> ["RequestRead"])
-          | Heard(ResponseWritten(_)) ->
-                taken(count - 1, entries, heard <> ["ResponseWritten"])
-          | Heard(Upgraded(_)) ->
-                taken(count - 1, entries, heard <> ["Upgraded"])
-          | after 5000 ->
-                #(entries, heard <> ["no more"])
+            Logged(entry) -> taken(count, entries <> [shownEntry(entry)], heard)
+          | Heard(RequestRead(_)) -> taken(count, entries, heard <> ["RequestRead"])
+          | Heard(ResponseWritten(_)) -> taken(count - 1, entries, heard <> ["ResponseWritten"])
+          | Heard(Upgraded(_)) -> taken(count - 1, entries, heard <> ["Upgraded"])
+          | after 5000 -> #(entries, heard <> ["no more"])
         };
     taken(count, [], [])
 }
+
+// An entry told to the log, as a test compares it: its remote address, its
+// request or `-`, its status and its size.
+fn shownEntry(message : AccessLog.LogMsg) : String =
+    match message {
+        AccessLog.Entry(=remote, =request, =status, =size) ->
+            remote
+                <> " "
+                <> Optional.withDefault(request, "-")
+                <> " "
+                <> Int.toString(status)
+                <> " "
+                <> Int.toString(size)
+      | AccessLog.Flush(_) ->
+            "Flush"
+    }
 
 // design §6: GET and HEAD of a file and of a missing one over one
 // connection kept alive, two requests pipelined in one write each; every
@@ -818,6 +820,55 @@ let answersSlowHeads =
                   Test.equal(written(5000, 200, String.toUtf8("GET /a.txt HTTP/1.1\r\n")),
                              Right(#(refused(408), "closed", ["127.0.0.1 - 408 20"]))))
 
+// The bytes of a head that never ends, within the tests' limits: a request
+// line, and four header lines of 60 bytes, 240 of the 256 the headers may
+// hold, with no empty line after them.
+let endless : Bytes =
+    String.toUtf8("GET /a.txt HTTP/1.1\r\n"
+                      <> String.repeat("X-Trickle: " <> String.repeat("t", 47) <> "\r\n", 4))
+
+// The bytes written to the client's socket one at a time, from the index,
+// each once the one before has been given 10 milliseconds, until the log is
+// told an entry, which the connection tells before it closes: the entry, as
+// `told` shows it, or a Left where the bytes run out first. A write's answer
+// is not read: one after the connection's close may fail, and the entry is
+// then told already.
+fn trickled(client : Address(Tcp.SocketMsg),
+            bytes : Bytes,
+            index : Int) : Either(String, String) receiving Seen =
+    if index == Bytes.size(bytes) then
+        Left("the head's " <> Int.toString(index) <> " bytes ran out before an answer")
+    else {
+        let _ = Tcp.write(client, Bytes.slice(bytes, index, index + 1), 5000);
+        receive {
+            Logged(entry) -> Right(shownEntry(entry))
+          | after 10 -> trickled(client, bytes, index + 1)
+        }
+    }
+
+// design §6: a head that does not end in time answers 408, the head
+// deadline bounding the whole head and not each read: a head that comes a
+// byte at a time, 10 milliseconds or a little more apart, and never ends is
+// answered 408 at the head deadline, 200 milliseconds, before its bytes run
+// out, told to the log with no request and to the listener as
+// ResponseWritten alone, and the connection returns; a deadline begun again
+// by each read would see the bytes run out first. A regression test,
+// written after the code: it does not cover the response's bytes, which
+// answersSlowHeads holds for a head that stops, since a byte the client
+// writes after the connection's close resets the connection, and a write
+// after the reset loses what the client's socket holds of the response.
+let answersTricklingHeads =
+    Test.Case(name = "answers a head that trickles past its deadline with 408", run = fn() = {
+        let result = {
+            let client <- connected(5000, 200);
+            let entry <- trickled(client, endless, 0);
+            let #(_, heard) = told(1);
+            Right(#(entry, heard, ended()))
+        };
+        Test.equal(result,
+                   Right(#("127.0.0.1 - 408 20", ["ResponseWritten"], "Returned, told nothing")))
+    })
+
 // A connection's end: whether it told anything the test has not taken,
 // which its word that its serve has returned follows, from the one sender
 // (report §6.4), and then its end's reason; a connection whose serve did
@@ -860,6 +911,149 @@ let closesSilently = Test.Case(name = "closes a silent connection", run = fn() =
                #(Right(#("closed", "Returned, told nothing")),
                  Right(#("", "Returned, told nothing"))))
 })
+
+// The size of the scratch site's large file, 1 MiB, many times the 8 KB a
+// socket's host holds before it holds a write back (Appendix E.18).
+let largeSize : Int = 1048576
+
+// The bytes of the responses a client that reads nothing asks for: a bound
+// well past what the host and the kernel hold for one connection, both
+// ends' buffers together, so that a write of the connection's is held
+// before they are all answered.
+let mostUnread : Int = 33554432
+
+// The large file's entry, as `told` shows it.
+let largeEntry : String = "127.0.0.1 GET /large.bin HTTP/1.1 200 " <> Int.toString(largeSize)
+
+// A client's socket to a connection whose write deadline is the one given,
+// the scratch site's large file written first, and the client's requests
+// for the file, enough that their responses pass `mostUnread`, written in
+// one write.
+fn pipelined(write : Int) : Either(String, Address(Tcp.SocketMsg)) receiving Seen = {
+    let server <- served(5000, 5000);
+    let _ <-
+        Either.mapLeft(Fs.write(Path(scratch <> "/site/large.bin"),
+                                Bytes.repeat(<<0x6c>>, largeSize),
+                                5000),
+                       Io.show);
+    let timeouts = Config.Timeouts(..server.config.timeouts, =write);
+    let client <- connectedTo(Server(..server, config = Config.Config(..server.config, =timeouts)));
+    let requests =
+        Bytes.repeat(Http.renderRequest(request("GET", "/large.bin", 1, [host]), <<>>),
+                     mostUnread / largeSize + 1);
+    let _ <- Either.mapLeft(Tcp.write(client, requests, 5000), Io.show);
+    Right(client)
+}
+
+// What the connection told until its serve returned, as `told` shows it,
+// and then its end's reason; `unfinished` where it told nothing for 5000
+// milliseconds.
+fn toldToTheEnd(heard : List(String)) : #(List(String), String) receiving Seen =
+    receive {
+        Logged(entry) ->
+            toldToTheEnd(heard <> [shownEntry(entry)])
+      | Heard(RequestRead(_)) ->
+            toldToTheEnd(heard <> ["RequestRead"])
+      | Heard(ResponseWritten(_)) ->
+            toldToTheEnd(heard <> ["ResponseWritten"])
+      | Heard(Upgraded(_)) ->
+            toldToTheEnd(heard <> ["Upgraded"])
+      | Finished(process) ->
+            receive {
+                Ended(down) when down.process == process -> #(heard, Io.show(down.reason))
+              | after 5000 -> #(heard, "no end")
+            }
+      | after 5000 ->
+            #(heard, "unfinished")
+    }
+
+// The count of the responses the connection told written.
+fn writtenOf(heard : List(String)) : Int =
+    List.size(List.filter(heard, fn(word) = word == "ResponseWritten"))
+
+// What the connection told, as a test compares it: `cut short` where it
+// told RequestRead, the large file's entry and ResponseWritten for each
+// response it wrote, and then RequestRead alone, for the request whose
+// response's write closed the connection; and otherwise what it told.
+fn cutShort(heard : List(String)) : String = {
+    let count = writtenOf(heard);
+    let whole =
+        List.flatMap(List.range(1, count), fn(_) = ["RequestRead", largeEntry, "ResponseWritten"]);
+    if heard == whole <> ["RequestRead"] then
+        "cut short"
+    else if heard == whole then
+        "not held after " <> Int.toString(count) <> " responses"
+    else
+        Io.show(heard)
+}
+
+// The count of responses read from the client's socket, from the bytes
+// carried first, each the large file's 200 read whole; a Left for anything
+// else.
+fn largeReceived(client : Address(Tcp.SocketMsg),
+                 carried : Bytes,
+                 count : Int) : Either(String, Unit) =
+    if count == 0 then
+        Right(Unit)
+    else {
+        let #(response, rest) <-
+            Either.mapLeft(Http.readResponse(client, carried, Http.defaultLimits, 5000), Io.show);
+        let #(body, beyond) <-
+            Either.mapLeft(Http.readResponseBody(client, rest, response, largeSize, 5000), Io.show);
+        if response.status == 200 && Bytes.size(body) == largeSize then
+            largeReceived(client, beyond, count - 1)
+        else
+            Left("answered " <> Int.toString(response.status))
+    }
+
+// design §6: a write that fails closes the connection, and is told neither
+// to the log nor to the listener: a client writes its requests for the
+// large file in one write and closes at once, and the connection's first
+// response is taken, as a socket's host takes a write whole (Appendix
+// E.18), and told, and resets the connection at the client's closed end;
+// the write held behind it, or one after the reset, fails. The connection
+// returns well within the write deadline, 60000 milliseconds, so that the
+// write failed and did not end by its time. A regression test, written
+// after the code: it does not cover a write that fails otherwise than by a
+// reset; a client gone before a connection's one response is no case of
+// it, since the host takes that write whole and the connection tells it.
+let closesWhereAWriteFails = Test.Case(name = "closes where a write fails", run = fn() = {
+    let result = {
+        let client <- pipelined(60000);
+        Tcp.close(client);
+        let #(heard, end) = toldToTheEnd([]);
+        Right(#(cutShort(heard), end))
+    };
+    Test.equal(result, Right(#("cut short", "Returned")))
+})
+
+// design §6: a write that does not end within the write deadline, 200
+// milliseconds here, closes the connection, and is told neither to the log
+// nor to the listener: a client writes its requests for the large file in
+// one write and reads nothing, the connection's responses are taken and
+// told until the host holds what the kernel will not, and the next write
+// is held past its deadline; the connection returns no sooner than the
+// deadline after the client began to connect, and the client then reads each
+// response told, whole. A regression test, written after the code: it does
+// not cover a deadline that passes while the host takes a write, which it
+// takes whole, nor what the client reads after the responses told, the one
+// cut short, whose bytes may still be sent, and the close, which the host
+// makes once it has sent what it held, at a time Appendix E.18 does not
+// state.
+let closesWhereAWriteWaits =
+    Test.Case(name = "closes where a write does not end in time", run = fn() = {
+        let result = {
+            let start = Clock.monotonic();
+            let client <- pipelined(200);
+            let #(heard, end) = toldToTheEnd([]);
+            let waited = if Clock.monotonic() - start >= 200 then
+                "past the deadline"
+            else
+                "before the deadline";
+            Right(#(cutShort(heard), end, waited, largeReceived(client, <<>>, writtenOf(heard))))
+        };
+        Test.equal(result, Right(#("cut short", "Returned", "past the deadline", Right(Unit))))
+    })
 
 // design §6: on a TLS listener the first read runs the handshake: a TLS
 // client is served over a connection kept alive, and a client that writes

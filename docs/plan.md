@@ -6,7 +6,7 @@ Read *Where we are* first, then the milestone under way, its steps by what each 
 
 ## Where we are
 
-Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way: the hostile inputs' tests wait on nothing, and its other steps wait on Ernest's MVP 4.4 release, 0.11.0, whose archive of `271a0ba5` answers lines 28 to 30; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/, from a build of `75faac8`, for Ernest's side to be built against.
+Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way: its steps wait on Ernest's MVP 4.4 release, 0.11.0, whose archive of `271a0ba5` answers lines 28 to 30; what the hostile inputs' tests leave out waits on Ernest's answers to lines 31 and 32; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/, from a build of `75faac8`, for Ernest's side to be built against.
 
 ## Milestone 2: after the first release
 
@@ -18,9 +18,11 @@ Done too, the steps between them: the designed lines out of the test run, the lo
 
 Done after them, from a reading of the design from outside: the shell's reader asked, with what else the reading found, the log's *The shell's reader asked*; the session's helpers, the log's *The session's helpers*; and the rehearsal's build, the log's *The rehearsal's build*.
 
-### On nothing
+Done from the reviews from outside: the hostile inputs' tests, the log's *Three points from outside* and *The hostile inputs' tests*.
 
-**The hostile inputs' tests.** Found 2026-11-17: sentences of the design that no test holds by its name or its comment (the log's *Three points from outside*). They are §6's response whose write fails, its client gone, and whose write does not end within `timeouts.write`; §11's frame whose write does not end in time; and §11's client whose connection closes with no `Close` frame. A fifth is §6's head that does not end in time, where the head trickles in and never stops: the test there holds only a head that stops dead. The item reads the tests' bodies first, and writes a regression test for each sentence that none holds.
+### On Ernest's answers to lines 31 and 32
+
+**What the hostile inputs' tests leave out.** Line 31 is the time of a close after bytes the host held, and line 32 what a write that fails loses of what had arrived. Once Ernest answers them, the tests of a write past its deadline, `Connection`'s and `Shell`'s, hold what the client reads after the responses told written, and the close; and the test of a head that trickles holds the 408's bytes. Each holds what the answer lets a test wait for (the log's *The hostile inputs' tests*).
 
 ### On Ernest's MVP 4.4 release
 
