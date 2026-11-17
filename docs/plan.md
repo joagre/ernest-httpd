@@ -20,7 +20,7 @@ Done after them, from a reading of the design from outside: the shell's reader a
 
 ### On nothing
 
-**The hostile inputs' tests.** Found 2026-11-17: four sentences of the design that no test holds by its name or its comment (the log's *Three points from outside*). They are §6's response whose write fails, its client gone, and whose write does not end within `timeouts.write`; §11's frame whose write does not end in time; and §11's client whose connection closes with no `Close` frame. The item reads the tests' bodies first, and writes a regression test for each sentence that none holds.
+**The hostile inputs' tests.** Found 2026-11-17: sentences of the design that no test holds by its name or its comment (the log's *Three points from outside*). They are §6's response whose write fails, its client gone, and whose write does not end within `timeouts.write`; §11's frame whose write does not end in time; and §11's client whose connection closes with no `Close` frame. A fifth is §6's head that does not end in time, where the head trickles in and never stops: the test there holds only a head that stops dead. The item reads the tests' bodies first, and writes a regression test for each sentence that none holds.
 
 ### On Ernest's MVP 4.4 release
 
