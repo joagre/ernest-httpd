@@ -603,3 +603,7 @@ The review documents were read against the rules (Ernest's log, *The Review Docu
 ## The template's v0.10.12
 
 *2026-11-17.* `CLAUDE.md` is the template's `v0.10.12`'s, tagged on `5f109c3`, but for its title and the sentence under it. The tag changes that file alone since `v0.10.11`, and this copy had no difference of its own. It brings one sentence to the rule for a step that looks wrong, so that the repositories keep the same rules. A plan's item and the user's own idea are steps too: before work starts on one, the session says whether it is worth doing, and says no where it is not (Ernest's log, *Twenty-Six Hosts Are the Cost*). Ernest's session wrote it here.
+
+## The template's v0.10.13
+
+*2026-11-17.* `CLAUDE.md` is the template's `v0.10.13`'s, tagged on `b441cb5`, but for its title and the sentence under it. The tag changes that file alone since `v0.10.12`, and this copy had no difference of its own. It adds one clause to the rule for a step that looks wrong, so that the repositories keep the same rules. A suggestion of the session's own is a step too, beside a plan's item and the user's own idea: before work starts on one, the session says whether it is worth doing, and says no where it is not (Ernest's log, *The Session's Own Suggestion*). Ernest's session wrote it here.
