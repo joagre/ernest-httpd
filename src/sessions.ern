@@ -242,7 +242,7 @@ fn attachedTo(sessions : Sessions,
          Attach(=cookie,
                 =remote,
                 size = Terminal.Size(rows = 24, columns = 80),
-                shell = named(name)));
+                shell = shell(name)));
     receive {
         Heard(shell = from, told = Session.Attached(=session)) when from == name -> Some(session)
       | Heard(shell = from) when from == name -> None
@@ -262,9 +262,40 @@ fn heard(name : String, text : String, acc : String) : String receiving Seen =
             acc <> " and nothing more"
     }
 
-// A shell of the test's process, told what it is told under the name.
-fn named(name : String) : Address(Session.Told) receiving Seen =
-    adapted(self(), fn(told) = Heard(shell = name, =told))
+// A shell of a process of its own, which tells the test's process what it
+// is told under the name and tells its session Written after each Output,
+// as a shell does once the output is on its socket, until it is told
+// Unavailable or Ended, at which a shell closes.
+fn shell(name : String) : Address(Session.Told) receiving Seen = {
+    let me = self();
+    spawn(fn() = writingShell(me, name, None))
+}
+
+fn writingShell(test : Address(Seen),
+                name : String,
+                session : Optional(Address(Session.SessionMsg))) : Unit receiving Session.Told =
+    receive {
+        Session.Attached(session = attachedTo) as told -> {
+            send(test, Heard(shell = name, =told));
+            writingShell(test, name, Some(attachedTo))
+        }
+      | Session.Output(_) as told -> {
+            send(test, Heard(shell = name, =told));
+            match session {
+                Some(attachedTo) -> send(attachedTo, Session.Written(self()))
+              | None -> Unit
+            };
+            writingShell(test, name, session)
+        }
+      | Session.Unavailable as told ->
+            send(test, Heard(shell = name, =told))
+      | Session.Ended(_) as told ->
+            send(test, Heard(shell = name, =told))
+      | told -> {
+            send(test, Heard(shell = name, =told));
+            writingShell(test, name, session)
+        }
+    }
 
 // The shell of the name attached with the cookie from the remote address,
 // and what it is told first, within 5000 milliseconds.
@@ -276,7 +307,7 @@ fn attach(sessions : Sessions,
          Attach(=cookie,
                 =remote,
                 size = Terminal.Size(rows = 24, columns = 80),
-                shell = named(name)));
+                shell = shell(name)));
     next(name)
 }
 
@@ -318,7 +349,7 @@ let startsWithinTheCap = Test.Case(name = "starts a session within the cap", run
          Attach(cookie = "a",
                 remote = "192.0.2.1",
                 size = Terminal.Size(rows = 24, columns = 80),
-                shell = named("again")));
+                shell = shell("again")));
     let again = receive {
         Heard(shell = "again", told = Session.Attached(=session)) -> Some(session)
       | after 5000 -> None

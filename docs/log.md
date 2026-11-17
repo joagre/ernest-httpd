@@ -643,3 +643,11 @@ Each response the host took is told to the log and the listener, which is right,
 **Two lines for Ernest.** Line 31: a socket closed while its host holds bytes shows the far end its close a second after its end, though the far end took the last byte at once, and E.18 gives no time. The server shows it. A client that began to read a 4 MiB file 300 ms after its request had every byte within a millisecond, and the close 703 ms later. Line 32: a write that answers `Left(Closed)` loses what had arrived unread, where E.18 says only that each read after a close answers `Closed`. What the tests leave out for the two, the close after a write past its deadline and the 408's bytes, is a step of the plan.
 
 **Weighed and left.** E.18 says of a write that timed out that its bytes "may still be sent", and a probe saw one of two such writes sent at the close. The program closes at its first such write, so nothing of it turns on which. A refusal written while its client still writes could be lost to line 32's reset. `curl`, writing 8 MiB to the example site, was answered 413 five times of five, so nothing is planned.
+
+## The sessions' stand-in shell tells `Written`
+
+*2026-11-17.* `Sessions.startsAnew` failed once in `make test`, on a machine other programs loaded to 54 and more: `ready and nothing more` heard where `ready\r\n` was expected. The cause was the tests' stand-in shell, and not the program. A session reads on only once its shell has told it `Written` (design §11, §12), and the stand-in, an adapter to the test's process, told none. Where the terminal gave `ready` in one read and the line's end in the next, the second was never read.
+
+A probe made the failure at will, so no hunt followed: in a scratch copy, a command that prints `ready` and its line's end a second apart failed the test with that text. The stand-in is now a process of its own that tells its session `Written` after each `Output`, as `Session`'s tests' stand-in does, and ends where a shell closes, at `Unavailable` or `Ended`. The probe's command passes with it, and the module's tests ran 30 times with no failure.
+
+No other module's tests hold a stand-in shell that is told `Output` and tells no `Written`. The stand-in now stands in `Session` and in `Sessions`, a test's helper in each, since a test lives in its module and neither exports the other's.
