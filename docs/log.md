@@ -655,3 +655,7 @@ No other module's tests hold a stand-in shell that is told `Output` and tells no
 ## The template's v0.10.14
 
 *2026-11-17.* `docs/agents.md` is the template's `v0.10.14`'s, tagged on `7e736ca`. The tag changes that file alone since `v0.10.13`, and this copy had no difference of its own. It adds one sentence under *The brief*: agents whose work is bound by the processor, a race's probe, a run under a sanitizer or a load test, run one at a time, and each runs its programs one after another. In `ernest-epx` three agents ran race probes side by side the same day, and a desktop of 24 cores passed a load of 200 for about an hour (the template's log, *Agents bound by the processor run one at a time*). The same day, on the same machine, `Sessions.startsAnew` failed here under a load of 54 and more from other programs' nodes (*The sessions' stand-in shell tells `Written`*).
+
+## The template's v0.10.15
+
+*2026-11-17.* `docs/agents.md` is the template's `v0.10.15`'s, tagged on `00aef74`. The tag changes that file alone since `v0.10.14`, and this copy had no difference of its own. It adds one sentence after `v0.10.14`'s: a session reads the machine's load before it starts an agent whose work is bound by the processor, and a load another session makes is said to the user, who says whether the agent waits. The first sentence binds the agents of one session, and the machine is shared by several (the template's log, *The load another session makes*).
