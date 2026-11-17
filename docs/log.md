@@ -651,3 +651,7 @@ Each response the host took is told to the log and the listener, which is right,
 A probe made the failure at will, so no hunt followed: in a scratch copy, a command that prints `ready` and its line's end a second apart failed the test with that text. The stand-in is now a process of its own that tells its session `Written` after each `Output`, as `Session`'s tests' stand-in does, and ends where a shell closes, at `Unavailable` or `Ended`. The probe's command passes with it, and the module's tests ran 30 times with no failure.
 
 No other module's tests hold a stand-in shell that is told `Output` and tells no `Written`. The stand-in now stands in `Session` and in `Sessions`, a test's helper in each, since a test lives in its module and neither exports the other's.
+
+## The template's v0.10.14
+
+*2026-11-17.* `docs/agents.md` is the template's `v0.10.14`'s, tagged on `7e736ca`. The tag changes that file alone since `v0.10.13`, and this copy had no difference of its own. It adds one sentence under *The brief*: agents whose work is bound by the processor, a race's probe, a run under a sanitizer or a load test, run one at a time, and each runs its programs one after another. In `ernest-epx` three agents ran race probes side by side the same day, and a desktop of 24 cores passed a load of 200 for about an hour (the template's log, *Agents bound by the processor run one at a time*). The same day, on the same machine, `Sessions.startsAnew` failed here under a load of 54 and more from other programs' nodes (*The sessions' stand-in shell tells `Written`*).
