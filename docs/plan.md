@@ -6,7 +6,7 @@ Read *Where we are* first, then the milestone under way, its steps by what each 
 
 ## Where we are
 
-Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way: its steps wait on Ernest's MVP 4.4 release, 0.11.0, whose archive of `271a0ba5` answers lines 28 to 30; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/, from a build of `75faac8`, for Ernest's side to be built against.
+Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way: the hostile inputs' tests wait on nothing, and its other steps wait on Ernest's MVP 4.4 release, 0.11.0, whose archive of `271a0ba5` answers lines 28 to 30; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/, from a build of `75faac8`, for Ernest's side to be built against.
 
 ## Milestone 2: after the first release
 
@@ -17,6 +17,10 @@ Done: items 1 to 4, 6 and 7, the log's *Milestone 2, item 1: the refusal's form*
 Done too, the steps between them: the designed lines out of the test run, the log's *The lines in the test run*; the refused value on one line, the log's *A refused value on one line*; the server's signal in the tests, the log's *The server's signal in the tests*; the two nodes in the visitor's container with a CPU cap, the log's *Two nodes and a core*; the caps on 0.10.0, which stand, the log's *The caps on 0.10.0*; the listener's one closer, the log's *The listener's one closer*; the shell client's proposal read and swept, the log's *The shell client's proposal goes*; and the archive's tree, the log's *The archive's tree and the four cores*.
 
 Done after them, from a reading of the design from outside: the shell's reader asked, with what else the reading found, the log's *The shell's reader asked*; the session's helpers, the log's *The session's helpers*; and the rehearsal's build, the log's *The rehearsal's build*.
+
+### On nothing
+
+**The hostile inputs' tests.** Found 2026-11-17: four sentences of the design that no test holds by its name or its comment (the log's *Three points from outside*). They are §6's response whose write fails, its client gone, and whose write does not end within `timeouts.write`; §11's frame whose write does not end in time; and §11's client whose connection closes with no `Close` frame. The item reads the tests' bodies first, and writes a regression test for each sentence that none holds.
 
 ### On Ernest's MVP 4.4 release
 
