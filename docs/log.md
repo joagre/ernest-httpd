@@ -659,3 +659,9 @@ No other module's tests hold a stand-in shell that is told `Output` and tells no
 ## The template's v0.10.15
 
 *2026-11-17.* `docs/agents.md` is the template's `v0.10.15`'s, tagged on `00aef74`. The tag changes that file alone since `v0.10.14`, and this copy had no difference of its own. It adds one sentence after `v0.10.14`'s: a session reads the machine's load before it starts an agent whose work is bound by the processor, and a load another session makes is said to the user, who says whether the agent waits. The first sentence binds the agents of one session, and the machine is shared by several (the template's log, *The load another session makes*).
+
+## The template's v0.10.17
+
+*2026-11-17.* `CLAUDE.md` is the template's `v0.10.17`'s, tagged on `8df58f8`, but for its title and the sentence under it. The tags `v0.10.16` and `v0.10.17` change that file alone since `v0.10.15`, and this copy had no difference of its own. They bring two rules to *Tests*, after the two-hour hunt. A timing test that fails under another session's load is run again on a quiet machine and not hunted, the load said to the user. A step a long run rests on, a pull or a build, is checked in a call of its own before the run starts (the template's log, *A timing test under another session's load* and *A long run's first step is checked alone*).
+
+This repository agreed to the second and objected to the first's wording, by a message to the template's session. `Sessions.startsAnew` failed the same day under another session's load because a wait ran out, and it was a defect of the tests (*The sessions' stand-in shell tells `Written`*). So the ask is that a timing test be one whose compared value is a measured time or a ratio of times, and that the failure's text be read before the load decides. The rule is taken as tagged, and a later tag brings the answer.
