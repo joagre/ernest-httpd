@@ -684,3 +684,9 @@ Three smaller things of the probe went to Ernest's session by a message and are 
 
 **No line for the mapped error.** `Either.mapLeft(step, Io.show)` stands at 72 sites of the program and was weighed as a line. It is none: `step |> Either.mapLeft(Io.show)` writes the same in a binding chain with the step first, as a probe showed, built and taken by the formatter. The form is this program's spelling, and no gap of Ernest's. The sites stay as they are written.
 
+
+## The template's v0.10.19
+
+*2026-11-18.* `CLAUDE.md` and `docs/agents.md` are the template's `v0.10.19`'s, tagged on `c2a31b4`, the first but for its title and the sentence under it. The tag changes those two files alone of those a copy takes since `v0.10.18`, and this copy had no difference of its own.
+
+*Done* gains a run of items. Where the plan's next items stand alone, the session takes them one after another, an agent for each, and closes and commits each before the next starts. It stops at the first thing that needs the user, however small: a decision, a surprise, a departure from the brief, a check that fails. Where nothing stops it, it stops after three items, and one report to the user covers the run. `docs/agents.md` says that each item of a run has an agent of its own (the template's log, *A run of items*).
