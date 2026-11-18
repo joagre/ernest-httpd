@@ -690,3 +690,18 @@ Three smaller things of the probe went to Ernest's session by a message and are 
 *2026-11-18.* `CLAUDE.md` and `docs/agents.md` are the template's `v0.10.19`'s, tagged on `c2a31b4`, the first but for its title and the sentence under it. The tag changes those two files alone of those a copy takes since `v0.10.18`, and this copy had no difference of its own.
 
 *Done* gains a run of items. Where the plan's next items stand alone, the session takes them one after another, an agent for each, and closes and commits each before the next starts. It stops at the first thing that needs the user, however small: a decision, a surprise, a departure from the brief, a check that fails. Where nothing stops it, it stops after three items, and one report to the user covers the run. `docs/agents.md` says that each item of a run has an agent of its own (the template's log, *A run of items*).
+
+
+## Line 33 answered
+
+*2026-11-18.* Ernest's session answered line 33 by two messages, as its feedback 266, built at its commit `0aefbdd0` and in no archive yet (Ernest's log, *The Job Halts Without the Host's Flush* and *A Lock Held to the Process's End*, both 2026-11-18). The line stays until the archive of the floor's rise is installed and a probe holds the verdict, as lines 28 to 30 stay.
+
+The verdict: the job halts without the host's flush, so a node's end, begun by its program or by a termination, waits for no socket, a peer's or a program's own. The cause was the host's `halt`, which flushed every port without a limit and ran no process meanwhile. Ernest's item 98 had already ended the hold by a peer's socket on its checkout. The hold showed there with a program's own `Tcp` socket whose client read nothing, and after the change the job ended 14 to 16 ms after its write.
+
+**The cost.** Appendix E.18 has a socket's bytes sent "until the runtime stops", and the stop is now the bound. In Ernest's probe a client that read 64 kB every 2 ms took 2.66 MB of 8 MB written just before the program ended, and one that read at full speed took all it was sent.
+
+Design §2's end waits for each connection to end, and not for its bytes to be taken. So a slow client mid-response at the server's stop may receive a cut response, where the host's flush delivers it on 0.10.0. The exposure is small: the largest file is 0.32 MiB, the window is a stop, and `Content-Length` shows the cut. But the design is silent on what a visitor then meets, and no archive stands to probe it on. So the plan's *The floor's rise* takes the probe, the sentence §2 gains from it, and the decision whether the end waits (principle 1: a reader predicts that a response the log tells written was delivered).
+
+**The 85 seconds.** Ernest's checkout lost a silent peer 84.7 to 84.9 seconds after it stopped, in four runs of four, so §13's rule is expected to stand at 85 and the unit at 130. The rise measures it on the archive all the same, since the verdict changed what a node's end waits for and the unit's time rests on the number.
+
+Two more things came with the first message, and nothing here rests on either. `ern stop` no longer says that no node ran of a node in its halt, at Ernest's `9831ac38`. A node there needs Linux 5.3 or later and refuses to start without it. The machine runs Debian 13. The visitor's container starts its two nodes under podman's default system call filter, which the smoke test's shell check tries at the switch.

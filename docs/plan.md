@@ -6,7 +6,7 @@ Read *Where we are* first, then the milestone under way, its steps by what each 
 
 ## Where we are
 
-Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way: its steps wait on Ernest's MVP 4.4 release, 0.11.0, whose archive of `271a0ba5` answers lines 28 to 30; what the hostile inputs' tests leave out waits on Ernest's answers to lines 31 and 32; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/, from a build of `75faac8`, for Ernest's side to be built against.
+Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.10 and builds against `ern 0.10.0`, Ernest's MVP 4.15 release, installed from its archive on 2026-11-10. Milestone 2 is under way: its steps wait on Ernest's MVP 4.4 release, 0.11.0, whose archive of `271a0ba5` answers lines 28 to 30, line 33 answered at Ernest's `0aefbdd0`, in no archive yet; what the hostile inputs' tests leave out waits on Ernest's answers to lines 31 and 32; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/, from a build of `75faac8`, for Ernest's side to be built against.
 
 ## Milestone 2: after the first release
 
@@ -26,9 +26,15 @@ Done from the reviews from outside: the hostile inputs' tests, the log's *Three 
 
 ### On Ernest's MVP 4.4 release
 
-**The floor's rise.** When the reviews of Ernest's MVP 4.4 begin, the floor rises to 0.11, the minor of its release, on the archive of the commit its readers read, which Ernest's session names to the three repositories on the user's word (the log's *The floor at the reviews* and *The launch's minor*). The archive is installed, and each of Ernest's verdicts is checked against it by a probe: line 28 is its 249, line 29 its 250 and line 30 its 252, and each line goes, the log citing the number.
+**The floor's rise.** When the reviews of Ernest's MVP 4.4 begin, the floor rises to 0.11, the minor of its release, on the archive of the commit its readers read, which Ernest's session names to the three repositories on the user's word (the log's *The floor at the reviews* and *The launch's minor*). The archive is installed, and each of Ernest's verdicts is checked against it by a probe: line 28 is its 249, line 29 its 250, line 30 its 252 and line 33 its 266, and each line goes, the log citing the number.
 
 Two changes come with the rise. `Process.Calling` takes named fields, so the session's tests ask a helper's activity by a pattern and not by equality. `Http.target` reads a target a browser sends raw, percent-encoding `[`, `]`, `{`, `}` and the rest of G.11's set, so the server serves `GET /?a[]=1` and `GET /a[b]`: design §5's *The path* changes first where its rule moves, and the test that refuses a bad path with 400 holds what it now answers. Nothing of the program waits on line 28 or line 30 (the log's *Milestone 2, item 8: the listener's retry* and *The shell's reader asked*).
+
+Two measurements come with it, on the same archive (the log's *Line 33 answered*). The first is of the server's stop. Line 33's answer has the job halt without the host's flush, so the bytes a socket still holds at the program's end are dropped. A probe stops the server while a slow client is mid-response, on the site's largest file, and tells what the client receives. Design §2's *The end* then gains the sentence that says it.
+
+**Decision: the end and a response's last bytes.** Whether the end waits until a response's bytes are taken, and for how long, is brought to the user with the probe's numbers.
+
+The second is of §13's 85 seconds, the loss of a silent peer, with output waiting for it and without. The unit's `TimeoutStopSec` and the smoke test's check take what §13's rule then gives (the log's *The stop time at 85 seconds*).
 
 **Item 5, the release and the switch.** Once Ernest's release is tagged, the same week and after `ernest-template`'s release and `ernest-epx`'s, it is installed, and a release of this program is made by `docs/release.md`, its readers among it, which `make release` refuses before the tag.
 
