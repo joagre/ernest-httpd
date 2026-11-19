@@ -727,3 +727,9 @@ G.11 gives no reading of a list header's elements, and E.5 no trim of spaces and
 G.11 gains `Http.elements : (List(Header), String) -> List(String)`, the elements of every value under the name as one list in order: each value parted at its commas, an element without the spaces and tabs around it and otherwise as written, an empty element dropped. E.5 gains no trim, since spaces and tabs are HTTP's white space and E.0's rule 2 keeps text's vocabulary to text. The line's three headers are tests of `Http` there.
 
 Two things go past the ask, and neither moves the program. An element comes as written, since whether case counts is its header's, so the two readings here compare with `String.toAsciiLower`. A comma within a quoted string does not part, and `Connection` and `Upgrade` hold tokens alone. So the plan's paragraph names the one outcome: each `lists` becomes `Http.elements` and a comparison in ASCII case, and the program writes no trim.
+
+## The template's v0.10.20
+
+*2026-11-19.* `CLAUDE.md` is the template's `v0.10.20`'s, tagged on `ed0716d`, but for its title and the sentence under it. The tag changes that file alone of those a copy takes since `v0.10.19`, and this copy had no difference of its own.
+
+*Before code* gains a rule: an item is read against the items left when it is written. Before an item is written into the plan, moved or changed there, the plan is searched for each section, file and name the item names. Each item left that names the same is read beside it: whether one needs what the other shows, builds or decides, whether both write one sentence, and whether a condition one states of the other can still be met. The item's paragraph names each item it follows, with the reason (the template's log, *An item read against the items left*).
