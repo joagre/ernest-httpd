@@ -718,3 +718,12 @@ A probe on `ern 0.10.0` showed them: a no-break space and an em space around `cl
 G.11 gives no reading of a list header's elements, and E.5 no trim of spaces and tabs, so it is line 34. The fix waits for the floor's rise and is the plan's: no release is made on floor 0.10, so a fix written now over 0.10.0's library would ship nowhere and be written again on `String.toAsciiLower`.
 
 **A head in pieces.** *The hostile inputs' tests* says that none of Ernest's tests held a head in pieces or the deadline over a head that trickles. Ernest's search had missed them: `Http`'s own cases held a head in two writes, a head split anywhere, and a head that never ends though bytes keep coming, and two tests were added (Ernest's log, *A Head in Pieces, Tested*). The test here of a head that trickles stays, since it holds §6's 408 and its line.
+
+
+## Line 34 answered
+
+*2026-11-19.* Ernest's session answered line 34 the day it was written, as its feedback 267, built at its commit `2baf7eb7` and in no archive yet (Ernest's log, *A List Header's Elements*, 2026-11-19). The line stays until the archive of the floor's rise is installed and a probe holds the verdict.
+
+G.11 gains `Http.elements : (List(Header), String) -> List(String)`, the elements of every value under the name as one list in order: each value parted at its commas, an element without the spaces and tabs around it and otherwise as written, an empty element dropped. E.5 gains no trim, since spaces and tabs are HTTP's white space and E.0's rule 2 keeps text's vocabulary to text. The line's three headers are tests of `Http` there.
+
+Two things go past the ask, and neither moves the program. An element comes as written, since whether case counts is its header's, so the two readings here compare with `String.toAsciiLower`. A comma within a quoted string does not part, and `Connection` and `Upgrade` hold tokens alone. So the plan's paragraph names the one outcome: each `lists` becomes `Http.elements` and a comparison in ASCII case, and the program writes no trim.
