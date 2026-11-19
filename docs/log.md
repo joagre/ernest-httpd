@@ -733,3 +733,14 @@ Two things go past the ask, and neither moves the program. An element comes as w
 *2026-11-19.* `CLAUDE.md` is the template's `v0.10.20`'s, tagged on `ed0716d`, but for its title and the sentence under it. The tag changes that file alone of those a copy takes since `v0.10.19`, and this copy had no difference of its own.
 
 *Before code* gains a rule: an item is read against the items left when it is written. Before an item is written into the plan, moved or changed there, the plan is searched for each section, file and name the item names. Each item left that names the same is read beside it: whether one needs what the other shows, builds or decides, whether both write one sentence, and whether a condition one states of the other can still be met. The item's paragraph names each item it follows, with the reason (the template's log, *An item read against the items left*).
+
+
+## The rise's items read against the items left
+
+*2026-11-19.* The template's v0.10.20 has an item read against the items left when it is written. The three paragraphs that *The floor's rise* took on 2026-11-18 and 2026-11-19 were written before the rule, so they were read against the plan's other items then. Two seams showed, and the plan names both.
+
+Item 5 has the unit installed again for a stop time of 130 seconds, and the rise measures §13's 85 seconds again. Ernest's session reads its own log as saying that no socket holds a job's end since its 266, so the 85 seconds would be the time of a loss alone; it did not run it. So item 5 names the time as the rise leaves it, and no number the rise may change.
+
+The decision whether the end waits for a response's last bytes needs what a program can wait on. Ernest's item for lines 31 and 32 took that as a third question on 2026-11-19 (Ernest's log, *What a Program Can Wait On Before Its End*). So the decision follows that answer where it has come. Where the rise comes first, the library gives nothing to wait on, the decision is made on the probe alone, and it is opened again with the answer. An end that waits adds to §13's sum, so the measurement of the 85 seconds follows the decision.
+
+*ASCII case* meets item 5 at design §11 and at no seam: it changes how the handshake compares a token, and §11's messages stay as Ernest's site speaks them.
