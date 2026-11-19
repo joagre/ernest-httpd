@@ -705,3 +705,16 @@ Design §2's end waits for each connection to end, and not for its bytes to be t
 **The 85 seconds.** Ernest's checkout lost a silent peer 84.7 to 84.9 seconds after it stopped, in four runs of four, so §13's rule is expected to stand at 85 and the unit at 130. The rise measures it on the archive all the same, since the verdict changed what a node's end waits for and the unit's time rests on the number.
 
 Two more things came with the first message, and nothing here rests on either. `ern stop` no longer says that no node ran of a node in its halt, at Ernest's `9831ac38`. A node there needs Linux 5.3 or later and refuses to start without it. The machine runs Debian 13. The visitor's container starts its two nodes under podman's default system call filter, which the smoke test's shell check tries at the switch.
+
+
+## ASCII case and a head in pieces
+
+*2026-11-19.* Ernest's session told that `Http` in its checkout, toward 0.11.0, compares a transfer coding and a header's name in ASCII case and trims spaces and tabs alone, and that the library gains `String.toAsciiLower` (Ernest's log, *G.11 States What a Client Sends* and *An ASCII Case in the Library*). The body's reading does not reach the server, which answers 413 to any `Transfer-Encoding` and to a `Content-Length` above 0 (§6).
+
+The program compares as `Http` did. A search of `src/` gives six sites of `String.toLower` over protocol text: the `Host` in `Hosts`, the redirect hosts and the `headers` names in `Config`, a header's name and the upgrade's tokens in `Shell`, and the `Connection` tokens in `Connection`. Four fold text a check has held to ASCII before: a host is `Uri.parseAuthority`'s, and a header's name a token. The two `lists` fold and trim a header's value as the client wrote it.
+
+A probe on `ern 0.10.0` showed them: a no-break space and an em space around `close` are trimmed, and a Kelvin sign passes for the `k` of `keep-alive` and of `websocket`. Nobody gains by it, so it is a robustness fix, one guard at the cause, and no defense. RFC 9110 has ASCII case and spaces and tabs, and a reader who knows HTTP predicts them (principle 1).
+
+G.11 gives no reading of a list header's elements, and E.5 no trim of spaces and tabs, so it is line 34. The fix waits for the floor's rise and is the plan's: no release is made on floor 0.10, so a fix written now over 0.10.0's library would ship nowhere and be written again on `String.toAsciiLower`.
+
+**A head in pieces.** *The hostile inputs' tests* says that none of Ernest's tests held a head in pieces or the deadline over a head that trickles. Ernest's search had missed them: `Http`'s own cases held a head in two writes, a head split anywhere, and a head that never ends though bytes keep coming, and two tests were added (Ernest's log, *A Head in Pieces, Tested*). The test here of a head that trickles stays, since it holds §6's 408 and its line.
