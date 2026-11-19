@@ -744,3 +744,9 @@ Item 5 has the unit installed again for a stop time of 130 seconds, and the rise
 The decision whether the end waits for a response's last bytes needs what a program can wait on. Ernest's item for lines 31 and 32 took that as a third question on 2026-11-19 (Ernest's log, *What a Program Can Wait On Before Its End*). So the decision follows that answer where it has come. Where the rise comes first, the library gives nothing to wait on, the decision is made on the probe alone, and it is opened again with the answer. An end that waits adds to §13's sum, so the measurement of the 85 seconds follows the decision.
 
 *ASCII case* meets item 5 at design §11 and at no seam: it changes how the handshake compares a token, and §11's messages stay as Ernest's site speaks them.
+
+## The template's v0.10.21
+
+*2026-11-19.* `docs/agents.md` is the template's `v0.10.21`'s, tagged on `6396318`. The tag changes that file alone of those a copy takes since `v0.10.20`, and this copy had no difference of its own.
+
+*The brief* gains a sentence. A brief sorts its agent's runs: a race's probe and a run whose time is measured are bound by the processor and run one at a time, and a run that only waits, a test that fails by running out its deadline among them, goes side by side (the template's log, *A brief sorts its runs*).
