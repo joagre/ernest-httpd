@@ -31,7 +31,7 @@ A reader's letter names its findings: C12 is the code reader's twelfth.
   "Report defects, every section of the design the code does not keep, code that no section states, comments that no longer hold, code that could be shorter and clearer, every name that does not say what its value or its work is, every `foreign fn` whose work Ernest could do, and every test that would pass with what it tests broken."
 - **D, the documents reader.** Reads every tracked Markdown document but the log and the proposals.
 
-  "Read each document against the design and the code it describes. Report every statement that is false or stale, every fact restated outside its owner or owned by no document (`CLAUDE.md`'s *Who owns each fact*), and every list that lives in two places."
+  "Read each document against the design and the code it describes. Report every statement that is false or stale, every fact restated outside its owner or owned by no document (`CLAUDE.md`'s *Where a fact lives*), and every list that lives in two places."
 - **S, the security reader**, where the program takes input from a party other than whoever runs it: a socket, a request, a file another wrote. Reads the code that input reaches, with the design's sections for it.
 
   "Report each place where untrusted input reaches something it should not, with an input that shows it." Real exposures stand apart from hardening.
@@ -45,9 +45,9 @@ A copy of the template adds below these the readers its program alone needs, and
 ## The findings
 
 - The lists become `findings.md` beside this file, a line per finding, each naming its reader's letter and number. Each reader's whole list is kept below the lines, since a line is too short to fix from.
-- What a reader found of Ernest's becomes lines of `language_feedback.md`, carried to Ernest as `CLAUDE.md`'s *Defects and gaps* says.
-- A finding against what the template gives, `CLAUDE.md`, `docs/agents.md`, `tools/docs.ern` or this file, goes to the template, as `CLAUDE.md`'s *The repository* says of a rule.
+- What a reader found of Ernest's becomes lines of `language_feedback.md`, carried to Ernest as `CLAUDE.md`'s *The work* says.
+- A finding against what the template gives, `CLAUDE.md`, `docs/agents.md`, `tools/docs.ern` or this file, goes to the template, as `CLAUDE.md`'s *What is the user's* says of a rule.
 - Every other line is sorted before anything is built. A defect is fixed or planned in a milestone; clarity is fixed where it is cheap, and otherwise dropped. A line stands in `findings.md` until it is done, dropped or planned, and the commit messages say which.
-- A fix that is a sentence is the session's, and one that is code or a test an agent's, as `CLAUDE.md`'s *The repository* has it. An agent runs the program or the command a finding gives before it makes the fix, and hands back a line whose program does not show the defect.
-- A decision among the lines is argued as `CLAUDE.md`'s *Before code* says. A name a reader lists is decided after the word is searched across the design, the code and the pages, never from its module alone.
+- A fix that is a sentence is the session's, and one that is code or a test an agent's, as `CLAUDE.md`'s *The work* has it. An agent runs the program or the command a finding gives before it makes the fix, and hands back a line whose program does not show the defect.
+- A decision among the lines is argued as `CLAUDE.md`'s *Who decides* says. A name a reader lists is decided after the word is searched across the design, the code and the pages, never from its module alone.
 - The log gains an entry for the review: its date and commit, and how many findings took each decision.

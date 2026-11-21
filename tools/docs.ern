@@ -30,7 +30,7 @@
 // and the program ends with status 1. Where the README is not tracked,
 // nothing is held.
 //
-// The design's sections are held both ways, as CLAUDE.md's *Tests* asks. A
+// The design's sections are held both ways, as CLAUDE.md's *The work* asks. A
 // section is a heading of docs/design.md, `## n. Title`; a citation is a
 // `§n` after the word design in a comment of a tracked module under src/,
 // test/ or examples/, `design §9`, or after a citation and its comma,

@@ -822,3 +822,14 @@ A first draft had a close of a socket never written to answer at once. Its key w
 **What the tests may meet.** Ernest's session notes that a process that writes, closes and only then tells its far end to read now waits on itself until the bytes are dropped. The test run on the rise's archive shows whether a test here does.
 
 **Line 35.** It is Ernest's feedback 270, planned as its MVP 4.5's item 158, after the launch, on the reason that E.18 is true as it stands and a kill does what 0.10.0's close did. So the rise decides the close at a write past its deadline without it.
+
+## The template's v0.10.22
+
+*2026-11-21.* `CLAUDE.md`, `docs/agents.md` and `tools/docs.ern` are the template's `v0.10.22`'s, tagged on `80c34d5`, written here by Ernest's session on the user's word. This copy had no difference of its own in them but the file's title and the sentence under it.
+
+`CLAUDE.md` is cut again, from Ernest's short file: what is the user's, who decides and what the user wants of the program, about 1,500 words where it was 4,900. It keeps facts and the questions asked once before work starts, and drops what is done at every act. A mistake adds no rule to it (the template's log, *The short rules*).
+
+New in it: whether a first user meets an item is asked when the item is written and before it starts; a corner that only a built program meets is a line of `known_issues.md` under `docs/`, begun at its first line, and becomes an item when the user takes it up; what a reading shows to be deterministic is verified once; a question about what Ernest or the code does is the session's own.
+
+`docs/agents.md` says that an agent's report comes back as its answer and that a question is no diagnosis. `docs/full_review.md`, `docs/release.md` and `docs/README.md` name the file's new sections, and a comment of `tools/docs.ern` does. What this repository's own pages and comments cite of the old sections is left to its session.
+

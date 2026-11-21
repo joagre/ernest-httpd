@@ -10,7 +10,8 @@ What each document of this repository is. [`README.md`](../README.md) says what 
 - **[`agents.md`](agents.md)**: how a session works with its agents: the brief, an agent's report, what is checked before and after, and the model each job gets.
 - **[`examples/README.md`](../examples/README.md)**: the example site, what it shows and how it is run.
 - **[`deploy/README.md`](../deploy/README.md)**: the deployment, the operator's steps in their order.
-- **`language_feedback.md`**, under `docs/` from its first line and gone when it is empty: what writing Ernest felt against the principles, a queue, carried to Ernest as `CLAUDE.md`'s *Defects and gaps* says.
+- **`language_feedback.md`**, under `docs/` from its first line and gone when it is empty: what writing Ernest felt against the principles, a queue, carried to Ernest as `CLAUDE.md`'s *The work* says.
+- **`known_issues.md`**, from its first line: what is known to be wrong or missing and not planned, a line each, until the user takes one up.
 - **`findings.md`**, while a review's findings are open: the findings, a line each.
 - **`proposals/`**: what is designed, a directory for each with its README saying what its files are and which is current; a proposal is tentative until it is decided, and a built one stays as the record of its design until its milestone's reading and sweep.
 - **[`CLAUDE.md`](../CLAUDE.md)**: the working rules.
