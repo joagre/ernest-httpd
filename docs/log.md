@@ -784,3 +784,11 @@ A connection closes after a response. Where the host still holds bytes, the conn
 A shell closes after its `Close` frame, and at the end every shell does, so the shells' closes stand in §13's sum.
 
 Three cases were asked of Ernest's session, for E.18 to say: the close of a TLS socket before its handshake, the close after a write that timed out, and the close after a read that answered `Left(Closed)`. The plan holds the closes as a decision of the floor's rise, brought with the times a probe measures on its archive.
+
+## A refused socket leaves nothing
+
+*2026-11-21.* Ernest's session said that a TLS socket closed untouched ends through the host's close, 5 seconds where the host waits, out of the program's sight. The listener closes such a socket where its address is past `limits.connections-per-address`. So a client past its cap might hold a descriptor of the node for 5 seconds with each connect, and run it out of the unit's 1024. A probe on `ern 0.10.0` asked it of the server itself and did not show it.
+
+The server ran with the deployment's limits, 80 connections and 16 for an address, a `tls` and a `plain` listener, and 1024 descriptors. A client held 16 connections and then connected 50 and 300 times a second for 8 seconds, sending nothing, and in one run a client hello. The node held 35 descriptors with the 16 and never more than 37. The client read each refused socket's end within 3 ms of its connect, 10 ms after a hello, on both listeners. A visitor from another address was answered 200 throughout, and `curl` in 6 ms over TLS.
+
+So no line is written. Ernest's build changes the close, so the plan's decision on the closes has the count taken again on the rise's archive.
