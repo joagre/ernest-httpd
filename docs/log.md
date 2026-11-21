@@ -792,3 +792,15 @@ Three cases were asked of Ernest's session, for E.18 to say: the close of a TLS 
 The server ran with the deployment's limits, 80 connections and 16 for an address, a `tls` and a `plain` listener, and 1024 descriptors. A client held 16 connections and then connected 50 and 300 times a second for 8 seconds, sending nothing, and in one run a client hello. The node held 35 descriptors with the 16 and never more than 37. The client read each refused socket's end within 3 ms of its connect, 10 ms after a hello, on both listeners. A visitor from another address was answered 200 throughout, and `curl` in 6 ms over TLS.
 
 So no line is written. Ernest's build changes the close, so the plan's decision on the closes has the count taken again on the rise's archive.
+
+Ernest's session corrected its sentence the same day. It had measured that process's life alone, 5.0 seconds, and neither when the far end reads its end nor when the descriptor goes; its build measures both beside 0.10.0.
+
+## Line 35: a close that drops what the host holds
+
+*2026-11-21.* The close that waits was read against the program's closes (*A close that waits*), and one of them fits neither a close nor a kill: the close at a write past its deadline. The program has given the client up there. A close that waits holds the connection's place for the wait, and a kill frees the place while the host still holds the bytes. On 0.10.0 the close answers at once, which is the kill's case.
+
+A probe on `ern 0.10.0` over the server showed what that leaves. A client asked for a 1 MiB file 33 times and read nothing, with `timeouts.write` at 2000. Its place was free 2.1 s after the request. Reading nothing, it was reset 5.0 s later; reading everything, it received 4.00 MiB; reading 256 kB every 3 s, it received them over 54 s. One that read 64 kB every 4 s was reset after 12 s, so a trickle must open the window to count as a take.
+
+With 16 connections allowed, three waves of 16 such clients were each answered whole, and the node went from 107 MiB resident to 225, with 32 descriptors beyond its own. So the bytes stand in no cap, and §13 sizes the machine by the caps. The exposure on the site is smaller, its largest file 0.32 MiB against the probe's 1 MiB, and the bound is E.18's.
+
+Line 35 asks Ernest for a function of `Tcp` that ends a socket at once and drops what its host holds (principle 1: a reader predicts that a connection closed at its deadline is sent nothing more). Ernest's session had named it a function the library lacks. Ernest cannot express it over what the library has, so nothing is written here, and the plan's decision on the closes holds what waits on it.
