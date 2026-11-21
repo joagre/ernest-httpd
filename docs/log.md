@@ -804,3 +804,21 @@ A probe on `ern 0.10.0` over the server showed what that leaves. A client asked 
 With 16 connections allowed, three waves of 16 such clients were each answered whole, and the node went from 107 MiB resident to 225, with 32 descriptors beyond its own. So the bytes stand in no cap, and §13 sizes the machine by the caps. The exposure on the site is smaller, its largest file 0.32 MiB against the probe's 1 MiB, and the bound is E.18's.
 
 Line 35 asks Ernest for a function of `Tcp` that ends a socket at once and drops what its host holds (principle 1: a reader predicts that a connection closed at its deadline is sent nothing more). Ernest's session had named it a function the library lacks. Ernest cannot express it over what the library has, so nothing is written here, and the plan's decision on the closes holds what waits on it.
+
+## The close as E.18 has it
+
+*2026-11-21.* Ernest's session closed its item for lines 31 and 32 and the close, and made an archive of 0.11.0 from its commit `f8e17816`, the close at `5d1f13c3`. The archive is not installed: the floor rises with the reviews (*The floor at the reviews*). The lines stay until a probe on the rise's archive holds each verdict.
+
+**The rule.** E.18 reads: "`close` answers once the socket's bytes and, over TLS, the record that ends the connection are with the kernel, or the bytes are dropped, as below. Where the socket had ended already, by another close, a kill or its owner's death, or its handshake over TLS has not ended, it answers at once. It waits as `closeListener` does and takes no milliseconds: the bound below ends its wait, at most 3 minutes, and 10 seconds more over TLS. A program learns that the far end took what it wrote only from what the far end sends back."
+
+A first draft had a close of a socket never written to answer at once. Its key was the socket's history, which the closing line does not show: `Connection`'s close at the idle deadline would have answered at once before the first response and waited after one. Its reason was TCP's, where it changed nothing, since over TLS the wait it lifted was for the far end's record. The rule decided never waits for the far end's answer, and its one clause turns on the connection's state: a handshake that has not ended has no bytes and no record to write.
+
+**Line 31 over TLS.** The record that ends the connection is now written once the bytes have drained, so the second goes over TLS too (Ernest's log, *The Close Follows the Last Byte*).
+
+**Ernest's numbers, in its built tree.** A close of a TLS socket whose handshake has not ended answers in 0.3 to 0.5 ms: a client that sent nothing, one that sent its hello, and a handshake paused after the server's hello, over TLS 1.2 and 1.3. A close after a write that timed out waits 5.0 s over TCP and 15.0 s over TLS. A close after the far end has gone answers in under a millisecond. So the listener's three closes stay closes, and the close at a write past its deadline is the one that waits where the program has nothing to wait for.
+
+**A paused handshake on 0.10.0.** Ernest's session found that on 0.10.0 a socket ended while a TLS 1.3 handshake is paused after the server's hello, the client holding its connection, lives 5 seconds, and its module held 1,534 descriptors under 300 such clients a second. The probe of *A refused socket leaves nothing* was run again at 300 connects a second, each client sending its hello and holding: the node held 38 descriptors at most. The listener refuses a socket before any read runs its handshake. A connection within the caps can reach that state. By a reading that was not probed, it then leaves its descriptor 5 seconds past its idle deadline of 15, a third more than the caps count at most. The rise ends it, so nothing is planned.
+
+**What the tests may meet.** Ernest's session notes that a process that writes, closes and only then tells its far end to read now waits on itself until the bytes are dropped. The test run on the rise's archive shows whether a test here does.
+
+**Line 35.** It is Ernest's feedback 270, planned as its MVP 4.5's item 158, after the launch, on the reason that E.18 is true as it stands and a kill does what 0.10.0's close did. So the rise decides the close at a write past its deadline without it.
