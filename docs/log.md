@@ -750,3 +750,19 @@ The decision whether the end waits for a response's last bytes needs what a prog
 *2026-11-19.* `docs/agents.md` is the template's `v0.10.21`'s, tagged on `6396318`. The tag changes that file alone of those a copy takes since `v0.10.20`, and this copy had no difference of its own.
 
 *The brief* gains a sentence. A brief sorts its agent's runs: a race's probe and a run whose time is measured are bound by the processor and run one at a time, and a run that only waits, a test that fails by running out its deadline among them, goes side by side (the template's log, *A brief sorts its runs*).
+
+## Lines 31 and 32 answered
+
+*2026-11-21.* Ernest's session answered lines 31 and 32 by a message, as its feedback 262 and 263, decided at its commit `1375b912` and in no archive yet (Ernest's log, *The Close Follows the Last Byte* and *A Failed Write Loses What Had Arrived*, both 2026-11-21). Each line stays until the archive of the floor's rise is installed and a probe holds its verdict.
+
+**Line 31.** The second was Ernest's own: the process a socket makes as it ends looked once a second at what the host held. Over TCP a socket that ends while the host holds bytes now shuts down its writing side, and the far end reads the close straight after the last byte. Over TLS nothing changes, and E.18 says so. The host's shutdown writes no closing record, which a strict client reads as a connection cut short, so the close comes with its record up to a second after the last byte.
+
+**Line 32.** E.18 gains a narrower sentence, and Ernest no mechanism. The bytes are in the kernel's buffer when the write fails; the host's driver closes its descriptor at a failed send, and no option of the host's keeps them. So E.18 excepts a write answered `Left(Closed)` from "what had arrived is read first". That a read after the far end's close answers what had arrived was already E.18's on Ernest's checkout. Over TLS Ernest's probe lost nothing, since nothing was reset.
+
+**What it gives the tests.** The tests of a write past its deadline run over TCP, where the close will follow the last byte, so each can read to the close without a second's wait. The loss of line 32 is the client's, in Ernest's own socket at its failed write, so the trickle's test holds the 408's bytes with a client that reads before it writes again. Both need the archive, so the step stands under the floor's rise in the plan.
+
+**The server.** Ernest's session names what a server can do: read what the client still sends until it closes or a time passes, and close then. *The hostile inputs' tests* weighed a refusal written while its client still writes and left it, on `curl` answered 413 five times of five. The answer adds nothing to that weighing: the server's part is the reset, which was known, and the loss shown is in a client written in Ernest.
+
+**Still open at Ernest.** What a program can wait on before it ends. Ernest's probe writes 8 MiB in one write, closes and returns, and a slow far end receives 2.6 MB and then an orderly close. Ernest means to end the cut, by a `Tcp.close` that answers once the host's socket has closed or by an end that waits for the sockets the program closed, and has not decided which. The plan's decision on the end and a response's last bytes follows that answer, not these two.
+
+`Tcp.close` answers before the host's socket has closed, and one of Ernest's probes in five raced on it. The six closes of a client's socket in the tests of `Connection` and `Shell` and in the smoke test were read: each is followed by a wait on what the server tells or by nothing, and none acts on the close.
