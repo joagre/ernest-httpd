@@ -766,3 +766,21 @@ The decision whether the end waits for a response's last bytes needs what a prog
 **Still open at Ernest.** What a program can wait on before it ends. Ernest's probe writes 8 MiB in one write, closes and returns, and a slow far end receives 2.6 MB and then an orderly close. Ernest means to end the cut, by a `Tcp.close` that answers once the host's socket has closed or by an end that waits for the sockets the program closed, and has not decided which. The plan's decision on the end and a response's last bytes follows that answer, not these two.
 
 `Tcp.close` answers before the host's socket has closed, and one of Ernest's probes in five raced on it. The six closes of a client's socket in the tests of `Connection` and `Shell` and in the smoke test were read: each is followed by a wait on what the server tells or by nothing, and none acts on the close.
+
+## A close that waits
+
+*2026-11-21.* Ernest's session decided the question *Lines 31 and 32 answered* left open, by a second message the same day. It is being built and not committed (Ernest's log, *A Close Answers Once Its Bytes Are Sent*, 2026-11-21; E.18, E.0's shape rule 8 and the guide's §8.7).
+
+`Tcp.close` answers only once the socket's bytes are with the kernel or dropped and the host's close has returned. It takes no time of its own: E.18's bound ends the wait, 5 seconds after the far end's last take or 3 minutes after the close, and up to 10 seconds more over TLS. A socket whose host holds nothing closes as fast as before over TCP. Over TLS a close waits up to 5 seconds against a far end that reads everything and neither answers the closing record nor closes, and 15 against one that takes nothing. A process that must not wait kills the socket, whose bytes are then sent as before while the program runs. E.18 also says that only what the far end sends back tells a program its bytes were taken: the close's answer says that the kernel has them.
+
+**What it gives.** A program that writes, closes and ends no longer cuts what the host held. So the end can wait for a response's last bytes by waiting for the close, and the plan's decision on the end has its mechanism.
+
+**What it meets here.** The program closes a socket in three kinds of place, and each is a decision.
+
+The listener closes an accepted socket untouched, in three places, and §7 has it wait on its mailbox alone. Over TCP such a close answers as before. Over TLS it may wait, if a socket whose handshake has not run writes a closing record. Then the client the cap for an address is against would hold every accept for the wait.
+
+A connection closes after a response. Where the host still holds bytes, the connection's process now lives until they drain, so it counts against the caps while it does. It has told `ResponseWritten` by then, so the end, which ends each connection that is not serving, would end it mid-close and cut the bytes again. A connection also closes at a write past its deadline, where the client has shown that it takes nothing and the wait is the bound's 5 seconds or 15.
+
+A shell closes after its `Close` frame, and at the end every shell does, so the shells' closes stand in §13's sum.
+
+Three cases were asked of Ernest's session, for E.18 to say: the close of a TLS socket before its handshake, the close after a write that timed out, and the close after a read that answered `Left(Closed)`. The plan holds the closes as a decision of the floor's rise, brought with the times a probe measures on its archive.
