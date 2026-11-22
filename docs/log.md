@@ -833,3 +833,9 @@ New in it: whether a first user meets an item is asked when the item is written 
 
 `docs/agents.md` says that an agent's report comes back as its answer and that a question is no diagnosis. `docs/full_review.md`, `docs/release.md` and `docs/README.md` name the file's new sections, and a comment of `tools/docs.ern` does. What this repository's own pages and comments cite of the old sections is left to its session.
 
+
+## A digest in lower case
+
+*2026-11-22.* Ernest's session sent word that from 0.11.0 `Bytes.toHex` writes lower-case letters: E.20's line reads "two hexadecimal digits an octet, with lower-case letters", `Bytes.fromHex` reads either case, and `Int.toStringBase` still writes upper case. It is Ernest's commit `507bd2d0`, deciding its own feedback 273, and no archive holds it yet. It answers no line of this repository's.
+
+On 0.10.0 nothing changes. With the rise, three places of the program meet it. The access log's `\x` escape takes `String.toAsciiUpper`, since design §9 has two upper-case digits, so the design does not change and its test at `src/access_log.ern` holds `\xC3\xA9\x01\x7F` as before. The cookie of `src/shell.ern`, which §11 has in lower case, drops its `String.toLower`. The doc examples of `src/web_socket.ern` that show a frame in hexadecimal take lower-case letters. The plan's *The floor's rise* names the three, so the rise meets them by plan and not by a failing test, and a reader of the log meets the escape of every line before. Principle 1, least surprise.
