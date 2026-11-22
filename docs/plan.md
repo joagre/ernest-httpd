@@ -26,7 +26,7 @@ Done from the reviews from outside: the hostile inputs' tests, the log's *Three 
 
 Two changes come with the rise. `Process.Calling` takes named fields, so the session's tests ask a helper's activity by a pattern and not by equality. `Http.target` reads a target a browser sends raw, percent-encoding `[`, `]`, `{`, `}` and the rest of G.11's set, so the server serves `GET /?a[]=1` and `GET /a[b]`: design §5's *The path* changes first where its rule moves, and the test that refuses a bad path with 400 holds what it now answers. Nothing of the program waits on line 28 or line 30 (the log's *Milestone 2, item 8: the listener's retry* and *The shell's reader asked*).
 
-`Bytes.toHex` writes lower case with the rise, so the access log's `\x` escape takes `String.toAsciiUpper`, which design §9 keeps upper case, the cookie of `src/shell.ern` drops its `String.toLower`, and the frames of `src/web_socket.ern`'s doc examples take lower-case letters (the log's *A digest in lower case*).
+`Bytes.toHex` writes lower case with the rise, so the access log's `\x` escape takes `String.toAsciiUpper`, which design §8 keeps upper case, the cookie of `src/shell.ern` drops its `String.toLower`, and the frames of `src/web_socket.ern`'s doc examples take lower-case letters (the log's *A digest in lower case*).
 
 Two measurements come with it, on the same archive (the log's *Line 33 answered*). The first is of the server's stop. Line 33's answer has the job halt without the host's flush, so the bytes a socket still holds at the program's end are dropped. A probe stops the server while a slow client is mid-response, on the site's largest file, and tells what the client receives. Design §2's *The end* then gains the sentence that says it.
 
