@@ -16,7 +16,7 @@ It does not run while `findings.md` stands, a release's findings or a review's.
 - A reader edits nothing in the repository. It builds and tries the program in a clone of the commit, in a scratch directory of its own, with the `ern` the Makefile names.
 - The readers read one commit, which the findings name, and run side by side.
 - Each reader hands in a numbered list, most serious first. A finding gives its place, a file and line or a section; a short quote; what is wrong; a program or a command that shows it, where there is one; and a one-line fix. Defects stand apart from matters of clarity.
-- What a reader finds of Ernest's, and not of the program's, stands apart from both: a page of the installation that is opaque or silent, a message it did not understand, a refusal, a defect of the toolchain, and each place the language made the code harder than it should be, as `CLAUDE.md`'s *Defects and gaps* lists them: a workaround, a second way, something invisible, a function the library lacks, and a form the code repeats at site after site, with its count.
+- What a reader finds of Ernest's, and not of the program's, stands apart from both: a page of the installation that is opaque or silent, a message it did not understand, a refusal, a defect of the toolchain, and each place the language made the code harder than it should be: a workaround, a second way, something invisible, a function the library lacks, and a form the code repeats at site after site, with its count.
 - A reader hands its list back as text and writes it to a file under the review's session's scratchpad, as [`agents.md`](agents.md) says of an agent.
 
 ## The readers

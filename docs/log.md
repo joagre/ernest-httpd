@@ -847,3 +847,7 @@ On 0.10.0 nothing changes. With the rise, three places of the program meet it. T
 In the rehearsal alone, Ernest's session wrote the site of that tree to `/home/httpd/rehearsal/ernest-httpd/site`, the site before it kept beside it as `site.before-item2`, and walked the panel there in a headless Chrome against this repository's client and shell: the five numbers, a session started and typed into, a resize, a second tab's takeover, Stop, the warning at four minutes, Extend and the expiry. Each behaved as design §14, *The client*, says. "Unavailable" was not reached, to spare the rehearsal's starts. The live site was not touched.
 
 So nothing of Ernest's side waits on this repository but the launch's switch, and the plan's *Where we are* and item 5 say so.
+
+## The template's v0.10.23
+
+*2026-11-22.* `docs/agents.md` is the template's `v0.10.23`'s, tagged on `4f94fa6`, and `docs/full_review.md` is too but for the reader L this copy adds. The two cited sections of `CLAUDE.md` that v0.10.22 dropped: *The brief*'s run of items is now where the user has said to go on, and what a reader reports of Ernest's is listed in place of *Defects and gaps*. `CLAUDE.md` and `tools/docs.ern` do not change. The same commit of the template fixed two files a copy does not take whole, and this copy had both faults: `.gitignore` has `*.swp` where it had `.swp`, and `docs/README.md` lists `CHANGES.md` and has `proposals/` as what is designed and not decided.

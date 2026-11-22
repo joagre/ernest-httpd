@@ -5,6 +5,7 @@ What each document of this repository is. [`README.md`](../README.md) says what 
 - **[`design.md`](design.md)**: how the program is arranged, the normative document of this repository, and the glossary of its names.
 - **[`plan.md`](plan.md)**: where the program stands and what comes next.
 - **[`log.md`](log.md)**: the dated rationale, never normative.
+- **[`CHANGES.md`](../CHANGES.md)**: each release's note, newest first.
 - **[`release.md`](release.md)**: what a release runs to be ready.
 - **[`full_review.md`](full_review.md)**: what a review of the whole repository runs, on the user's word alone.
 - **[`agents.md`](agents.md)**: how a session works with its agents: the brief, an agent's report, what is checked before and after, and the model each job gets.
@@ -13,5 +14,5 @@ What each document of this repository is. [`README.md`](../README.md) says what 
 - **`language_feedback.md`**, under `docs/` from its first line and gone when it is empty: what writing Ernest felt against the principles, a queue, carried to Ernest as `CLAUDE.md`'s *The work* says.
 - **`known_issues.md`**, from its first line: what is known to be wrong or missing and not planned, a line each, until the user takes one up.
 - **`findings.md`**, while a review's findings are open: the findings, a line each.
-- **`proposals/`**: what is designed, a directory for each with its README saying what its files are and which is current; a proposal is tentative until it is decided, and a built one stays as the record of its design until its milestone's reading and sweep.
+- **`proposals/`**: what is designed and not decided, a directory for each proposal, from the first one on.
 - **[`CLAUDE.md`](../CLAUDE.md)**: the working rules.
