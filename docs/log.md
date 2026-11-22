@@ -855,3 +855,7 @@ So nothing of Ernest's side waits on this repository but the launch's switch, an
 ## Reader L reads the client
 
 *2026-11-22.* The review's reader L, this copy's own, read design §10 to §13 and the shell's modules but not §14 or `src/client.ern`. Since Ernest's MVP 4.6 the site reaches a session through the client alone, at `/shell/client.js`, so the client is part of what a visitor's session stands on, and L reads it too.
+
+## The template's v0.10.24
+
+*2026-11-22.* `tools/docs.ern` is the template's `v0.10.24`'s, tagged on `7554df5`, written here by Ernest's session on the user's word. It names the file of a list item's paragraph past the measure that a line at or before the item's indentation ends, where it named none, and its test `readsItems` compares the file beside the line (the template's log, *A long item's file*). Nothing else changes.

@@ -290,18 +290,18 @@ fn read(file : String, reading : Reading, line : String) : Reading =
     else if String.isEmpty(String.trim(line)) then
         ended(file, reading)
     else if isItem(line) then
-        counted(Reading(..ended(file, reading), item = true), line)
+        counted(file, Reading(..ended(file, reading), item = true), line)
     else
-        counted(reading, line)
+        counted(file, reading, line)
 
 // The line's words added to the paragraph, which it begins where none is
 // begun, or where it stands at or before a list item's indentation.
-fn counted(reading : Reading, line : String) : Reading = {
+fn counted(file : String, reading : Reading, line : String) : Reading = {
     let indent = indentation(line);
     let begun = if reading.words == 0 then
         Reading(..reading, start = reading.line, first = line, =indent, skip = isUnmeasured(line))
     else if reading.item && indent <= reading.indent then
-        Reading(..ended("", reading), start = reading.line, first = line, =indent, skip = false)
+        Reading(..ended(file, reading), start = reading.line, first = line, =indent, skip = false)
     else
         reading;
     Reading(..begun, words = begun.words + List.size(String.words(line)))
@@ -872,7 +872,9 @@ let leavesUnmeasured =
 /// where its lines stop being indented past it.
 let readsItems = Test.Case(name = "reads a list item as a paragraph", run = fn() = {
     let text = "- " <> pastMeasure <> "\n- short\n  " <> pastMeasure <> "\nplain after\n";
-    Test.equal(List.map(paragraphsOf("f.md", text), fn(paragraph) = paragraph.line), [1, 2])
+    Test.equal(List.map(paragraphsOf("f.md", text),
+                        fn(paragraph) = #(paragraph.file, paragraph.line)),
+               [#("f.md", 1), #("f.md", 2)])
 })
 
 /// A backticked path under a top is found outside fenced code; one with a
