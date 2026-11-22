@@ -851,3 +851,7 @@ So nothing of Ernest's side waits on this repository but the launch's switch, an
 ## The template's v0.10.23
 
 *2026-11-22.* `docs/agents.md` is the template's `v0.10.23`'s, tagged on `4f94fa6`, and `docs/full_review.md` is too but for the reader L this copy adds. The two cited sections of `CLAUDE.md` that v0.10.22 dropped: *The brief*'s run of items is now where the user has said to go on, and what a reader reports of Ernest's is listed in place of *Defects and gaps*. `CLAUDE.md` and `tools/docs.ern` do not change. The same commit of the template fixed two files a copy does not take whole, and this copy had both faults: `.gitignore` has `*.swp` where it had `.swp`, and `docs/README.md` lists `CHANGES.md` and has `proposals/` as what is designed and not decided.
+
+## Reader L reads the client
+
+*2026-11-22.* The review's reader L, this copy's own, read design §10 to §13 and the shell's modules but not §14 or `src/client.ern`. Since Ernest's MVP 4.6 the site reaches a session through the client alone, at `/shell/client.js`, so the client is part of what a visitor's session stands on, and L reads it too.
