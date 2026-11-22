@@ -859,3 +859,7 @@ So nothing of Ernest's side waits on this repository but the launch's switch, an
 ## The template's v0.10.24
 
 *2026-11-22.* `tools/docs.ern` is the template's `v0.10.24`'s, tagged on `7554df5`, written here by Ernest's session on the user's word. It names the file of a list item's paragraph past the measure that a line at or before the item's indentation ends, where it named none, and its test `readsItems` compares the file beside the line (the template's log, *A long item's file*). Nothing else changes.
+
+## Two clauses that cannot run
+
+*2026-11-22.* Ernest's session counted the clauses of this repository that cannot run, at `a0d1195`, for its feedback 274, and found 18 of a default or a clause for a case the value's shape rules out. Two were the program's own, which no type forced, and they go. The test `endsWithCodes` of `src/session.ern` took an `Optional(SessionMsg)` and matched a `None` that neither call passed, so it takes a `SessionMsg` and sends it. The test `upgrades` of `src/connection.ern` had a copy of the exported `Smoke.masked`, and calls Smoke's. The other 16 are what a type of Ernest's forces, and wait on Ernest's design for 274. Principle 2, one way, one job.

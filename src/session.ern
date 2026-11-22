@@ -1078,14 +1078,11 @@ let tellsTheAttachment =
 // the session's process.
 let endsWithCodes = Test.Case(name = "ends with a close code", run = fn() = {
     fn ending(command : List(String),
-              message : Optional(SessionMsg)) : #(List(String), String) receiving Seen = {
+              message : SessionMsg) : #(List(String), String) receiving Seen = {
         let session = started(command, 60000, 30000, 5000);
         send(session, Attach(shell("shell")));
         let attached = next("shell");
-        match message {
-            Some(sent) -> send(session, sent)
-          | None -> Unit
-        };
+        send(session, message);
         #(attached :: messages("shell"), sessionEnded())
     };
     let exited = {
@@ -1095,7 +1092,7 @@ let endsWithCodes = Test.Case(name = "ends with a close code", run = fn() = {
         let output = heard("shell", "bye\r\n", "");
         #([attached, output] <> messages("shell"), sessionEnded())
     };
-    Test.equal([ending(["cat"], Some(Stop)), exited, ending(["cat"], Some(End(1001)))],
+    Test.equal([ending(["cat"], Stop), exited, ending(["cat"], End(1001))],
                [#(["Attached(New)", "Ended(4004)"], "Returned"),
                 #(["Attached(New)", "bye\r\n", "Ended(4004)"], "Returned"),
                 #(["Attached(New)", "Ended(1001)"], "Returned")])

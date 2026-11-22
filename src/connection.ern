@@ -1155,10 +1155,6 @@ fn framed(client : Address(Tcp.SocketMsg),
             [Io.show(error)]
     }
 
-// A frame a client writes, masked with a key of its own.
-fn masked(message : WebSocket.Message) : Bytes =
-    Optional.withDefault(WebSocket.encodeMasked(message, Crypto.randomBytes(4)), <<>>)
-
 // design §6, §11: a request on the shell's path where the server has
 // sessions is answered as Shell.handshake says. A refusal is the error's
 // response with the refusal's headers added, closing the connection, a
@@ -1197,7 +1193,8 @@ let upgrades = Test.Case(name = "upgrades a request on the shell's path", run = 
                      header("Sec-WebSocket-Key", key),
                      header("Cookie", "shell=0123456789abcdef0123456789abcdef")]);
         let bytes =
-            Http.renderRequest(upgrade, <<>>) <> masked(WebSocket.Ping(String.toUtf8("carried")));
+            Http.renderRequest(upgrade, <<>>)
+                <> Smoke.masked(WebSocket.Ping(String.toUtf8("carried")));
         let _ <- Either.mapLeft(Tcp.write(client, bytes, 5000), Io.show);
         let #(response, rest) <-
             Either.mapLeft(Http.readResponse(client, <<>>, Http.defaultLimits, 5000), Io.show);
@@ -1205,7 +1202,7 @@ let upgrades = Test.Case(name = "upgrades a request on the shell's path", run = 
         let pong = framed(client, decoder, rest, 1);
         let _ <-
             Either.mapLeft(Tcp.write(client,
-                                     masked(WebSocket.Close(code = Some(1000), reason = "")),
+                                     Smoke.masked(WebSocket.Close(code = Some(1000), reason = "")),
                                      5000),
                            Io.show);
         let close = framed(client, decoder, <<>>, 1);
