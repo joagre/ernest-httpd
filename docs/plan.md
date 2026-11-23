@@ -24,7 +24,7 @@ Done on the archive of Ernest's MVP 4.4 reviews: the floor's rise, the log's *Th
 
 ### On Ernest's MVP 4.4 release
 
-**The full review.** The repository is reviewed whole as `docs/full_review.md` says, Ernest's MVP 4.4's item 4, in three legs, each ended by a commit and a stop for the user: the readers and their lists in `docs/findings.md`; the sort, each verdict and each fix's shape decided with the user; and the fixes and the close. Three findings stand for its file before the readers: §12's deadline sets its alarm again for a warning time already passed where the warning is more than half the lifetime, which Ernest's panel run met; a write cut short at its deadline reached its client whole on 0.11, though §6 tells it to neither the log nor the listener (the log's *The closes decided*); and `shell.path` and `shell.client`, which §4 has begin with `/` alone, are compared with a path `Http.target` encodes.
+**The full review.** The repository is reviewed whole as `docs/full_review.md` says, Ernest's MVP 4.4's item 4, in three legs, each ended by a commit and a stop for the user: the readers and their lists in `docs/findings.md`; the sort, each verdict and each fix's shape decided with the user; and the fixes and the close. The readers' lists stand in `docs/findings.md`, read at `f6bf173`, with the three findings the plan held for it, P1 to P3, and the sort is next.
 
 **Item 5, the release and the switch.** Once Ernest's release is tagged, the same week and after `ernest-template`'s release and `ernest-epx`'s, it is installed, and a release of this program is made by `docs/release.md`, its readers among it, which `make release` refuses before the tag.
 

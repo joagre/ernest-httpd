@@ -909,3 +909,13 @@ On the user's word the end does not wait for a response's last bytes, and design
 ## The silent peer on 0.11
 
 *2026-11-23.* §13's 85 seconds were measured again on the rise's archive, as in *The stop time at 85 seconds*: two nodes on the loopback, the peer's three processes stopped, and the node ended by SIGTERM. With messages sent to the peer after it stopped, output waiting for it, the node ended 84.7 and 84.8 seconds after the peer stopped, at `the peer b was lost: it fell silent`, in two runs of two. With nothing waiting it ended at 74.6 to 74.8 seconds, in four runs. Neither moves from 0.10.0, and the end of *The end does not wait* adds no wait of its own, so §13's rule, the unit's `TimeoutStopSec` of 130 and the smoke test's check stand.
+
+
+## The readers at f6bf173
+
+*2026-11-23.* The full review's five readers read `f6bf173` side by side, each in a clone of its own, as `docs/full_review.md` has them: K the cold reader, C the code, D the documents, S the security and L the live shell. They found 119 things: K 24, C 27, D 34, S 16 and L 18. With the three the plan held, P1 to P3, they stand in `docs/findings.md`, a line each, a line that repeats another naming it, and every list whole below. Twenty findings of Ernest's are lines 38 to 57 of the language feedback. Two more, S12 and S15, stand in the findings until a fix needs them. Nothing went to Ernest's session or the template's, on the user's word, and the four findings against the template's files, C2, D10, D13 and D32, stay in the findings until the user says where they go.
+
+The most serious are L1, a visitor's resizes growing the server's memory without bound, and S1 to S3 and L2 to L5. Those of the shell meet no visitor today, since `deploy/config.json` holds no shell until item 5's switch. S2's five addresses that fill a listener meet the deployed site now, and S3 meets whoever runs the example on a machine others share.
+
+The briefs gave C, S and L no word against the log, which `docs/full_review.md` keeps from a reader. S and C read in it, S1 citing the decision of 2026-10-27 and C10 its silence, so the sort weighs those two on what each showed, not on what the log says.
+
