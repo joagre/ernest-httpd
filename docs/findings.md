@@ -8,7 +8,7 @@ What the readers found of Ernest's is lines 38 to 57 of `language_feedback.md`, 
 
 ### The plan's
 
-- **P1.** §12's deadline sets its alarm again for a warning time already passed where the warning is more than half the lifetime, which Ernest's panel run met. Fix in the third leg.
+- **P1.** §12's deadline sets its alarm again for a warning time already passed where the warning is more than half the lifetime, which Ernest's panel run met. Done in the third leg, on the user's word: the warning is at most half the lifetime (§4).
 - **P2.** A write cut short at its deadline reaches its client whole on 0.11, though §6 tells it to neither the log nor the listener. Done in the third leg: §6 says it holds no line, though its bytes may reach the client.
 - **P3.** `shell.path` and `shell.client`, which §4 has begin with `/` alone, are compared with a path `Http.target` encodes. Done in the third leg: §4's rule, `begin with / and hold only letters, digits and - . _ ~ ! $ & ' ( ) * + , ; = : @ /`.
 
@@ -49,13 +49,13 @@ What the readers found of Ernest's is lines 38 to 57 of `language_feedback.md`, 
 
 ### K, the cold reader
 
-- **K1.** The README's `make release` names no need of a release's `ern`, and the refusal comes after the tests. Fix in the third leg: the README's line names a release's `ern`, and the Makefile checks it first.
-- **K2.** The smoke test cannot pass against a canonical host with a port: its 301 checks expect `https://` and the host, and it dials the port twice. Fix in the third leg.
+- **K1.** The README's `make release` names no need of a release's `ern`, and the refusal comes after the tests. Done in the third leg: the README's line names a release's `ern`, and the Makefile checks it first.
+- **K2.** The smoke test cannot pass against a canonical host with a port: its 301 checks expect `https://` and the host, and it dials the port twice. Done in the third leg.
 - **K3.** `shell.origins` takes what is no origin, a path, `*`, a bare host or an empty list, and every upgrade is then a 403 with no word (§4). Done in the third leg: each `be an origin`, and the list `not be empty`.
 - **K4.** A 431 has no phrase, `HTTP/1.1 431 ` and a body of `431 ` (K20). Done in the third leg: the phrase in the program, line 41 naming it.
-- **K5.** The installed launcher does not run through a symbolic link, taking its root from the link's place. Fix in the third leg.
-- **K6.** The launcher's command line: `--config-dir` alone is the shell's `can't shift`, `--help` is read as a path, the usage line lacks `--config-dir`, and an `ern` not found is `exec: ern: not found`. Fix in the third leg.
-- **K7.** `make run` without npm's reach fails in curl's, gzip's and tar's words, and the README's first step names no fetch. Fix in the third leg.
+- **K5.** The installed launcher does not run through a symbolic link, taking its root from the link's place. Done in the third leg.
+- **K6.** The launcher's command line: `--config-dir` alone is the shell's `can't shift`, `--help` is read as a path, the usage line lacks `--config-dir`, and an `ern` not found is `exec: ern: not found`. Done in the third leg.
+- **K7.** `make run` without npm's reach fails in curl's, gzip's and tar's words, and the README's first step names no fetch. Done in the third leg.
 - **K8.** An `access-log` that names a directory passes the start, and every response then loses its line; the member named twice is C4. Done in the third leg: `access-log` must `name no directory`.
 - **K9.** A directory's 301 drops the query, where the host's 301 keeps it (§5). Done in the third leg: §5's `Location` keeps the query.
 - **K10.** `deploy/README.md` step 10 quotes `unknown user 'httpd'` where logrotate 3.22 says `unknown group 'httpd'`. Done in the third leg.
@@ -97,7 +97,7 @@ What the readers found of Ernest's is lines 38 to 57 of `language_feedback.md`, 
 - **D24.** `README.md` describes `ERL_DEPS`, `erl/`, `test/` and `THIRD_PARTY_LICENSES`, which this program has none of (K15). Done in the third leg.
 - **D25.** §13 quotes the rule `must not be empty`, which §4 writes `not be empty`. Done in the third leg.
 - **D26.** `deploy/README.md`'s "under 256 MiB" is 256 exactly, and no document owns the 0.32 MiB. Done in the third leg.
-- **D27.** The OTP release stands in `deploy/README.md` and in the Containerfile, held together by no test, and the README restates the floor. Fix in the third leg.
+- **D27.** The OTP release stands in `deploy/README.md` and in the Containerfile, held together by no test, and the README restates the floor. Done in the third leg.
 - **D28.** `deploy/README.md` step 7 does not say which file takes the member `shell`. Done in the third leg.
 - **D29.** §12 says twice that a start drops the starts older than the window. Done in the third leg.
 - **D30.** §13 and the Makefile count `assets/` among the documents' pictures, which no document shows. Done in the third leg.

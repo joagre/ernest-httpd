@@ -16,9 +16,9 @@
 /// write what it holds, and lets the end go on.
 ///
 /// The exit statuses are 2 for a command line of another count of
-/// arguments, 1 for a configuration refused and a listen that fails, a
-/// port below 1024 denied naming the capability it needs, and the signal's
-/// at the end. A listener's process that ends before the end
+/// arguments, or a word that begins with `-`, 1 for a configuration refused
+/// and a listen that fails, a port below 1024 denied naming the capability
+/// it needs, and the signal's at the end. A listener's process that ends before the end
 /// is a failure: the entry process stops the sessions and the other
 /// listeners, as at the end, says so on standard error, and exits with the
 /// status 1.
@@ -47,10 +47,10 @@ export type MainMsg = Terminated(Reply(Unit)) | ListenerEnded(Down)
 /// names, the listeners served, and the end taken in order.
 export fn main() : Unit receiving MainMsg =
     match Os.arguments {
-        [path] ->
+        [path] when !String.startsWith(path, "-") ->
             started(path)
       | _ -> {
-            Io.printlnError("usage: ernest_httpd config.json");
+            Io.printlnError("usage: ernest_httpd [--config-dir dir] config.json");
             Os.exit(2)
         }
     }
@@ -283,21 +283,19 @@ fn written(name : String, text : String) : Either(Io.Error, String) = {
 }
 
 // What a test's process takes: a run of the launcher's outcome, by the
-// index of its arguments.
+// index of its command.
 type Ran = Ran(index : Int, outcome : Either(Io.Error, Os.Finished))
 
-// The launcher run to its end with each list of arguments, the runs at
-// once, each in a process of its own, since each starts a runtime: their
-// outcomes, in the order given.
-fn ran(runs : List(List(String))) : List(Either(Io.Error, Os.Finished)) receiving Ran = {
+// The launcher's command with the arguments, from the repository's root.
+fn launcher(arguments : List(String)) : Os.Command =
+    Os.command("bin/ernest_httpd", arguments)
+
+// Each command run to its end, the runs at once, each in a process of its
+// own, since each starts a runtime: their outcomes, in the order given.
+fn ran(runs : List(Os.Command)) : List(Either(Io.Error, Os.Finished)) receiving Ran = {
     let me = self();
-    List.forEach(List.indexed(runs), fn(#(index, arguments)) = {
-        let _ =
-            spawn(fn() =
-                      send(me,
-                           Ran(=index,
-                               outcome = Os.run(Os.command("bin/ernest_httpd", arguments),
-                                                30000))));
+    List.forEach(List.indexed(runs), fn(#(index, command)) = {
+        let _ = spawn(fn() = send(me, Ran(=index, outcome = Os.run(command, 30000))));
         Unit
     });
     List.map(List.indexed(runs), fn(#(wanted, _)) = receive {
@@ -306,13 +304,25 @@ fn ran(runs : List(List(String))) : List(Either(Io.Error, Os.Finished)) receivin
     })
 }
 
+// An outcome as the tests compare it: the status, standard output and
+// standard error.
+fn compared(outcome : Either(Io.Error, Os.Finished)) : Either(Io.Error, #(Int, String, String)) =
+    Either.map(outcome, fn(finished) = {
+        let text = fn(bytes) = Optional.withDefault(String.fromUtf8(bytes), "?");
+        #(finished.status, text(finished.stdout), text(finished.stderr))
+    })
+
+// The usage line the program and its launcher refuse a command line with.
+let usage : String = "usage: ernest_httpd [--config-dir dir] config.json\n"
+
 // design §2: what the entry process refuses before it serves, each with its
 // line on standard error and nothing on standard output: a command line of
-// another count of arguments than one with the usage and the status 2; a
-// configuration that breaks a rule with the path and the reason, and the
-// status 1; and a listen that fails, its port taken, and a TLS listen whose
-// certificate's file holds none, each with the address, the port and the
-// error as Io.show writes it, the file's name and what is wrong for the
+// another count of arguments than one, or of a word that begins with `-`,
+// `--help` and `-`, with the usage and the status 2; a configuration that
+// breaks a rule with the path and the reason, and the status 1; and a
+// listen that fails, its port taken, and a TLS listen whose certificate's
+// file holds none, each with the address, the port and the error as
+// Io.show writes it, the file's name and what is wrong for the
 // certificate, and the status 1.
 let refusesStarts = Test.Case(name = "refuses what it cannot serve", run = fn() = {
     let result = {
@@ -321,23 +331,25 @@ let refusesStarts = Test.Case(name = "refuses what it cannot serve", run = fn() 
         let bad <- written("bad.json", "{}");
         let busy <- written("taken.json", configuration(plain(port)));
         let refusedCertificate <- written("tls.json", configuration(tls("empty.pem", "empty.pem")));
-        let outcomes = ran([[], ["a.json", "b.json"], [bad], [busy], [refusedCertificate]]);
+        let outcomes =
+            ran(List.map([[],
+                          ["a.json", "b.json"],
+                          ["--help"],
+                          ["-"],
+                          [bad],
+                          [busy],
+                          [refusedCertificate]],
+                         launcher));
         Tcp.closeListener(taken);
         Right(#(outcomes, port))
     };
-    // an outcome as the test compares it: the status, standard output and
-    // standard error
-    fn compared(outcome : Either(Io.Error,
-                                 Os.Finished)) : Either(Io.Error, #(Int, String, String)) =
-        Either.map(outcome, fn(finished) = {
-            let text = fn(bytes) = Optional.withDefault(String.fromUtf8(bytes), "?");
-            #(finished.status, text(finished.stdout), text(finished.stderr))
-        });
     match result {
         Right(#(outcomes, port)) ->
             Test.equal(List.map(outcomes, compared),
-                       [Right(#(2, "", "usage: ernest_httpd config.json\n")),
-                        Right(#(2, "", "usage: ernest_httpd config.json\n")),
+                       [Right(#(2, "", usage)),
+                        Right(#(2, "", usage)),
+                        Right(#(2, "", usage)),
+                        Right(#(2, "", usage)),
                         Right(#(1, "", scratch <> "/bad.json: listeners is required\n")),
                         Right(#(1,
                                 "",
@@ -352,6 +364,45 @@ let refusesStarts = Test.Case(name = "refuses what it cannot serve", run = fn() 
       | Left(error) ->
             Test.Failed(Io.show(error))
     }
+})
+
+// design §13: the launcher refuses a leading --config-dir with no
+// directory after it with the program's usage line and the status 2; says
+// an ern it cannot run, ERN naming one that is not on PATH, a path where
+// nothing stands and a file that is not executable, as `ernest_httpd:
+// cannot run ` and that ern, with the status 127; and follows its own path
+// through symbolic links, a link holding a relative path to the checkout's
+// launcher and a link to that link, each running the checkout's program,
+// which refuses `--help` with its usage. Nothing is on standard output.
+let launchesThroughItsPath = Test.Case(name = "launches through its own path", run = fn() = {
+    let links = scratch <> "/links";
+    let link = links <> "/bin/ernest_httpd";
+    let linkToLink = links <> "/again/ernest_httpd";
+    let notExecutable = scratch <> "/not-executable";
+    let withErn = fn(ern) = Os.Command(..launcher(["config.json"]), environment = [#("ERN", ern)]);
+    let result = {
+        let _ <- Fs.makeDir(Path(links <> "/bin"), 5000);
+        let _ <- Fs.makeDir(Path(links <> "/again"), 5000);
+        let _ = Fs.remove(Path(link), 5000);
+        let _ = Fs.remove(Path(linkToLink), 5000);
+        let _ <- Fs.makeSymlink(Path(link), Path("../../../../../bin/ernest_httpd"), 5000);
+        let _ <- Fs.makeSymlink(Path(linkToLink), Path("../bin/ernest_httpd"), 5000);
+        let _ <- Fs.write(Path(notExecutable), <<>>, 5000);
+        Right(ran([launcher(["--config-dir"]),
+                   withErn("no-such-ern"),
+                   withErn(scratch <> "/no-such-ern"),
+                   withErn(notExecutable),
+                   Os.command(link, ["--help"]),
+                   Os.command(linkToLink, ["--help"])]))
+    };
+    let cannotRun = fn(ern) = Right(#(127, "", "ernest_httpd: cannot run " <> ern <> "\n"));
+    Test.equal(Either.map(result, fn(outcomes) = List.map(outcomes, compared)),
+               Right([Right(#(2, "", usage)),
+                      cannotRun("no-such-ern"),
+                      cannotRun(scratch <> "/no-such-ern"),
+                      cannotRun(notExecutable),
+                      Right(#(2, "", usage)),
+                      Right(#(2, "", usage))]))
 })
 
 // design §2: a listen that fails says the address, the port and the error,
@@ -670,6 +721,7 @@ let servesTheExample = Test.Case(name = "serves the example site", run = fn() = 
         let failed =
             Smoke.checks("http",
                          "localhost",
+                         config.canonicalHost,
                          plainPort,
                          redirectPort,
                          redirectHost,

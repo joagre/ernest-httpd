@@ -386,10 +386,12 @@ fn shell(top : Map(String, Json.Value)) : Either(Error, Optional(Shell)) =
                 Right(Unit)
             else
                 Left(invalid("shell.warning", "be a multiple of 1000", Json.Integer(warning)));
-            let _ <- if warning < lifetime then
+            let _ <- if warning * 2 <= lifetime then
                 Right(Unit)
             else
-                Left(invalid("shell.warning", "be below the lifetime", Json.Integer(warning)));
+                Left(invalid("shell.warning",
+                             "be at most half the lifetime",
+                             Json.Integer(warning)));
             let hangup <- positive(object, "shell", "hangup");
             Right(Some(Shell(=path,
                              =client,
@@ -956,7 +958,7 @@ let refusesValues =
                               broken(edited("\"/shell/client.js\"", "\"shell/client.js\"")),
                               broken(edited("\"/shell/client.js\"", "\"/shell/session\"")),
                               broken(edited(" \"client\": \"/shell/client.js\",", "")),
-                              broken(edited("\"warning\": 60000", "\"warning\": 300000")),
+                              broken(edited("\"warning\": 60000", "\"warning\": 151000")),
                               broken(edited("\"hangup\": 5000", "\"hangup\": 0")),
                               broken(edited(", \"hangup\": 5000", ""))],
                              [Some(#("listeners[2].kind",
@@ -1010,7 +1012,9 @@ let refusesValues =
                                      "not be shell.path",
                                      Some("\"/shell/session\""))),
                               Some(#("shell.client", "is required", None)),
-                              Some(#("shell.warning", "be below the lifetime", Some("300000"))),
+                              Some(#("shell.warning",
+                                     "be at most half the lifetime",
+                                     Some("151000"))),
                               Some(#("shell.hangup", "be above 0", Some("0"))),
                               Some(#("shell.hangup", "is required", None))]))
 
@@ -1102,23 +1106,28 @@ let readsTheLastOfAName =
                              Right(#(Path("/srv/site"), [443, 80, 8081]))))
 
 // design §4: `shell.warning` is a multiple of 1000, after each `be above 0`
-// of its row and before `be below the lifetime`.
+// of its row and before `be at most half the lifetime`, which takes half
+// the lifetime, 150000 of 300000, and refuses a second more.
 let refusesWarnings =
     Test.Case(name = "refuses a warning that is no whole second",
               run = fn() =
                   Test.equal([broken(edited("\"warning\": 60000", "\"warning\": 60500")),
                               broken(edited("\"warning\": 60000", "\"warning\": 0")),
-                              broken(edited("\"warning\": 60000", "\"warning\": 300500")),
+                              broken(edited("\"warning\": 60000", "\"warning\": 151500")),
                               broken(String.replace(edited("\"warning\": 60000",
                                                            "\"warning\": 60500"),
                                                     "\"message-limit\": 65536",
                                                     "\"message-limit\": 0")),
-                              broken(edited("\"warning\": 60000", "\"warning\": 300000"))],
+                              broken(edited("\"warning\": 60000", "\"warning\": 150000")),
+                              broken(edited("\"warning\": 60000", "\"warning\": 151000"))],
                              [Some(#("shell.warning", "be a multiple of 1000", Some("60500"))),
                               Some(#("shell.warning", "be above 0", Some("0"))),
-                              Some(#("shell.warning", "be a multiple of 1000", Some("300500"))),
+                              Some(#("shell.warning", "be a multiple of 1000", Some("151500"))),
                               Some(#("shell.message-limit", "be above 0", Some("0"))),
-                              Some(#("shell.warning", "be below the lifetime", Some("300000")))]))
+                              None,
+                              Some(#("shell.warning",
+                                     "be at most half the lifetime",
+                                     Some("151000")))]))
 
 // The example with its shell's origins the JSON text given.
 fn withOrigins(text : String) : String =
@@ -1271,9 +1280,9 @@ let writtenByTheServer : String =
 // theirs: a bad port before a bad root, a listener before the next, an
 // empty canonical host before its being a host and before a redirect
 // host, a redirect host's emptiness and its being a host before its being
-// the canonical host, the warning below the lifetime after the message
-// limit's, and the hangup after the warning. The host rule's place is a
-// regression test's case, written after the code.
+// the canonical host, the warning at most half the lifetime after the
+// message limit's, and the hangup after the warning. The host rule's place
+// is a regression test's case, written after the code.
 let checksInOrder =
     Test.Case(name = "answers the first rule broken",
               run = fn() =
@@ -1292,11 +1301,11 @@ let checksInOrder =
                               broken(edited("\"redirect-hosts\": [\"www.ernest-lang.org\", \"ernest-lang.se\"]",
                                             "\"redirect-hosts\": [\"user@ernest-lang.org\"]")),
                               broken(String.replace(edited("\"warning\": 60000",
-                                                           "\"warning\": 300000"),
+                                                           "\"warning\": 151000"),
                                                     "\"message-limit\": 65536",
                                                     "\"message-limit\": 0")),
                               broken(String.replace(edited("\"warning\": 60000",
-                                                           "\"warning\": 300000"),
+                                                           "\"warning\": 151000"),
                                                     "\"hangup\": 5000",
                                                     "\"hangup\": 0"))],
                              [Some(#("listeners[0].port", "be 0 to 65535", Some("-1"))),
@@ -1307,7 +1316,9 @@ let checksInOrder =
                                      hostRule,
                                      Some("\"user@ernest-lang.org\""))),
                               Some(#("shell.message-limit", "be above 0", Some("0"))),
-                              Some(#("shell.warning", "be below the lifetime", Some("300000")))]))
+                              Some(#("shell.warning",
+                                     "be at most half the lifetime",
+                                     Some("151000")))]))
 
 // design §4, §9: the host an authority names, as Uri.Authority holds it,
 // its case kept, its port dropped, an empty one among them, and an IPv6

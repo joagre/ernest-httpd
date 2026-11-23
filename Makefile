@@ -20,11 +20,13 @@
 #                 from its archive by ern unpack, and then each Erlang
 #                 application under erl/ built by its own make
 #   make xterm    fills the example site's xterm/: each archive XTERM names
-#                 fetched and unpacked where its script is not there
+#                 fetched by curl and then unpacked where its script is not
+#                 there
 #   make doc      the documentation of every module, as CommonMark under build/
 #   make format   lays every module out
 #   make release  the archive, build/NAME-VERSION.tar.gz, and its checksum
-#                 beside it, tests first; a library's carries the pages of
+#                 beside it, a development build of ern refused first and
+#                 the tests run next; a library's carries the pages of
 #                 make doc under docs/man/
 #   make install  installs what stands built under PREFIX, /usr/local by
 #                 default, from a checkout or an unpacked archive alike:
@@ -112,25 +114,30 @@ lib:
 	done
 
 # Each archive of XTERM, where its package's script is not in the site's
-# xterm/, fetched and unpacked under build/, and its license, as
+# xterm/, fetched by curl into a file under build/, NAME-VERSION.tgz, and
+# only then unpacked under build/, a fetch that fails said with its URL
+# before anything is unpacked (design §13); and its license, as
 # NAME.js.LICENSE.txt, its stylesheets, css/*.css, and last its script,
 # lib/NAME.js, copied there; NAME is the archive's name without its version.
-# The unpacked archive is then removed, since nothing reads it after.
+# The archive and what it unpacked to are then removed, since nothing reads
+# them after.
 xterm:
-	@mkdir -p examples/site/root/xterm
+	@mkdir -p examples/site/root/xterm build
 	@for url in $(XTERM); do \
 	    archive=$$(basename $$url .tgz); \
 	    name=$${archive%-*}; \
 	    test -f examples/site/root/xterm/$$name.js && continue; \
 	    dir=build/$$archive; \
-	    rm -rf $$dir && mkdir -p $$dir && \
-	    echo "fetching $$url" && curl -fsSL "$$url" | tar -xzf - -C $$dir || exit 1; \
+	    echo "fetching $$url"; \
+	    curl -fsSL -o $$dir.tgz "$$url" || \
+	        { rm -f $$dir.tgz; echo "make xterm: cannot fetch $$url"; exit 1; }; \
+	    rm -rf $$dir && mkdir -p $$dir && tar -xzf $$dir.tgz -C $$dir || exit 1; \
 	    cp $$dir/package/LICENSE examples/site/root/xterm/$$name.js.LICENSE.txt || exit 1; \
 	    for file in $$dir/package/css/*.css $$dir/package/lib/$$name.js; do \
 	        test -f $$file || continue; \
 	        cp $$file examples/site/root/xterm/ || exit 1; \
 	    done; \
-	    rm -rf $$dir; \
+	    rm -rf $$dir $$dir.tgz; \
 	done
 
 # ern build refuses an ern earlier than the release package.conf names, and
@@ -230,10 +237,12 @@ erlang = if test -n "$(ERL_DEPS)" && test -d erl; then \
 # the index as its README, and neither the staging directory nor what the
 # examples wrote among them. One shape for an application and a library, so
 # that any archive can be a dependency. Its checksum stands beside it, for
-# `sha256sum -c`.
-release: test doc
+# `sha256sum -c`. A development build of ern is refused first, before the
+# tests and the documents run (design §13).
+release:
 	@case "$$($(ERN) --version)" in \
 	    *-dev|*+*) echo "a release is not made with a development build of ern"; exit 1 ;; esac
+	@$(MAKE) --no-print-directory test doc
 	@$(privs)
 	rm -rf build/$(NAME)-$(VERSION) && mkdir -p build/$(NAME)-$(VERSION)
 	mkdir -p build/$(NAME)-$(VERSION)/build && \

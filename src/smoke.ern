@@ -7,26 +7,30 @@
 /// checks the configuration takes against the host over TLS on the port of
 /// its first `tls` listener, the far end's certificate verified against the
 /// host's bundle, `/etc/ssl/certs/ca-certificates.crt`, and over plain HTTP
-/// on the port of its first `redirect` listener, the shell's where the
-/// configuration has a `shell`, at its path, from the origin a page of the
-/// site sends, `https://` and the host, with `:` and the port where it is
-/// not 443. It prints each check's line, the check's name and `: ok`, or
-/// `: failed: ` and what came, and exits with the status 0 where every
-/// check passed and 1 otherwise. It refuses another count of arguments
-/// with `usage: smoke host config.json` on standard error and the status 2,
-/// and a configuration it cannot read, whose text `Config.parse` refuses,
-/// that has no redirect host, or that lacks a `tls` or a `redirect`
-/// listener, with `smoke: `, the path, `: ` and `Config.reason` on standard
-/// error and the status 2, the last two as
+/// on the port of its first `redirect` listener, the host dialed without a
+/// port it names, and the shell's where the configuration has a `shell`,
+/// at its path, from the origin a page of the site sends, `https://` and
+/// the canonical host's host, as `Config.host` reads it, in ASCII lower
+/// case and an IPv6 address in its brackets, with `:` and the port where
+/// it is not 443. It prints each check's line, the check's name and
+/// `: ok`, or `: failed: ` and what came, and exits with the status 0
+/// where every check passed and 1 otherwise. It refuses
+/// another count of arguments with `usage: smoke host config.json` on
+/// standard error and the status 2, and a configuration it cannot read,
+/// whose text `Config.parse` refuses, that has no redirect host, or that
+/// lacks a `tls` or a `redirect` listener, with `smoke: `, the path, `: `
+/// and `Config.reason` on standard error and the status 2, the last two as
 /// `redirect-hosts must not be empty: []` and
 /// `listeners must hold a tls listener and a redirect listener`; the rules
 /// of the file system's are not checked, since the files they name are the
 /// machine's.
 ///
 /// `checks` runs the same checks against any site, over the scheme its port
-/// takes, `https` or `http`: `/` answered 200; `/` on the redirect port,
+/// takes, `https` or `http`, dialing the host without a port it names and
+/// asking for it as it is given: `/` answered 200; `/` on the redirect port,
 /// and `/` for the redirect host it is given, the configuration's first,
-/// each answered 301 to `https://`, the host and `/`; `/` for a host that
+/// each answered 301 to `https://`, the canonical host it is given, the
+/// configuration's as it writes it, and `/`; `/` for a host that
 /// is neither, `elsewhere`, answered 421; and where it is given the shell's
 /// path and its client's, the client answered 200 as
 /// `text/javascript; charset=utf-8` (design §14), and the shell's path
@@ -81,11 +85,12 @@ export fn main() : Unit =
                     let checked =
                         checks("https",
                                host,
+                               config.canonicalHost,
                                port,
                                redirectPort,
                                redirectHost,
                                paths,
-                               origin(host, port));
+                               origin(config.canonicalHost, port));
                     List.forEach(checked, fn(check) = Io.println(line(check)));
                     Os.exit(if List.all(checked, passed) then 0 else 1)
                 }
@@ -146,10 +151,15 @@ fn isRedirect(kind : Config.Kind) : Bool =
       | _ -> false
     }
 
-// The origin a page of the site on the port sends: `https://` and the
-// host, and `:` and the port where it is not HTTPS's own, 443.
-fn origin(host : String, port : Int) : String =
+// The origin a page of the site on the tls port sends: `https://`, the
+// canonical host's host as Config.host reads it, in ASCII lower case and
+// an IPv6 address, the one host that holds `:`, in its brackets, and `:`
+// and the port where it is not HTTPS's own, 443.
+fn origin(canonicalHost : String, port : Int) : String = {
+    let read = String.toAsciiLower(Optional.withDefault(Config.host(canonicalHost), canonicalHost));
+    let host = if String.contains(read, ":") then "[" <> read <> "]" else read;
     if port == 443 then "https://" <> host else "https://" <> host <> ":" <> Int.toString(port)
+}
 
 // The milliseconds the configuration's file is read within.
 let fileMs : Int = 5000
@@ -181,36 +191,41 @@ let socketMs : Int = 5000
 // answer.
 let answerMs : Int = 5000
 
-/// The checks run against the site of the host on the port, over the
-/// scheme, `https` or `http`, on the redirect port over plain HTTP, and for
-/// the redirect host, and, where the shell's path and its client's are
-/// given, the client's response and the shell's upgrade from the origin,
-/// each with its name and what came where it failed, in the order the
-/// module's documentation gives them.
+/// The checks run against the site of the host, dialed without a port it
+/// names, on the port, over the scheme, `https` or `http`, on the redirect
+/// port over plain HTTP and for the redirect host, each redirected to the
+/// canonical host as the configuration writes it, and, where the shell's
+/// path and its client's are given, the client's response and the shell's
+/// upgrade from the origin, each with its name and what came where it
+/// failed, in the order the module's documentation gives them.
 export fn checks(scheme : String,
                  host : String,
+                 canonicalHost : String,
                  port : Int,
                  redirectPort : Int,
                  redirectHost : String,
                  shell : Optional(#(String, String)),
                  origin : String) : List(Check) = {
-    let canonical = "https://" <> host <> "/";
-    let site = scheme <> "://" <> host <> ":" <> Int.toString(port);
-    let redirect = "http://" <> host <> ":" <> Int.toString(redirectPort);
+    // the host dialed without a port it names, each check dialing its
+    // listener's, and asked for as it is given
+    let dialed = Optional.withDefault(Config.host(host), host);
+    let canonical = "https://" <> canonicalHost <> "/";
+    let site = scheme <> "://" <> dialed <> ":" <> Int.toString(port);
+    let redirect = "http://" <> dialed <> ":" <> Int.toString(redirectPort);
     [Check(name = site <> "/ answers 200",
-           result = answered(opened(scheme, host, port), host, "200")),
+           result = answered(opened(scheme, dialed, port), host, "200")),
      Check(name = redirect <> "/ answers 301 to " <> canonical,
-           result = answered(opened("http", host, redirectPort), host, "301 " <> canonical)),
+           result = answered(opened("http", dialed, redirectPort), host, "301 " <> canonical)),
      Check(name = site <> "/ for " <> redirectHost <> " answers 301 to " <> canonical,
-           result = answered(opened(scheme, host, port), redirectHost, "301 " <> canonical)),
+           result = answered(opened(scheme, dialed, port), redirectHost, "301 " <> canonical)),
      Check(name = site <> "/ for elsewhere answers 421",
-           result = answered(opened(scheme, host, port), "elsewhere", "421"))]
+           result = answered(opened(scheme, dialed, port), "elsewhere", "421"))]
         <> match shell {
             Some(#(path, client)) ->
                 [Check(name = site <> client <> " answers 200 as " <> javascript,
-                       result = clientAnswered(opened(scheme, host, port), client, host)),
+                       result = clientAnswered(opened(scheme, dialed, port), client, host)),
                  Check(name = site <> path <> " runs 1 + 2 and closes with 4004 at a stop",
-                       result = shellAnswered(opened(scheme, host, port), path, host, origin))]
+                       result = shellAnswered(opened(scheme, dialed, port), path, host, origin))]
           | None ->
                 []
         }
@@ -652,6 +667,7 @@ let checksASite = Test.Case(name = "checks a site and says what came", run = fn(
         let passing =
             checks("http",
                    "localhost",
+                   "localhost",
                    plainPort,
                    redirectPort,
                    redirectHost,
@@ -659,6 +675,7 @@ let checksASite = Test.Case(name = "checks a site and says what came", run = fn(
                    "http://localhost");
         let withoutShell =
             checks("http",
+                   "localhost",
                    "localhost",
                    plainPort,
                    redirectPort,
@@ -668,6 +685,7 @@ let checksASite = Test.Case(name = "checks a site and says what came", run = fn(
         let refused =
             checks("http",
                    "localhost",
+                   "localhost",
                    plainPort,
                    redirectPort,
                    redirectHost,
@@ -675,6 +693,7 @@ let checksASite = Test.Case(name = "checks a site and says what came", run = fn(
                    "http://elsewhere");
         let elsewhere =
             checks("http",
+                   "localhost",
                    "localhost",
                    plainPort,
                    redirectPort,
@@ -685,7 +704,14 @@ let checksASite = Test.Case(name = "checks a site and says what came", run = fn(
         let nothing <- Tcp.port(closed);
         Tcp.closeListener(closed);
         let unanswered =
-            checks("http", "localhost", nothing, nothing, redirectHost, shell, "http://localhost");
+            checks("http",
+                   "localhost",
+                   "localhost",
+                   nothing,
+                   nothing,
+                   redirectHost,
+                   shell,
+                   "http://localhost");
         let status <- terminate(program);
         Right(#(List.map(passing, line),
                 List.map(withoutShell, line),
@@ -741,6 +767,79 @@ let checksASite = Test.Case(name = "checks a site and says what came", run = fn(
             Test.Failed(Io.show(error))
     }
 })
+
+// design §13: the checks against a site whose canonical host carries a
+// port, `localhost:8443`, the scratch site's moved there and served by the
+// launcher over plain HTTP: given the host `localhost`, and given the
+// canonical host itself, each check dials the host without a port it
+// names, on its listener's, and passes, the two 301s to
+// `https://localhost:8443/`, the canonical host as the configuration
+// writes it.
+let checksACanonicalHostWithAPort =
+    Test.Case(name = "checks a canonical host with a port", run = fn() = {
+        let moved = scratch <> "/ported.json";
+        let result = {
+            let _ <- written();
+            let _ <-
+                Fs.write(Path(moved),
+                         String.toUtf8(String.replace(configuration,
+                                                      "\"canonical-host\": \"localhost\"",
+                                                      "\"canonical-host\": \"localhost:8443\"")),
+                         5000);
+            let #(program, ports) <- launch(moved, 2, None);
+            let #(plainPort, redirectPort) = match ports {
+                [one, two] -> #(one, two)
+              | _ -> fault("launch answers a port for each of the count")
+            };
+            let checked =
+                fn(host) =
+                    checks("http",
+                           host,
+                           "localhost:8443",
+                           plainPort,
+                           redirectPort,
+                           "www.localhost",
+                           None,
+                           "http://localhost")
+                        |> List.map(line);
+            let lines = #(checked("localhost"), checked("localhost:8443"));
+            let status <- terminate(program);
+            Right(#(lines, status, plainPort, redirectPort))
+        };
+        match result {
+            Right(#(lines, status, plainPort, redirectPort)) -> {
+                let site = "http://localhost:" <> Int.toString(plainPort);
+                let ok =
+                    [site <> "/ answers 200: ok",
+                     "http://localhost:"
+                         <> Int.toString(redirectPort)
+                         <> "/ answers 301 to https://localhost:8443/: ok",
+                     site <> "/ for www.localhost answers 301 to https://localhost:8443/: ok",
+                     site <> "/ for elsewhere answers 421: ok"];
+                Test.equal(#(lines, status), #(#(ok, ok), 143))
+            }
+          | Left(error) ->
+                Test.Failed(Io.show(error))
+        }
+    })
+
+// design §13: the origin the shell's check sends is `https://`, the
+// canonical host's host as Config.host reads it, without a port it names,
+// in ASCII lower case, a letter beyond ASCII as written, and an IPv6
+// address in its brackets, and `:` and the tls port where that is not 443.
+let takesTheOriginOfTheCanonicalHost =
+    Test.Case(name = "takes the origin of the canonical host",
+              run = fn() =
+                  Test.equal([origin("ernest-lang.org", 443),
+                              origin("Ernest-Lang.org:8443", 443),
+                              origin("LOCALHOST:18150", 18150),
+                              origin("Ärnest.ORG", 443),
+                              origin("[::1]:8443", 8443)],
+                             ["https://ernest-lang.org",
+                              "https://ernest-lang.org",
+                              "https://localhost:18150",
+                              "https://Ärnest.org",
+                              "https://[::1]:8443"]))
 
 // design §13: the shell's answer is held where the output holds `3 : Int`
 // with its type dimmed, as `ern shell` writes it at a terminal, or plain,
@@ -908,6 +1007,44 @@ fn stopSeconds(unit : String) : Optional(Int) =
         |> List.filterMap(String.toInt)
         |> List.get(0)
 
+// The OTP release the Containerfile's FROM names: the Erlang image's tag
+// before `-slim`, its trailing zero parts dropped as OTP's own version
+// drops them, down to its major and minor, so that the image's 29.1.2.0 is
+// OTP's 29.1.2; None where it names no such image.
+fn imageRelease(containerfile : String) : Optional(String) =
+    List.map(String.lines(containerfile), String.trim)
+        |> List.filterMap(fn(line) = String.stripPrefix(line, "FROM docker.io/library/erlang:"))
+        |> List.get(0)
+        |> Optional.andThen(fn(tag) = String.stripSuffix(tag, "-slim"))
+        |> Optional.map(fn(tag) =
+                            String.join(List.reverse(withoutZeros(List.reverse(String.split(tag,
+                                                                                            ".")))),
+                                        "."))
+
+// A version's parts, last first, without the zeros that end it, two parts
+// kept.
+fn withoutZeros(reversed : List(String)) : List(String) =
+    match reversed {
+        "0" :: rest when List.size(rest) >= 2 -> withoutZeros(rest)
+      | _ -> reversed
+    }
+
+// The lines of deploy/README.md's step 3 that fetch and build the OTP
+// release the Containerfile's image runs, each it lacks named.
+fn otpBuilt() : List(String) =
+    match imageRelease(text("deploy/Containerfile")) {
+        Some(release) ->
+            lacked("deploy/README.md",
+                   ["$ curl -fLO https://github.com/erlang/otp/releases/download/OTP-"
+                        <> release
+                        <> "/otp_src_"
+                        <> release
+                        <> ".tar.gz",
+                    "$ tar -xzf otp_src_" <> release <> ".tar.gz && cd otp_src_" <> release])
+      | None ->
+            ["deploy/Containerfile lacks a FROM of docker.io/library/erlang:VERSION-slim"]
+    }
+
 // What the deployed configuration holds against design §13, each field
 // that differs named: a tls listener on 443 and a redirect listener on 80
 // on each of 0.0.0.0 and ::, the tls ones naming node/'s certificate and
@@ -971,7 +1108,8 @@ fn differences(config : Config.Config, home : String) : List(String) = {
 // place; the image makes the share directory the user's, installs the
 // start, makes the two nodes listing each other, foo on 127.0.0.1:8655,
 // writes the limits into each ernest.conf, and runs the start as its
-// command; the deploy hook copies fullchain.pem and privkey.pem into node/,
+// command, from the Erlang image of the OTP release deploy/README.md's
+// step 3 fetches and builds; the deploy hook copies fullchain.pem and privkey.pem into node/,
 // owned by httpd, the key's mode 0600, and restarts the unit; and logrotate
 // rotates log/'s access.log as httpd. A line that is missing is named.
 let holdsTheDeployment = Test.Case(name = "holds the files of deploy/", run = fn() = {
@@ -1067,6 +1205,7 @@ let holdsTheDeployment = Test.Case(name = "holds the files of deploy/", run = fn
                               "&& ern config --config-dir foo --peer-dir a \\",
                               "sed -i '1s/^{$/&\\n  \"limits\": {\"processes\": 65536, \"ports\": 4096},/' \"$node/ernest.conf\" \\",
                               "CMD [\"shell-start\"]"])
+                   <> otpBuilt()
                    <> lacked("deploy/logrotate", [home <> "/log/access.log {", "su httpd httpd"]),
                [])
 })

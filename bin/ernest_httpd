@@ -1,25 +1,40 @@
 #!/bin/sh
 # The launcher: ern run on the program named as this file is (docs/design.md
-# §13). Its root is ../lib/NAME/ where NAME's compiled form stands there,
-# beside an installed launcher, and .. otherwise, a checkout or an unpacked
+# §13). Its own path is followed through symbolic links first, by realpath
+# (POSIX.1-2024), so that a link to it runs the installation it stands in.
+# Its root is ../lib/NAME/ where NAME's compiled form stands there, beside
+# an installed launcher, and .. otherwise, a checkout or an unpacked
 # release. The root is the run's root package, so the packages its
 # package.conf names are on the load path (report §11.9), and so is the
 # program's own Erlang: its ebin/ in an installation and an unpacked release,
 # and each application under erl/ in a checkout, through --libs-dir. A
 # leading --config-dir dir, the one option an operator gives, goes to ern run
-# (report §11.2, §8.3); everything after it goes to the program. The working
-# directory stays the caller's.
-here=$(cd "$(dirname "$0")/.." && pwd) || exit 1
-name=$(basename "$0")
+# (report §11.2, §8.3), and one with no directory after it is refused with
+# the program's usage line; everything after it goes to the program. An ern
+# that cannot be run, ERN's or the one on PATH, is said before the run. The
+# working directory stays the caller's.
+self=$(realpath -- "$0") || exit 1
+here=$(cd -- "$(dirname -- "$self")/.." && pwd) || exit 1
+name=$(basename -- "$self")
 root=$here
 [ -f "$here/lib/$name/build/$name.erc" ] && root=$here/lib/$name
-config=
+configured=no
 if [ "$1" = "--config-dir" ]; then
+    if [ $# -lt 2 ]; then
+        echo "usage: $name [--config-dir dir] config.json" >&2
+        exit 2
+    fi
+    configured=yes
     config=$2
     shift 2
 fi
+ern=${ERN:-ern}
+case $ern in
+    */*) [ -f "$ern" ] && [ -x "$ern" ] ;;
+    *) command -v "$ern" > /dev/null 2>&1 ;;
+esac || { echo "$name: cannot run $ern" >&2; exit 127; }
 set -- --package-dir "$root" "$root/build/$name.erc" "$@"
 [ -d "$root/erl" ] && set -- --libs-dir "$root/erl" "$@"
 [ -d "$root/ebin" ] && set -- --load-path "$root/ebin" "$@"
-[ -n "$config" ] && set -- --config-dir "$config" "$@"
-exec "${ERN:-ern}" run "$@"
+[ "$configured" = yes ] && set -- --config-dir "$config" "$@"
+exec "$ern" run "$@"

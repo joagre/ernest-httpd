@@ -1172,11 +1172,11 @@ fn endOf() : String receiving Seen =
 // time is set again, the shell is warned again, and the end comes a
 // lifetime after the key or the Extend.
 let keepsTheDeadline = Test.Case(name = "warns and ends at its deadline", run = fn() = {
-    let still = started(["cat"], 1100, 1000, 5000);
+    let still = started(["cat"], 2000, 1000, 5000);
     send(still, Attach(shell("still")));
-    let moved = started(["cat"], 1100, 1000, 5000);
+    let moved = started(["cat"], 2000, 1000, 5000);
     send(moved, Attach(shell("moved")));
-    let extended = started(["cat"], 1100, 1000, 5000);
+    let extended = started(["cat"], 2000, 1000, 5000);
     send(extended, Attach(shell("extended")));
     let attached = #(next("still"), next("moved"), next("extended"));
     let warned = #(next("moved"), next("extended"));
@@ -1191,9 +1191,9 @@ let keepsTheDeadline = Test.Case(name = "warns and ends at its deadline", run = 
     Test.equal(#(attached,
                  warned,
                  movedTold,
-                 afterKey >= 1100,
+                 afterKey >= 2000,
                  extendedTold,
-                 afterExtend >= 1100,
+                 afterExtend >= 2000,
                  stillTold,
                  List.map([1, 2, 3], fn(_) = sessionEnded())),
                #(#("Attached(New)", "Attached(New)", "Attached(New)"),
@@ -1205,6 +1205,27 @@ let keepsTheDeadline = Test.Case(name = "warns and ends at its deadline", run = 
                  ["Warning(1)", "Ended(4001)"],
                  ["Returned", "Returned", "Returned"]))
 })
+
+// design §12: a warning at most half the lifetime is given its seconds
+// again after an Extend: of a lifetime of 4000 and a warning of 2000, an
+// Extend just after the first warning has the alarm at the end's old time
+// set again for the warning's, and the second warning comes with at least
+// its 2000 milliseconds left before the end, less 200 for the alarm's
+// delivery.
+let warnsWithItsSecondsAgain =
+    Test.Case(name = "warns again with its seconds left after an Extend", run = fn() = {
+        let session = started(["cat"], 4000, 2000, 5000);
+        send(session, Attach(shell("shell")));
+        let attached = next("shell");
+        let first = next("shell");
+        send(session, Extend);
+        let second = next("shell");
+        let since = Clock.monotonic();
+        let end = next("shell");
+        let left = Clock.monotonic() - since;
+        Test.equal(#(attached, first, second, end, left >= 1800, sessionEnded()),
+                   #("Attached(New)", "Warning(2)", "Warning(2)", "Ended(4001)", true, "Returned"))
+    })
 
 // design §12: a command that cannot start is said on standard error with
 // the program and the error, and the session ends with 4003 at its attach.

@@ -1103,7 +1103,7 @@ let carriesASession = Test.Case(name = "carries a session through the sessions",
 // shell with 4001; the shell, attached, is not closed by the rounds of the
 // idle deadline that pass meanwhile.
 let warnsAndExpires = Test.Case(name = "writes the warning and closes at the expiry", run = fn() = {
-    let sessions = Sessions.start(configured(1, 1100, 1000, 1024), deadlines(200));
+    let sessions = Sessions.start(configured(1, 2000, 1000, 1024), deadlines(200));
     let result = {
         let client <- opened(sessions, deadlines(200), [], <<>>);
         let _ = sent(client, page("{\"resize\": [24, 80]}"));
