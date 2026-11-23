@@ -50,38 +50,31 @@ cd ernest-httpd
 make run
 ```
 
-It serves the example site at http://localhost:8080, whose shell page runs your own `ern shell`. [`examples/README.md`](examples/README.md) says what the site shows, with a `curl` line for each answer a browser hides.
+It serves the example site at http://localhost:8080, whose shell page runs your own `ern shell`, fetching xterm.js, the page's terminal, from registry.npmjs.org by `curl` on its first run. [`examples/README.md`](examples/README.md) says what the site shows, with a `curl` line for each answer a browser hides.
 
 [`docs/design.md`](docs/design.md) states the program as rules: each process and what it owns, each module's job, the configuration, and what the server leaves out of HTTP/1.1 and WebSocket. This repository was begun from [`ernest-template`](https://github.com/joagre/ernest-template).
 
 ## Building
 
-It needs [Ernest](https://ernest-lang.org) on your `PATH`, the release `package.conf` names or a later one, `ern 0.11.0`; an `ern` before 0.11 stops `make` at its first step, `ern: no job unpack`. `ERN=path/to/ern make` names another `ern`: its directory stands first on `PATH` for everything the build starts, so whatever names `ern` by its name, a test or the example's shell, runs that one too. A file not called `ern` is not reached this way. An Ernest installed under a prefix of your own, `make install PREFIX=<prefix>` in its unpacked archive, builds it with `ERN=<prefix>/bin/ern make`. `make test` needs Chromium too, `chromium` on `PATH`, Debian's package of that name, since the client's test runs the client in it.
+It needs [Ernest](https://ernest-lang.org) on your `PATH`, the release `package.conf` names or a later one; an `ern` before 0.11 stops `make` at its first step, `ern: no job unpack`. `ERN=path/to/ern make` names another `ern`: its directory stands first on `PATH` for everything the build starts, so whatever names `ern` by its name, a test or the example's shell, runs that one too. A file not called `ern` is not reached this way. An Ernest installed under a prefix of your own, `make install PREFIX=<prefix>` in its unpacked archive, builds it with `ERN=<prefix>/bin/ern make`. `make test` needs Chromium too, `chromium` on `PATH`, Debian's package of that name, since the client's test runs the client in it.
 
 ```
-make            # builds: lib/ filled, each package and then the program compiled
-make test       # the layout, every module's tests, test/ and the examples where they exist,
-                # then the documents and the design's citations,
-                # refusing any paragraph past 150 words, any comment or
-                # text a user reads that names the project's history,
-                # any command whose description stands without its #,
-                # and any Ernest block of the README that no module holds
+make            # builds the program
+make test       # every module's tests, the client's in Chromium, then the documents' check;
+                # its tests serve the shell of the example for seconds at a time, as you
 make run        # runs the example site through the launcher, bin/ernest_httpd, on
                 # examples/site/config.json; CONFIG=path make run serves another configuration
 make smoke      # the smoke test against the deployed site whose canonical host HOST
                 # names, make smoke HOST=ernest-lang.org, the checks its configuration,
                 # deploy/config.json, takes
-make xterm      # fetches xterm.js and its fit addon into the example site, once
-make release    # the archive, build/ernest_httpd-VERSION.tar.gz, and its checksum beside it
+make release    # the archive, build/ernest_httpd-VERSION.tar.gz, and its checksum beside it,
+                # built with a release's ern, whose version text has no + and no -dev
 make install    # installs what stands built under PREFIX, /usr/local by default, from a
                 # checkout or an unpacked archive: make install PREFIX=/home/httpd/opt/local
-make uninstall  # removes from PREFIX what make install put there, then share/doc, share,
-                # lib and bin under it, each where it is empty, and nothing else
+make uninstall  # removes from PREFIX what make install put there, as the design's §13 says
 ```
 
-A package the program loads is an entry of `package.conf`, its name, version, URL and digest, as the report's §11.9 says. `make lib` runs `ern unpack`, which unpacks each package from its archive under `lib/`, `lib/<name>-<version>.tar.gz`, and says which archive to download where one is not there; it then builds each Erlang application `ERL_DEPS` names, a git submodule under `erl/`, by its own `make`. `make` builds each package before the program.
-
-Everything the program loads beyond the standard library and Ernest's own libraries is a package under `lib/` or an Erlang application under `erl/`, whose `ebin` the tests and the launcher put on the load path by `--libs-dir erl`. A repository with an `erl/` is cloned with `--recursive`. `make doc` writes each module's page under `build/`, `make format` lays the modules out, and `make clean` removes what the build, `make lib` and `make xterm` wrote, and leaves each archive under `lib/`.
+The program loads nothing beyond Ernest's standard library: `package.conf` names Ernest's release and no package. The Makefile's head lists every target with what it does, `make xterm`, `make doc`, `make format` and `make clean` among them.
 
 ## Running
 
@@ -91,9 +84,9 @@ The launcher runs the server on a configuration, from the checkout and from an u
 bin/ernest_httpd [--config-dir dir] config.json
 ```
 
-Once `make install` has put it under a prefix, the installed `ernest_httpd` runs the same way, each with the packages its `package.conf` names on the load path, the installed one's under its own `lib/`. `--config-dir dir` makes the run a node, as *Running Ernest*, the deployment guide of the installation, says.
+Once `make install` has put it under a prefix, the installed `ernest_httpd` runs the same way. `--config-dir dir` makes the run a node, as *Running Ernest*, the deployment guide of the installation, says.
 
-The configuration is one JSON file, whose relative paths name files under the working directory. Every field of it but `shell` is required, an empty one written empty, `"content-types": {}`; the design's §4, [`docs/design.md`](docs/design.md), describes each field with its rule, and `examples/site/config.json` is one that `make run` serves, its access log's directory made first.
+The configuration is one JSON file, whose relative paths name files under the working directory. Every field of it but `shell` is required, an empty one written empty, `"content-types": {}`; the design's §4, [`docs/design.md`](docs/design.md), installed with this README under the prefix's share/doc, is its reference, each member as the file spells it with its rule, and `examples/site/config.json` is one that `make run` serves, its access log's directory made first.
 
 `make run` serves the example site under `examples/site/`, its pages and its shell, on localhost; [`examples/README.md`](examples/README.md) says what it shows and how to try it.
 
@@ -103,8 +96,8 @@ The server runs on its machine as [`deploy/README.md`](deploy/README.md) says, s
 
 In the repository, `docs/README.md` says what each document is.
 
-The tests live in the modules they test, which `make test` runs; `test/`, where it exists, holds a program run end to end, and `tools/` the checker of the documents, `make test` runs them too.
+The tests live in the modules they test, and `tools/` holds the documents' check; `make test` runs both.
 
 ## License
 
-ernest-httpd is released under the Zero-Clause BSD license, 0BSD, the terms in [`LICENSE`](LICENSE). Third-party code, where there is any, is listed with its licenses in `THIRD_PARTY_LICENSES`.
+ernest-httpd is released under the Zero-Clause BSD license, 0BSD, the terms in [`LICENSE`](LICENSE).

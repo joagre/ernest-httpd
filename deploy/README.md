@@ -6,7 +6,7 @@ A line whose prompt is `$` is typed by the operator, `sudo` before what the supe
 
 ## 1. The machine
 
-The machine runs Debian 13 with systemd, podman and certbot, `sudo apt install podman certbot git curl`, its ports 80 and 443 open, and the four names in DNS: `ernest-lang.org`, `www.ernest-lang.org`, `ernest-lang.se` and `www.ernest-lang.se`. The operator brings the server's release archive, `ernest_httpd-0.1.0.tar.gz`, which `make release` writes, and Ernest's, `ern-VERSION.tar.gz`, the one the release was built with, which its section of `CHANGES.md` names; `VERSION` stands for that version below.
+The machine runs Debian 13 with systemd, podman and certbot, `sudo apt install podman certbot git curl`, its ports 80 and 443 open, and the four names in DNS: `ernest-lang.org`, `www.ernest-lang.org`, `ernest-lang.se` and `www.ernest-lang.se`. The operator brings the server's release archive, `ernest_httpd-RELEASE.tar.gz`, which `make release` writes, and Ernest's, `ern-VERSION.tar.gz`, the one the release was built with, which its section of `CHANGES.md` names; below, `RELEASE` stands for the server's version, its archive's `VERSION`, and `VERSION` for Ernest's.
 
 Each of the two ports has a listener on `0.0.0.0` and one on `::`, since a listener takes connections of its address's family alone, and the four names resolve to the machine's address of each family it serves.
 
@@ -17,7 +17,7 @@ The server runs as its own user, `httpd`, whose home, `/home/httpd`, holds every
 ```console
 $ sudo useradd --create-home --home-dir /home/httpd --shell /usr/sbin/nologin httpd
 $ grep httpd /etc/subuid /etc/subgid
-$ sudo install -o httpd -g httpd -m 0644 ern-VERSION.tar.gz ernest_httpd-0.1.0.tar.gz /home/httpd/
+$ sudo install -o httpd -g httpd -m 0644 ern-VERSION.tar.gz ernest_httpd-RELEASE.tar.gz /home/httpd/
 ```
 
 `grep` prints a line of each file; where it prints none, `useradd` gave the user no range, and podman later says `potentially insufficient UIDs or GIDs available in user namespace`: give one of 65536 that no other line of the files holds, `sudo usermod --add-subuids 300000-365535 --add-subgids 300000-365535 httpd`. A user made before is refused, `useradd: user 'httpd' already exists`.
@@ -46,15 +46,15 @@ httpd$ tar -xzf ern-VERSION.tar.gz && cd ern-VERSION
 httpd$ make && make install PREFIX=/home/httpd/opt/local
 httpd$ cd && ern --version
 ern VERSION
-httpd$ tar -xzf ernest_httpd-0.1.0.tar.gz && cd ernest_httpd-0.1.0
+httpd$ tar -xzf ernest_httpd-RELEASE.tar.gz && cd ernest_httpd-RELEASE
 httpd$ make install PREFIX=/home/httpd/opt/local
 httpd$ cd && command -v ernest_httpd
 /home/httpd/opt/local/bin/ernest_httpd
 ```
 
-`ern --version` prints the version and, after its `+`, the commit Ernest's archive was made from. `make` without a C compiler fails at the helper's line, `make: cc: No such file or directory`, and `ern` without OTP says `ern: erl, of Erlang/OTP 29, is not on the path`. A prefix the user cannot write fails at its first `mkdir`, `Permission denied`.
+`ern --version` prints the version alone, the archive being a release's. `make` without a C compiler fails at the helper's line, `make: cc: No such file or directory`, and `ern` without OTP says `ern: erl, of Erlang/OTP 29, is not on the path`. A prefix the user cannot write fails at its first `mkdir`, `Permission denied`.
 
-The server's `make install` puts the launcher in `/home/httpd/opt/local/bin/ernest_httpd`, the compiled program under `/home/httpd/opt/local/lib/ernest_httpd/` and its documents under `/home/httpd/opt/local/share/doc/ernest_httpd/`, `deploy/` and `examples/` among them, and replaces an installation there whole; a launcher there of another program's is refused, `/home/httpd/opt/local/bin/ernest_httpd is there already and is not this program's`. A later release installs the same way, from its own unpacked archive, and `make uninstall PREFIX=/home/httpd/opt/local` there removes what `make install` put under the prefix, then `share/doc`, `share`, `lib` and `bin` under it where each is empty, and nothing else.
+The server's `make install` puts the launcher in `/home/httpd/opt/local/bin/ernest_httpd`, the compiled program under `/home/httpd/opt/local/lib/ernest_httpd/` and its documents under `/home/httpd/opt/local/share/doc/ernest_httpd/`, `deploy/` and `examples/` among them, and replaces an installation there whole; a launcher there of another program's is refused, `/home/httpd/opt/local/bin/ernest_httpd is there already and is not this program's`. A later release installs the same way, from its own unpacked archive, and `make uninstall PREFIX=/home/httpd/opt/local` there removes what `make install` put there, as the design's §13 says.
 
 ## 5. The directories
 
@@ -91,7 +91,7 @@ Each directory lists the other by its name, the server the peer `ops` and the op
 ## 6. The configuration and a first certificate
 
 ```console
-httpd$ install -m 0644 ernest_httpd-0.1.0/deploy/config.json ernest-httpd/node/config.json
+httpd$ install -m 0644 ernest_httpd-RELEASE/deploy/config.json ernest-httpd/node/config.json
 httpd$ openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 2 \
       -subj /CN=ernest-lang.org -keyout ernest-httpd/node/privkey.pem -out ernest-httpd/node/fullchain.pem
 httpd$ chmod 0600 ernest-httpd/node/privkey.pem
@@ -99,7 +99,7 @@ httpd$ chmod 0600 ernest-httpd/node/privkey.pem
 
 The certificate is the server's own until certbot's first replaces it, in step 9: the server listens on 443 only with a certificate, and certbot's webroot asks the server, on 80, for the challenge. A key that others may read, or that its user may not, is refused at the server's start, in step 8, and so is a certificate the server's user cannot read.
 
-`limits.connections` is 80, counted by listener, and `limits.connections-per-address` 16, so that the two `tls` listeners' 160 connections whose clients read nothing, each holding five times the site's largest file over TLS, stay under 256 MiB while that file is at most 0.32 MiB; a site that gains a larger file sizes the two again by that rule. `timeouts.idle` is 15000, so that an idle connection gives back what it holds soon.
+`limits.connections` is 80, counted by listener, and `limits.connections-per-address` 16, so that the two `tls` listeners' 160 connections whose clients read nothing, each holding five times the site's largest file over TLS, stay within 256 MiB while that file is at most 0.32 MiB; a site that gains a larger file sizes the two again by that rule. `timeouts.idle` is 15000, so that an idle connection gives back what it holds soon.
 
 ## 7. The shell
 
@@ -113,7 +113,7 @@ httpd$ podman info --format '{{.Store.GraphRoot}} {{.Store.RunRoot}}'
 
 A podman without the linger says `The cgroupv2 manager is set to systemd but there is no systemd user session available`, and a container it starts takes no `--memory`.
 
-The rest of the step is run when the configuration takes a shell. `deploy/config.json` as shipped holds no `shell`; a configuration that takes one holds the member `shell`, as the design's §13 gives it, and step 6 installs it again:
+The rest of the step is run when the configuration takes a shell. `deploy/config.json` as shipped holds no `shell`; a configuration that takes one holds the member `shell`, as the design's §13 gives it, written into `ernest_httpd-RELEASE/deploy/config.json`, which step 6 installs again and step 11's smoke test reads:
 
 ```json
 "shell": {
@@ -135,10 +135,10 @@ The rest of the step is run when the configuration takes a shell. `deploy/config
 The visitor's shell runs in a container of the image `ernest-shell`, built by `httpd` from `deploy/Containerfile` with the shell's start, `deploy/shell-start.sh`, and Ernest's archive beside it, the archive as `ern.tar.gz`, through the shell's wrapper, `deploy/shell.sh`, installed in the server's directory:
 
 ```console
-httpd$ mkdir image && cp ernest_httpd-0.1.0/deploy/Containerfile ernest_httpd-0.1.0/deploy/shell-start.sh image/
+httpd$ mkdir image && cp ernest_httpd-RELEASE/deploy/Containerfile ernest_httpd-RELEASE/deploy/shell-start.sh image/
 httpd$ cp ern-VERSION.tar.gz image/ern.tar.gz
 httpd$ podman build -t ernest-shell image
-httpd$ install -m 0755 ernest_httpd-0.1.0/deploy/shell.sh ernest-httpd/shell.sh
+httpd$ install -m 0755 ernest_httpd-RELEASE/deploy/shell.sh ernest-httpd/shell.sh
 ```
 
 The image holds the two nodes' configuration directories under `/usr/local/share/ernest-shell/`, `a` and `foo`, and its command is the start, `/usr/local/bin/shell-start`, which copies both into the home, starts `foo` and, once it listens, runs the shell on `a`. A build whose `ernest.conf` did not take the limits stops at that `RUN` step, which exits with 1.
@@ -162,7 +162,7 @@ Without the wrapper, a command of `podman run` alone, the container outlives its
 ## 8. The unit
 
 ```console
-$ sudo install -m 0644 /home/httpd/ernest_httpd-0.1.0/deploy/ernest-httpd.service /etc/systemd/system/
+$ sudo install -m 0644 /home/httpd/ernest_httpd-RELEASE/deploy/ernest-httpd.service /etc/systemd/system/
 $ sudo systemctl daemon-reload
 $ sudo systemctl enable --now ernest-httpd
 $ sudo journalctl -u ernest-httpd
@@ -179,7 +179,7 @@ The unit's `ExecStartPre` runs `podman system migrate` as `httpd`, which ends po
 One certificate names the four hosts, issued by certbot in webroot mode against the challenge's directory, which the server's redirect listener serves on 80. The deploy hook, installed first, copies it into the node's directory and restarts the server:
 
 ```console
-$ sudo install -D -m 0755 /home/httpd/ernest_httpd-0.1.0/deploy/certbot-deploy.sh \
+$ sudo install -D -m 0755 /home/httpd/ernest_httpd-RELEASE/deploy/certbot-deploy.sh \
       /etc/letsencrypt/renewal-hooks/deploy/ernest-httpd.sh
 $ sudo certbot certonly --webroot -w /home/httpd/ernest-httpd/acme --cert-name ernest-lang.org \
       -d ernest-lang.org -d www.ernest-lang.org -d ernest-lang.se -d www.ernest-lang.se
@@ -191,18 +191,18 @@ certbot 3.2 and later runs the hook after the issue itself; an earlier one runs 
 ## 10. The access log
 
 ```console
-$ sudo install -m 0644 /home/httpd/ernest_httpd-0.1.0/deploy/logrotate /etc/logrotate.d/ernest-httpd
+$ sudo install -m 0644 /home/httpd/ernest_httpd-RELEASE/deploy/logrotate /etc/logrotate.d/ernest-httpd
 $ sudo logrotate -d /etc/logrotate.d/ernest-httpd
 ```
 
-`logrotate -d` says `considering log /home/httpd/ernest-httpd/log/access.log` and rotates nothing; a line of the file it refuses begins with `error:` and names the line, `unknown user 'httpd'` where step 2 did not make the user.
+`logrotate -d` says `considering log /home/httpd/ernest-httpd/log/access.log` and rotates nothing; a line of the file it refuses begins with `error:` and names the line, `unknown group 'httpd'` where step 2 did not make the user.
 
 ## 11. The smoke test
 
 From the unpacked release archive, as `httpd`, or from a checkout with Ernest on its `PATH`, on the machine or another:
 
 ```console
-httpd$ cd ernest_httpd-0.1.0 && make smoke HOST=ernest-lang.org
+httpd$ cd ernest_httpd-RELEASE && make smoke HOST=ernest-lang.org
 https://ernest-lang.org:443/ answers 200: ok
 http://ernest-lang.org:80/ answers 301 to https://ernest-lang.org/: ok
 https://ernest-lang.org:443/ for www.ernest-lang.org answers 301 to https://ernest-lang.org/: ok
@@ -243,4 +243,4 @@ Ernest VERSION, session 1. :help for help.
 
 `:processes` lists the server's processes, each by the site its spawn is written in, with its line, and what it does: the entry process, `ErnestHttpd.main`, receiving; the access log, spawned in `AccessLog.start`, and the sessions, in `Sessions.start`; each listener, spawned in `ErnestHttpd.listening`, and its acceptor, in `Listener.serve`; a connection for each socket a listener holds, spawned in `Listener`; and the sockets and listeners themselves, `Tcp.accept` and `Tcp.listen`.
 
-A visitor whose shell runs has a session, spawned in `Sessions`, its program, `Os.startTerminal`, and its reader, spawned in `Session`; while the visitor's page is attached, the page's connection is a shell with its reader, spawned in `Shell.serve`. `:quit` leaves, and the server runs on. An attach that fails says why, `ern shell: the peer node is unreachable` where the server is not running, and `ern shell: the peer node is not listed` where step 5 did not list it.
+A visitor whose shell runs has a session, spawned in `Sessions`, its program, `Os.startTerminal`, and its reader and its writer, spawned in `Session`; while the visitor's page is attached, the page's connection is a shell with its reader, spawned in `Shell.serve`. `:quit` leaves, and the server runs on. An attach that fails says why, `ern shell: the peer node is unreachable` where the server is not running, and `ern shell: the peer node is not listed` where step 5 did not list it.

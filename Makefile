@@ -74,8 +74,8 @@ VERSION       = $(shell cat VERSION)
 EXAMPLES_MADE = examples/build examples/site/root/xterm
 # The documents make install and make release take, the user's alone:
 # README.md, LICENSE, THIRD_PARTY_LICENSES, CHANGES.md and docs/design.md,
-# each where it exists, and under examples/, deploy/ and assets/,
-# whose pictures the documents show, the files git tracks in a checkout, so
+# each where it exists, and under examples/, deploy/ and assets/, the
+# repository's pictures, the files git tracks in a checkout, so
 # that no untracked file goes in, read as whoever installs, whose checkout
 # it need not be, which git refuses unless told it is safe; or in an
 # unpacked archive every file there but EXAMPLES_MADE's, which make release

@@ -1,6 +1,6 @@
 # Language feedback
 
-What writing Ernest felt against the principles, a line each, a queue: Ernest's session reads this file and never writes it, this session says by a message when it adds lines, by their numbers and a sentence each, and Ernest's verdict comes by a message from that session, as Ernest's clean room procedure says; the log here cites Ernest's number, and the line then goes; a line not answered, or not agreed with, stays with the verdict and the reason beneath it. The file goes when it is empty.
+What writing Ernest felt against the principles, a line each, carried to Ernest as `CLAUDE.md`'s *The work* says.
 
 The lines are numbered on from the thirty-four of the rounds before, all answered.
 
@@ -20,7 +20,7 @@ Line 35 was found on 2026-11-21 against `ern 0.10.0`, while Ernest's close that 
 
     A probe on `ern 0.11.0+93a13b13` over the loopback: a client writes plain text to a listener of `listenTls`. The server's first read fails at once, `Left(Other("TLS server: In state hello ... unsupported_record_type ..."))`, and its `Tcp.close` then answers after 5,001 ms. It does so whether the client has read the server's 7-byte alert or reads nothing, in nine runs of nine, and it answers at once in the two where the client closed first. A `kill` of that socket in place of the close ends its process `Killed` after the same 5,001 ms, the process `Running` meanwhile and its descriptor open, in two runs of two, and at once where the client closed first, though E.18 has `kill` end a socket "as it ends any process".
 
-    ernest-httpd's server shows it: a client that speaks plain HTTP to its port 443 holds its place in the caps 5 seconds past the failed read, and the test of a plain-text client of a TLS listener fails on it. Principle 3: when a close answers is the program's to know, and the page's one clause on a handshake reads as though a failed one answers at once. Ask: E.18 says what a close and a kill after a failed handshake wait for; and Ernest decides whether each ends the socket at once, as a close does where the handshake has not ended.
+    ernest-httpd's server shows it: a client that speaks plain HTTP to its port 443 holds its place in the caps 5 seconds past the failed read, and the test of a plain-text client of a TLS listener has its client close first, so that the close answers. Principle 3: when a close answers is the program's to know, and the page's one clause on a handshake reads as though a failed one answers at once. Ask: E.18 says what a close and a kill after a failed handshake wait for; and Ernest decides whether each ends the socket at once, as a close does where the handshake has not ended.
 
 37. **Over TCP a close that waits answers up to a second after the far end has read the last byte and the close, and E.18 does not say so.** E.18 has `close` answer "once the socket's bytes ... are with the kernel, or the bytes are dropped", and states a lag of up to a second for TLS alone: "Over TLS it reads the close, with the record that ends the connection, when the socket next looks at what the host holds, up to a second later".
 
