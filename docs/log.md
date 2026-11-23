@@ -913,9 +913,30 @@ On the user's word the end does not wait for a response's last bytes, and design
 
 ## The readers at f6bf173
 
-*2026-11-23.* The full review's five readers read `f6bf173` side by side, each in a clone of its own, as `docs/full_review.md` has them: K the cold reader, C the code, D the documents, S the security and L the live shell. They found 119 things: K 24, C 27, D 34, S 16 and L 18. With the three the plan held, P1 to P3, they stand in `docs/findings.md`, a line each, a line that repeats another naming it, and every list whole below. Twenty findings of Ernest's are lines 38 to 57 of the language feedback. Two more, S12 and S15, stand in the findings until a fix needs them. Nothing went to Ernest's session or the template's, on the user's word, and the four findings against the template's files, C2, D10, D13 and D32, stay in the findings until the user says where they go.
+*2026-11-23.* The full review's five readers read `f6bf173` side by side, each in a clone of its own, as `docs/full_review.md` has them: K the cold reader, C the code, D the documents, S the security and L the live shell. They found 119 things: K 24, C 27, D 34, S 16 and L 18. With the three the plan held, P1 to P3, they stand in `docs/findings.md`, a line each, a line that repeats another naming it, and every list whole below. Twenty-four findings of Ernest's are lines 38 to 57 of the language feedback. Two more, S12 and S15, stand in the findings until a fix needs them. Nothing went to Ernest's session or the template's, on the user's word, and the four findings against the template's files, C2, D10, D13 and D32, stay in the findings until the user says where they go.
 
 The most serious are L1, a visitor's resizes growing the server's memory without bound, and S1 to S3 and L2 to L5. Those of the shell meet no visitor today, since `deploy/config.json` holds no shell until item 5's switch. S2's five addresses that fill a listener meet the deployed site now, and S3 meets whoever runs the example on a machine others share.
 
 The briefs gave C, S and L no word against the log, which `docs/full_review.md` keeps from a reader. S and C read in it, S1 citing the decision of 2026-10-27 and C10 its silence, so the sort weighs those two on what each showed, not on what the log says.
+
+
+## The sort at f6bf173
+
+*2026-11-23.* The review's 96 lines of the program's were sorted with the user, one question at a time, after the session had checked the most serious itself: L1 by reading and by L's timing run again, 10,000, 20,000 and 40,000 resizes answered in 0.42, 1.49 and 5.41 seconds, keys paced and flat; S1, L2 and L6 by reading; the documents' findings by their quotes. Sixty are fixed in the third leg, sixteen planned as items 12 to 15 and item 5, six dropped and half of a seventh, four held for the template, and ten are another line's repeat; the other 26 are Ernest's, 24 of them lines 38 to 57 of the language feedback, S12 line 58 with item 12 and S15 none.
+
+**The shell before the switch.** The findings a visitor meets once the shell is live are items before item 5, which waits for them as well as for Ernest's release: what a first user meets is built first. S2 comes first of all, since five addresses deny the static site today.
+
+**Pacing a resize.** A shell keeps one resize outstanding and holds the latest size, as §12 paces keys by `Wrote`. Draining the waiting resizes in the session would leave the channel unpaced for the next message dear to the session, and a rate would wait on a clock (principle 2).
+
+**One address's sessions.** The decision of 2026-10-27, no total lifetime since a session kept alive holds one shell, stands; S1 sharpens it, since one address could be every holder. `shell.per-address` bounds what an address holds, at 2 so that a visitor's two browsers or a shared router each get a shell (principle 5).
+
+**The caps by address.** An IPv6 address counts by its /64, since one host holds 2^64 of them, and at the connection cap the listener ends the connection longest outside a request, which §7's stop already tells apart. The narrower promise, that enough addresses fill a listener, was weighed and refused: the site is live, five addresses cost nothing, and the mechanism uses what the listener holds. Sound first.
+
+**The container.** The wrapper's removal runs in a session of its own and the unit removes what is left after a stop, since a kill of the group, the runtime's death and an early hangup each left a container running. A bound conmon holds, `--timeout`, would be the total lifetime of 2026-10-27 again. The log driver, the swap, the user namespace and one slice of one core for every container come with it; a pin by digest was dropped, since the full tag takes the base system's security fixes.
+
+**A restart** waits for the session ending under its cookie, so that the programs never pass `most-at-once` and a restart still never meets the cap. **The cookie** is `__Host-shell` with `Path=/`, which a browser refuses from plain HTTP or with a `Domain`; a redraw would need a call to the sessions in the handshake, and a signature does not stop a cookie the server drew from being planted.
+
+**The narrower promises.** The example's shell is a machine's own, as its page says, now naming its environment and every local process (S3), with no opt-in and no `env -i`, which would route around line 39. A write cut short at its deadline holds no line though its bytes may reach the client, until line 35's answer (P2). §4 refuses a shell path no request can match (P3), and five more rules come: a warning in whole seconds, an origin that is one, an access log that names no directory, the directory's 301 with its query, and the JSON error in words, a member named twice stated as `Json` reads it until line 38 is answered (principle 1).
+
+**What waits.** The template's four findings and lines 38 to 57 wait for the user's word on messages, and the design's line 94 stays as written, since rewording it for the check would route around C2; the repository's paths after it exist, checked by hand.
 

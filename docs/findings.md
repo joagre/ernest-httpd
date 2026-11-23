@@ -1,122 +1,124 @@
 # Findings
 
-The full review's findings, read at `f6bf173` on 2026-11-23 as `docs/full_review.md` has them, by the readers K, C, D, S and L, and the three the plan held for this file, P1 to P3. Each line stands until a commit does it, drops it or plans it, which the commit messages say, and the file goes when every line is decided. What the readers found of Ernest's is lines 38 to 57 of `language_feedback.md`, and the lines here that name the template's file stay here until the user says where they go. A line that repeats another names it. The readers' lists stand whole below the lines, each finding by its reader's letter, renumbered on where a reader lettered a part of its own.
+The full review's findings, read at `f6bf173` on 2026-11-23 as `docs/full_review.md` has them, by the readers K, C, D, S and L, and the three the plan held for this file, P1 to P3. Each line stands until a commit does it, drops it or plans it, which the commit messages say, and the file goes when every line is decided.
+
+What the readers found of Ernest's is lines 38 to 57 of `language_feedback.md`, and the lines here that name the template's file stay here until the user says where they go. A line that repeats another names it. The sort, on 2026-11-23, gave each line its verdict: fixed in the review's third leg, planned as an item of milestone 2, dropped with its reason, or held for the template. The readers' lists stand whole below the lines, each finding by its reader's letter, renumbered on where a reader lettered a part of its own.
 
 ## The lines
 
 ### The plan's
 
-- **P1.** §12's deadline sets its alarm again for a warning time already passed where the warning is more than half the lifetime, which Ernest's panel run met.
-- **P2.** A write cut short at its deadline reaches its client whole on 0.11, though §6 tells it to neither the log nor the listener.
-- **P3.** `shell.path` and `shell.client`, which §4 has begin with `/` alone, are compared with a path `Http.target` encodes.
+- **P1.** §12's deadline sets its alarm again for a warning time already passed where the warning is more than half the lifetime, which Ernest's panel run met. Fix in the third leg.
+- **P2.** A write cut short at its deadline reaches its client whole on 0.11, though §6 tells it to neither the log nor the listener. Fix in the third leg: §6 says it holds no line, though its bytes may reach the client.
+- **P3.** `shell.path` and `shell.client`, which §4 has begin with `/` alone, are compared with a path `Http.target` encodes. Fix in the third leg: §4's rule, `begin with / and hold only letters, digits and - . _ ~ ! $ & ' ( ) * + , ; = : @ /`.
 
 ### S, the security reader
 
-- **S1.** Real exposure: one address starts every session `most-at-once` allows and keeps each by a reattach and an extend, and nothing caps one address's live sessions (§12, `src/sessions.ern` line 117).
-- **S2.** Real exposure: the per-address caps count a whole address, so five IPv4 addresses or one IPv6 /64 fill a listener, the cap evicts no idle connection, and fresh addresses lift the starts window (§7, §12).
-- **S3.** Real exposure: the example's shell gives any local client that writes `Origin: http://localhost:8080` the developer's account and the server's whole environment, `SSH_AUTH_SOCK` among it, and so do the tests' servers (§11).
-- **S4.** Hardening: a cookie the client chooses names a new session and is never replaced, so a planted cookie is taken over later from any address (§11, *The cookie*).
-- **S5.** Hardening: a path the file system refuses reaches standard error unescaped, control and bidirectional characters among it (§5, *The errors*).
-- **S6.** Hardening, not run: the hangup's kill of the wrapper can leave its container running outside every cap where `podman rm` outlasts `shell.hangup` (§12, `deploy/shell.sh`).
-- **S7.** Hardening, not run: the one core is a container's, so two sessions take both of the machine's (§13).
-- **S8.** Hardening, not run: the container's root is `httpd` on the host, which owns the keys (§13).
-- **S9.** `src/hosts.ern`'s module comment says "in any case" where §9 and the code say ASCII case.
+- **S1.** Real exposure: one address starts every session `most-at-once` allows and keeps each by a reattach and an extend, and nothing caps one address's live sessions (§12, `src/sessions.ern` line 117). Planned: item 12, `shell.per-address`, 2 deployed.
+- **S2.** Real exposure: the per-address caps count a whole address, so five IPv4 addresses or one IPv6 /64 fill a listener, the cap evicts no idle connection, and fresh addresses lift the starts window (§7, §12). Planned: item 12, an IPv6 address by its /64, and the connection longest outside a request ended at the cap.
+- **S3.** Real exposure: the example's shell gives any local client that writes `Origin: http://localhost:8080` the developer's account and the server's whole environment, `SSH_AUTH_SOCK` among it, and so do the tests' servers (§11). Fix in the third leg: `examples/README.md`'s sentence and the README's line on `make test`.
+- **S4.** Hardening: a cookie the client chooses names a new session and is never replaced, so a planted cookie is taken over later from any address (§11, *The cookie*). Planned: item 14, the cookie `__Host-shell` with `Path=/`.
+- **S5.** Hardening: a path the file system refuses reaches standard error unescaped, control and bidirectional characters among it (§5, *The errors*). Fix in the third leg.
+- **S6.** Hardening, not run: the hangup's kill of the wrapper can leave its container running outside every cap where `podman rm` outlasts `shell.hangup` (§12, `deploy/shell.sh`). Planned: item 15.
+- **S7.** Hardening, not run: the one core is a container's, so two sessions take both of the machine's (§13). Planned: item 15, a slice of one core.
+- **S8.** Hardening, not run: the container's root is `httpd` on the host, which owns the keys (§13). Planned: item 15, `--userns=nomap`.
+- **S9.** `src/hosts.ern`'s module comment says "in any case" where §9 and the code say ASCII case. Fix in the third leg.
 
 ### C, the code reader
 
-- **C1.** The configuration's `headers` may name `Cache-Control` and `Sec-WebSocket-Version`, which the server writes itself, so a response carries two of each, and a test expects it (§4; D2).
-- **C2.** The template's: `tools/docs.ern` checks no backticked path after the design's line 94, whose double-backtick span holds a backtick.
-- **C3.** A control character in a configuration member's name reaches standard error raw, in `is no field of` and in a field's name (§4).
-- **C4.** A member named twice is taken silently, the last winning (§4 is silent; K8).
-- **C5.** A Close echoed as 1000 whatever its code passes every test (§11).
-- **C6.** The browser test cannot tell the warning's seconds from a constant (§14).
-- **C7.** No test reaches the smoke test's dimmed answer (§13).
-- **C8.** A warning that is no whole number of seconds tells the page the wrong milliseconds, 1500 as 1000 and 500 as 0 (§4, §14).
-- **C9.** A shell attaching has no deadline and watches nothing, so an end of the sessions process leaves it waiting in its place (§11, §12).
-- **C10.** The connection writes by `Tcp.write` over `Http.renderResponse`, against E.0's shape rule 11, as §6 says.
-- **C11.** §6's "a 101 carries its own `Connection: Upgrade` and none of these" reads two ways (D22).
-- **C12.** `deploy/shell-start.sh` reads foo's output with `2>&1` where §13 says its standard error.
-- **C13.** Eight cases that cannot come answer a value where the style guide has them fault.
-- **C14.** Three tests that launch the server take port 0 where the count of ports is wrong, and two others answer `Left`.
-- **C15.** Forms written more than once: `header` four times, `headed`, `isControl`, the test's certificate, and `next` three times and twice.
-- **C16.** `src/hosts.ern` builds the site and reads every configured host on each request, where once would do.
-- **C17.** Prefixes cut by hand where `String.stripPrefix` would do.
-- **C18.** `src/shell.ern` line 130 takes `""` for no `Origin` or two.
-- **C19.** Names: `Waiting` for a cap reached, locals `object` that hide `Config.object`, and a wait's beginning named `start` and `key` where the guide has `since`.
-- **C20.** `responded` compares `version.minor == 0` where the module compares whole versions.
+- **C1.** The configuration's `headers` may name `Cache-Control` and `Sec-WebSocket-Version`, which the server writes itself, so a response carries two of each, and a test expects it (§4; D2). Fix in the third leg.
+- **C2.** The template's: `tools/docs.ern` checks no backticked path after the design's line 94, whose double-backtick span holds a backtick. Held for the template.
+- **C3.** A control character in a configuration member's name reaches standard error raw, in `is no field of` and in a field's name (§4). Fix in the third leg.
+- **C4.** A member named twice is taken silently, the last winning (§4 is silent; K8). Fix in the third leg: §4's rule as it stands, the last kept; the refusal waits on line 38.
+- **C5.** A Close echoed as 1000 whatever its code passes every test (§11). Fix in the third leg.
+- **C6.** The browser test cannot tell the warning's seconds from a constant (§14). Fix in the third leg.
+- **C7.** No test reaches the smoke test's dimmed answer (§13). Fix in the third leg.
+- **C8.** A warning that is no whole number of seconds tells the page the wrong milliseconds, 1500 as 1000 and 500 as 0 (§4, §14). Fix in the third leg: `shell.warning` must `be a multiple of 1000`.
+- **C9.** A shell attaching has no deadline and watches nothing, so an end of the sessions process leaves it waiting in its place (§11, §12). Planned: item 13, the attach bounded by the idle deadline.
+- **C10.** The connection writes by `Tcp.write` over `Http.renderResponse`, against E.0's shape rule 11, as §6 says. Fix in the third leg: §6 names `Http.writeResponse`, and the code calls it.
+- **C11.** §6's "a 101 carries its own `Connection: Upgrade` and none of these" reads two ways (D22). Fix in the third leg.
+- **C12.** `deploy/shell-start.sh` reads foo's output with `2>&1` where §13 says its standard error. Fix in the third leg: §13 says both streams.
+- **C13.** Eight cases that cannot come answer a value where the style guide has them fault. Fix in the third leg: each faults.
+- **C14.** Three tests that launch the server take port 0 where the count of ports is wrong, and two others answer `Left`. Fix in the third leg.
+- **C15.** Forms written more than once: `header` four times, `headed`, `isControl`, the test's certificate, and `next` three times and twice. Dropped: `header`, the certificate and `next` wait on lines 49 and 50, and sharing the rest would export a private helper.
+- **C16.** `src/hosts.ern` builds the site and reads every configured host on each request, where once would do. Fix in the third leg.
+- **C17.** Prefixes cut by hand where `String.stripPrefix` would do. Fix in the third leg.
+- **C18.** `src/shell.ern` line 130 takes `""` for no `Origin` or two. Fix in the third leg.
+- **C19.** Names: `Waiting` for a cap reached, locals `object` that hide `Config.object`, and a wait's beginning named `start` and `key` where the guide has `since`. Fix in the third leg, each word searched first.
+- **C20.** `responded` compares `version.minor == 0` where the module compares whole versions. Fix in the third leg.
 
 ### K, the cold reader
 
-- **K1.** The README's `make release` names no need of a release's `ern`, and the refusal comes after the tests.
-- **K2.** The smoke test cannot pass against a canonical host with a port: its 301 checks expect `https://` and the host, and it dials the port twice.
-- **K3.** `shell.origins` takes what is no origin, a path, `*`, a bare host or an empty list, and every upgrade is then a 403 with no word (§4).
-- **K4.** A 431 has no phrase, `HTTP/1.1 431 ` and a body of `431 ` (K20).
-- **K5.** The installed launcher does not run through a symbolic link, taking its root from the link's place.
-- **K6.** The launcher's command line: `--config-dir` alone is the shell's `can't shift`, `--help` is read as a path, the usage line lacks `--config-dir`, and an `ern` not found is `exec: ern: not found`.
-- **K7.** `make run` without npm's reach fails in curl's, gzip's and tar's words, and the README's first step names no fetch.
-- **K8.** An `access-log` that names a directory passes the start, and every response then loses its line; the member named twice is C4.
-- **K9.** A directory's 301 drops the query, where the host's 301 keeps it (§5).
-- **K10.** `deploy/README.md` step 10 quotes `unknown user 'httpd'` where logrotate 3.22 says `unknown group 'httpd'`.
-- **K11.** D5.
-- **K12.** D4.
-- **K13.** The tree is 0.1.0 by `VERSION` and 0.11 by `package.conf`, and `CHANGES.md`'s 0.1.0 names `ern 0.9` (D1, D33).
-- **K14.** The configuration's members stand in no page a user of the program reads but the design.
-- **K15.** D24.
-- **K16.** A configuration that is not JSON is said as `Json.UnexpectedByte(byte = 111, ...)`.
-- **K17.** The shell page's `unavailable` says neither which cap nor when to come back.
-- **K18.** The installed example cannot show its shell: no `xterm/`, and its access log's directory is a checkout's.
-- **K19.** The example site has no icon, so a first visit's `/favicon.ico` is a 404 in the log and the console.
+- **K1.** The README's `make release` names no need of a release's `ern`, and the refusal comes after the tests. Fix in the third leg: the README's line names a release's `ern`, and the Makefile checks it first.
+- **K2.** The smoke test cannot pass against a canonical host with a port: its 301 checks expect `https://` and the host, and it dials the port twice. Fix in the third leg.
+- **K3.** `shell.origins` takes what is no origin, a path, `*`, a bare host or an empty list, and every upgrade is then a 403 with no word (§4). Fix in the third leg: each `be an origin`, and the list `not be empty`.
+- **K4.** A 431 has no phrase, `HTTP/1.1 431 ` and a body of `431 ` (K20). Fix in the third leg: the phrase in the program, line 41 naming it.
+- **K5.** The installed launcher does not run through a symbolic link, taking its root from the link's place. Fix in the third leg.
+- **K6.** The launcher's command line: `--config-dir` alone is the shell's `can't shift`, `--help` is read as a path, the usage line lacks `--config-dir`, and an `ern` not found is `exec: ern: not found`. Fix in the third leg.
+- **K7.** `make run` without npm's reach fails in curl's, gzip's and tar's words, and the README's first step names no fetch. Fix in the third leg.
+- **K8.** An `access-log` that names a directory passes the start, and every response then loses its line; the member named twice is C4. Fix in the third leg: `access-log` must `name no directory`.
+- **K9.** A directory's 301 drops the query, where the host's 301 keeps it (§5). Fix in the third leg: §5's `Location` keeps the query.
+- **K10.** `deploy/README.md` step 10 quotes `unknown user 'httpd'` where logrotate 3.22 says `unknown group 'httpd'`. Fix in the third leg.
+- **K11.** D5. With D5.
+- **K12.** D4. With D4.
+- **K13.** The tree is 0.1.0 by `VERSION` and 0.11 by `package.conf`, and `CHANGES.md`'s 0.1.0 names `ern 0.9` (D1, D33). With D1 and D33.
+- **K14.** The configuration's members stand in no page a user of the program reads but the design. Fix in the third leg: the README names §4 as the configuration's reference.
+- **K15.** D24. With D24.
+- **K16.** A configuration that is not JSON is said as `Json.UnexpectedByte(byte = 111, ...)`. Fix in the third leg: the error said in words.
+- **K17.** The shell page's `unavailable` says neither which cap nor when to come back. Dropped: the deployed page is Ernest's site, and the example's is a look at one's own machine.
+- **K18.** The installed example cannot show its shell: no `xterm/`, and its access log's directory is a checkout's. Fix in the third leg.
+- **K19.** The example site has no icon, so a first visit's `/favicon.ico` is a 404 in the log and the console. Fix in the third leg.
 
 ### D, the documents reader
 
-- **D1.** `deploy/README.md` names the archive `ernest_httpd-0.1.0` in ten lines, whose `deploy/` lacks `shell-start.sh` and holds the older unit and wrapper.
-- **D2.** C1.
-- **D3.** `README.md` says the deployed site has the shell, *Try it*, which the plan and §13 bring at item 5's switch.
-- **D4.** `deploy/README.md` step 12 names a session's reader and not its writer (K12).
-- **D5.** `deploy/README.md` step 4 has a release's `ern --version` print a `+` and a commit (K11).
-- **D6.** The glossary's `listener` is "the process that accepts", which §2 and §7 give the acceptor, and says "Not `acceptor`".
-- **D7.** §6's "the two paragraphs above" no longer names the paragraphs it means.
-- **D8.** §2's "every socket the program ends it so closes" is not true at the stop, where §7 kills a connection that waits.
-- **D9.** The design's line 3 cites `CLAUDE.md`'s *Before code*, which is *Who decides*.
-- **D10.** The template's: `full_review.md` has a reader write its list to a file, and `agents.md` says an agent cannot.
-- **D11.** `docs/plan.md` line 31 points at what *The floor's rise* leaves the stop time, which is done.
-- **D12.** `language_feedback.md` line 36 says the plain-text client's test fails on it, and it passes, its client closing first.
-- **D13.** The template's: `tools/docs.ern` cites `CLAUDE.md`'s *Writing* for the 150 words and the history, which *Writing* does not hold.
-- **D14.** `docs/README.md` leaves out `SECURITY.md` and `assets/README.md`.
-- **D15.** The shell's member stands in the design, twice in `deploy/README.md`, and in a test.
-- **D16.** The make targets stand in the README and in the Makefile's head, and differ.
-- **D17.** What each document is stands in `CLAUDE.md` and in `docs/README.md`, in different words.
-- **D18.** `CHANGES.md` restates `release.md`'s rule for a release's note, less one part.
-- **D19.** What `make uninstall` removes stands four times.
-- **D20.** `language_feedback.md`'s header restates `CLAUDE.md`'s *The work*, and lines 35 to 37 name no program's file.
-- **D21.** `docs/plan.md` holds five paragraphs of what is done.
-- **D22.** C11.
-- **D23.** The glossary's `server` has one meaning, and the design uses it with two.
-- **D24.** `README.md` describes `ERL_DEPS`, `erl/`, `test/` and `THIRD_PARTY_LICENSES`, which this program has none of (K15).
-- **D25.** §13 quotes the rule `must not be empty`, which §4 writes `not be empty`.
-- **D26.** `deploy/README.md`'s "under 256 MiB" is 256 exactly, and no document owns the 0.32 MiB.
-- **D27.** The OTP release stands in `deploy/README.md` and in the Containerfile, held together by no test, and the README restates the floor.
-- **D28.** `deploy/README.md` step 7 does not say which file takes the member `shell`.
-- **D29.** §12 says twice that a start drops the starts older than the window.
-- **D30.** §13 and the Makefile count `assets/` among the documents' pictures, which no document shows.
-- **D31.** The rehearsal's unit, directory and port stand only in the plan.
-- **D32.** The template's: `agents.md` and `full_review.md` count differently what a reader keeps of `CLAUDE.md`.
-- **D33.** `CHANGES.md`'s 0.1.0 names `ern 0.9`, a minor and no archive's version (K13).
+- **D1.** `deploy/README.md` names the archive `ernest_httpd-0.1.0` in ten lines, whose `deploy/` lacks `shell-start.sh` and holds the older unit and wrapper. Fix in the third leg: `ernest_httpd-VERSION`.
+- **D2.** C1. With C1.
+- **D3.** `README.md` says the deployed site has the shell, *Try it*, which the plan and §13 bring at item 5's switch. Planned: item 5, whose switch makes the two sentences true and whose check reads them.
+- **D4.** `deploy/README.md` step 12 names a session's reader and not its writer (K12). Fix in the third leg.
+- **D5.** `deploy/README.md` step 4 has a release's `ern --version` print a `+` and a commit (K11). Fix in the third leg.
+- **D6.** The glossary's `listener` is "the process that accepts", which §2 and §7 give the acceptor, and says "Not `acceptor`". Fix in the third leg.
+- **D7.** §6's "the two paragraphs above" no longer names the paragraphs it means. Fix in the third leg.
+- **D8.** §2's "every socket the program ends it so closes" is not true at the stop, where §7 kills a connection that waits. Fix in the third leg.
+- **D9.** The design's line 3 cites `CLAUDE.md`'s *Before code*, which is *Who decides*. Fix in the third leg.
+- **D10.** The template's: `full_review.md` has a reader write its list to a file, and `agents.md` says an agent cannot. Held for the template.
+- **D11.** `docs/plan.md` line 31 points at what *The floor's rise* leaves the stop time, which is done. Fix in the third leg.
+- **D12.** `language_feedback.md` line 36 says the plain-text client's test fails on it, and it passes, its client closing first. Fix in the third leg.
+- **D13.** The template's: `tools/docs.ern` cites `CLAUDE.md`'s *Writing* for the 150 words and the history, which *Writing* does not hold. Held for the template.
+- **D14.** `docs/README.md` leaves out `SECURITY.md` and `assets/README.md`. Fix in the third leg.
+- **D15.** The shell's member stands in the design, twice in `deploy/README.md`, and in a test. Dropped: the JSON is what the operator pastes.
+- **D16.** The make targets stand in the README and in the Makefile's head, and differ. Fix in the third leg.
+- **D17.** What each document is stands in `CLAUDE.md` and in `docs/README.md`, in different words. Dropped: the one says who owns a fact, the other is a reader's index.
+- **D18.** `CHANGES.md` restates `release.md`'s rule for a release's note, less one part. Fix in the third leg.
+- **D19.** What `make uninstall` removes stands four times. Fix in the third leg.
+- **D20.** `language_feedback.md`'s header restates `CLAUDE.md`'s *The work*, and lines 35 to 37 name no program's file. Fix in the third leg, the header citing *The work*; its second half dropped, each line's probe being described to be run again.
+- **D21.** `docs/plan.md` holds five paragraphs of what is done. Fix in the third leg.
+- **D22.** C11. With C11.
+- **D23.** The glossary's `server` has one meaning, and the design uses it with two. Fix in the third leg.
+- **D24.** `README.md` describes `ERL_DEPS`, `erl/`, `test/` and `THIRD_PARTY_LICENSES`, which this program has none of (K15). Fix in the third leg.
+- **D25.** §13 quotes the rule `must not be empty`, which §4 writes `not be empty`. Fix in the third leg.
+- **D26.** `deploy/README.md`'s "under 256 MiB" is 256 exactly, and no document owns the 0.32 MiB. Fix in the third leg.
+- **D27.** The OTP release stands in `deploy/README.md` and in the Containerfile, held together by no test, and the README restates the floor. Fix in the third leg.
+- **D28.** `deploy/README.md` step 7 does not say which file takes the member `shell`. Fix in the third leg.
+- **D29.** §12 says twice that a start drops the starts older than the window. Fix in the third leg.
+- **D30.** §13 and the Makefile count `assets/` among the documents' pictures, which no document shows. Fix in the third leg.
+- **D31.** The rehearsal's unit, directory and port stand only in the plan. Dropped: the facts go at the switch.
+- **D32.** The template's: `agents.md` and `full_review.md` count differently what a reader keeps of `CLAUDE.md`. Held for the template.
+- **D33.** `CHANGES.md`'s 0.1.0 names `ern 0.9`, a minor and no archive's version (K13). Planned: item 5, whose release's note names `ern 0.11.0` whole.
 
 ### L, the live shell reader
 
-- **L1.** Real exposure: one visitor's resizes grow the server's memory without bound, about 60 MiB a second, since nothing paces a shell against its session and each `Os.resize` waits behind the backlog; the session then outlives its lifetime and the server its stop (§11, §12; line 54).
-- **L2.** Real exposure: a visitor's container outlives its session wherever the wrapper's trap does not finish, at the session's kill after `hangup`, the runtime's death or systemd's, since conmon stands outside the group (§13, `deploy/shell.sh`; S6).
-- **L3.** S1.
-- **L4.** Real exposure: the caps by address bound nothing for a visitor with an IPv6 prefix (S2).
-- **L5.** Real exposure, not run: the container's command names no log driver, so conmon logs every byte a visitor's program writes, outside every cap (§13).
-- **L6.** Hardening: a restart passes `most-at-once`, the ending session's program counted by nothing, twelve programs shown against a cap of six (§12).
-- **L7.** Hardening: no check shows that the container's caps hold, and its swap is not capped (`deploy/README.md` steps 7 and 11).
-- **L8.** S4, by a cookie a sibling host sets.
-- **L9.** S8.
-- **L10.** Hardening: the image is pinned by its tag and not its digest (`deploy/Containerfile`).
-- **L11.** C9, and an attach to a session that died before the sessions took its `Down`.
-- **L12.** A displaced shell's last read, a stop among it, still reaches the session the new shell holds (§12).
+- **L1.** Real exposure: one visitor's resizes grow the server's memory without bound, about 60 MiB a second, since nothing paces a shell against its session and each `Os.resize` waits behind the backlog; the session then outlives its lifetime and the server its stop (§11, §12; line 54). Planned: item 13, one resize outstanding, the latest held.
+- **L2.** Real exposure: a visitor's container outlives its session wherever the wrapper's trap does not finish, at the session's kill after `hangup`, the runtime's death or systemd's, since conmon stands outside the group (§13, `deploy/shell.sh`; S6). Planned: item 15, the removal in a session of its own and `ExecStopPost`.
+- **L3.** S1. With S1.
+- **L4.** Real exposure: the caps by address bound nothing for a visitor with an IPv6 prefix (S2). With S2.
+- **L5.** Real exposure, not run: the container's command names no log driver, so conmon logs every byte a visitor's program writes, outside every cap (§13). Planned: item 15, `--log-driver=none`.
+- **L6.** Hardening: a restart passes `most-at-once`, the ending session's program counted by nothing, twelve programs shown against a cap of six (§12). Planned: item 13, a restart waiting for its ending session.
+- **L7.** Hardening: no check shows that the container's caps hold, and its swap is not capped (`deploy/README.md` steps 7 and 11). Planned: item 15, step 11's check and `--memory-swap 128m`.
+- **L8.** S4, by a cookie a sibling host sets. With S4.
+- **L9.** S8. With S8.
+- **L10.** Hardening: the image is pinned by its tag and not its digest (`deploy/Containerfile`). Dropped: the full tag takes the base system's security fixes, which a digest would freeze.
+- **L11.** C9, and an attach to a session that died before the sessions took its `Down`. Planned: item 13, with C9.
+- **L12.** A displaced shell's last read, a stop among it, still reaches the session the new shell holds (§12). Planned: item 13, the messages carrying the shell.
 
 ### Ernest's
 
@@ -135,7 +137,7 @@ What the readers found of Ernest's is lines of `language_feedback.md`:
 - line 53: S16;
 - lines 54 to 57: L13, L15, L16 and L17, line 54 after L1.
 
-S12, that no function reads an IP address's text into its bytes, and S15, that `Crypto` has no HMAC, stand here and are no lines, since no code needs either. Each becomes a line if the fix of S2 or of S4 takes it.
+S12, that no function reads an IP address's text into its bytes, becomes line 58 with item 12, whose parser it names. S15, that `Crypto` has no HMAC, is no line, since the cookie's fix needs none.
 
 ## The readers' lists
 
