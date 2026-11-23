@@ -128,36 +128,42 @@ export fn handshake(shell : Config.Shell, request : Http.Request) : Either(Refus
         Left(Refusal(status = 426,
                      headers = [header("Upgrade", "websocket"),
                                 header("Sec-WebSocket-Version", "13")]))
-    else if !List.contains(shell.origins, Optional.withDefault(origin(headers), "")) then
-        Left(Refusal(status = 403, headers = []))
-    else match key(headers) {
-        None ->
-            Left(Refusal(status = 400, headers = []))
-      | Some(key) -> {
-            let #(cookie, set) = match carried(headers) {
-                Some(cookie) ->
-                    #(cookie, [])
-              | None -> {
-                    let cookie = Bytes.toHex(Crypto.randomBytes(16));
-                    #(cookie,
-                      [header("Set-Cookie",
-                              "shell="
-                                  <> cookie
-                                  <> "; Path="
-                                  <> shell.path
-                                  <> "; Secure; HttpOnly; SameSite=Strict")])
-                }
-            };
-            let response =
-                Http.Response(version = Http.http11,
-                              status = 101,
-                              headers = [header("Upgrade", "websocket"),
-                                         header("Connection", "Upgrade"),
-                                         header("Sec-WebSocket-Accept", WebSocket.accept(key))]
-                                  <> set);
-            Right(Accepted(=response, =cookie))
-        }
+    else match origin(headers) {
+        Some(origin) when List.contains(shell.origins, origin) ->
+            match key(headers) {
+                Some(key) -> Right(accepted(shell, headers, key))
+              | None -> Left(Refusal(status = 400, headers = []))
+            }
+      | _ ->
+            Left(Refusal(status = 403, headers = []))
     }
+}
+
+// The 101 of an upgrade with the key, and the request's cookie or a new one,
+// set where it carried none.
+fn accepted(shell : Config.Shell, headers : List(Http.Header), key : String) : Accepted = {
+    let #(cookie, set) = match carried(headers) {
+        Some(cookie) ->
+            #(cookie, [])
+      | None -> {
+            let cookie = Bytes.toHex(Crypto.randomBytes(16));
+            #(cookie,
+              [header("Set-Cookie",
+                      "shell="
+                          <> cookie
+                          <> "; Path="
+                          <> shell.path
+                          <> "; Secure; HttpOnly; SameSite=Strict")])
+        }
+    };
+    let response =
+        Http.Response(version = Http.http11,
+                      status = 101,
+                      headers = [header("Upgrade", "websocket"),
+                                 header("Connection", "Upgrade"),
+                                 header("Sec-WebSocket-Accept", WebSocket.accept(key))]
+                          <> set);
+    Accepted(=response, =cookie)
 }
 
 // Whether the headers of the name list the token, written in lower case,
@@ -320,8 +326,10 @@ fn serving(connected : Connected,
                     readNext(reader);
                     serving(connected, attachState, reader)
                 }
-              | Unattached or Attaching(_) ->
+              | Unattached ->
                     closed(connected, attachState, reader)
+              | Attaching(_) ->
+                    fault("no Read is outstanding while an attach is under way, so no Idle comes")
             }
       | ReaderEnded(down) ->
             // a reader that returned has told its last message, which may
@@ -467,25 +475,13 @@ fn toldBy(connected : Connected,
           reader : Optional(Address(ReaderMsg)),
           told : Session.Told) : Optional(AttachState) receiving ShellMsg =
     match told {
-        Session.Attached(=session, =attachment) -> {
-            monitor(Process.fromAddress(session), SessionEnded);
-            let held = match attachState {
-                Attaching(held) -> List.reverse(held)
-              | Unattached or AttachedTo(_) -> []
-            };
-            List.forEach(held, fn(message) = send(session, message));
-            let word = match attachment {
-                Session.New -> "new"
-              | Session.Joined -> "joined"
-            };
-            let text = Json.format(Json.Object(Map.fromList([#("attached", Json.Text(word))])));
-            let attached = written(connected, AttachedTo(session), reader, WebSocket.Text(text));
+        Session.Attached(=session, =attachment) ->
             match attachState {
-                Attaching(_) when Optional.isSome(attached) -> readNext(reader)
-              | _ -> Unit
-            };
-            attached
-        }
+                Attaching(held) ->
+                    attached(connected, reader, session, attachment, held)
+              | Unattached or AttachedTo(_) ->
+                    fault("Attached answers the one Attach, sent as the attach began")
+            }
       | Session.Unavailable -> {
             closedWith(connected, attachState, reader, 4003);
             None
@@ -502,6 +498,27 @@ fn toldBy(connected : Connected,
             None
         }
     }
+
+// The shell attached to the session: the session monitored and told what
+// was held for it, in order, the attachment written as a text, and the
+// reader asked to read again; the attach state after it, or None where the
+// write closed the connection.
+fn attached(connected : Connected,
+            reader : Optional(Address(ReaderMsg)),
+            session : Address(Session.SessionMsg),
+            attachment : Session.Attachment,
+            held : List(Session.SessionMsg)) : Optional(AttachState) receiving ShellMsg = {
+    monitor(Process.fromAddress(session), SessionEnded);
+    List.forEach(List.reverse(held), fn(message) = send(session, message));
+    let word = match attachment {
+        Session.New -> "new"
+      | Session.Joined -> "joined"
+    };
+    let text = Json.format(Json.Object(Map.fromList([#("attached", Json.Text(word))])));
+    let state = written(connected, AttachedTo(session), reader, WebSocket.Text(text));
+    if Optional.isSome(state) then readNext(reader) else Unit;
+    state
+}
 
 // The message written as a frame within the write deadline: the attach
 // state, or None where the write failed or did not end in time, which
@@ -530,8 +547,10 @@ fn outputWritten(connected : Connected,
     match write(connected, WebSocket.Binary(bytes)) {
         Right(Unit) -> {
             match attachState {
-                AttachedTo(session) -> send(session, Session.Written(connected.told))
-              | Unattached or Attaching(_) -> Unit
+                AttachedTo(session) ->
+                    send(session, Session.Written(connected.told))
+              | Unattached or Attaching(_) ->
+                    fault("Output follows Attached from the one session, which attaches the shell")
             };
             Some(attachState)
         }
@@ -805,7 +824,7 @@ fn upgrading(socket : Address(Tcp.SocketMsg),
         Right(#(request, rest)) ->
             match handshake(sessions.shell, request) {
                 Right(Accepted(=response, cookie = carried)) ->
-                    match Tcp.write(socket, Http.renderResponse(response, <<>>), 5000) {
+                    match Http.writeResponse(socket, response, <<>>, 5000) {
                         Right(Unit) -> serve(socket, rest, sessions, carried, "127.0.0.1", timeouts)
                       | Left(_) -> Tcp.close(socket)
                     }
@@ -1478,11 +1497,11 @@ let closesWhereAWriteWaits =
                 attachedClient(sessions, timeouts);
             let reader <- Either.fromOptional(shellReader(), "no reader");
             monitor(reader, Ended);
-            let start = Clock.monotonic();
+            let since = Clock.monotonic();
             List.forEach(List.range(1, mostUnread / Bytes.size(output) + 1),
                          fn(_) = send(shell, Session.Output(output)));
             let readerEnd = endOf(reader);
-            let waited = if Clock.monotonic() - start >= 200 then
+            let waited = if Clock.monotonic() - since >= 200 then
                 "past the deadline"
             else
                 "before the deadline";

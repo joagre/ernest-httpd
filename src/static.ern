@@ -142,14 +142,14 @@ fn get(site : Site, request : Http.Request, ms : Int) : #(Http.Response, Bytes) 
     match asked(request) {
         Left(status) ->
             error(site, status, ms)
-      | Right(Asked(=written, =segments, =asksDirectory)) -> {
+      | Right(Asked(=written, =query, =segments, =asksDirectory)) -> {
             let path = site.root <> Path.join(segments);
             match Fs.stat(path, ms) {
                 Right(Fs.Entry(kind = Fs.Directory)) ->
                     if asksDirectory then
                         index(site, request, path <> Path("index.html"), ms)
                     else
-                        #(response(301, [header("Location", location(written))]), <<>>)
+                        #(response(301, [header("Location", location(written, query))]), <<>>)
               | Right(Fs.Entry(kind = Fs.File) as entry) when !asksDirectory ->
                     file(site, request, entry, ms)
               | Right(_) or Left(Io.NotFound) or Left(Io.Invalid) ->
@@ -162,11 +162,16 @@ fn get(site : Site, request : Http.Request, ms : Int) : #(Http.Response, Bytes) 
 
 // The path of a directory asked for without its `/`: the path as
 // Http.target writes it with `/` appended, its leading `/`s made one, since
-// two would begin a host's name.
-fn location(written : String) : String = {
+// two would begin a host's name, then `?` and the query where the target
+// has one.
+fn location(written : String, query : Optional(String)) : String = {
     let #(_, rest) = List.span(String.toList(written), fn(char) = char == '/');
-    "/" <> String.fromList(rest) <> "/"
+    "/" <> String.fromList(rest) <> "/" <> queried(query)
 }
+
+// `?` and the query, where there is one.
+fn queried(query : Optional(String)) : String =
+    Optional.withDefault(Optional.map(query, fn(query) = "?" <> query), "")
 
 // A directory's index file, which is served where it is a regular file.
 fn index(site : Site, request : Http.Request, path : Path, ms : Int) : #(Http.Response, Bytes) =
@@ -207,20 +212,47 @@ fn contentType(site : Site, path : Path) : String =
         |> Optional.withDefault("application/octet-stream")
 
 // A file the file system refused to describe or to read, or did not answer
-// in time: said on standard error, and answered 500.
+// in time: said on standard error, the path's characters that would break
+// or turn the line written as their bytes, and answered 500.
 fn refused(path : Path, cause : Io.Error) : #(Http.Response, Bytes) = {
-    Io.printlnError(Path.toString(path) <> ": " <> Io.show(cause));
+    Io.printlnError(escaped(Path.toString(path)) <> ": " <> Io.show(cause));
     plain(500)
 }
+
+// The text with each control character, U+0000 to U+001F and U+007F to
+// U+009F, and each character that turns or breaks a line written as its
+// bytes in UTF-8, `\xHH`, as ern writes a path in a refusal.
+fn escaped(text : String) : String =
+    String.join(List.map(String.toList(text), escapedChar), "")
+
+fn escapedChar(char : Char) : String =
+    if isBreaking(Char.toCodePoint(char)) then
+        String.join(List.map(Bytes.toList(String.toUtf8(Char.toString(char))),
+                             fn(byte) = "\\x" <> String.toAsciiUpper(Bytes.toHex(<<byte>>))),
+                    "")
+    else
+        Char.toString(char)
+
+// Whether the code point is a control character, or one that turns or
+// breaks a line: the marks and the embeddings, overrides and isolates of
+// the bidirectional text, and the line and paragraph separators.
+fn isBreaking(codePoint : Int) : Bool =
+    codePoint <= 0x1F
+        || codePoint >= 0x7F && codePoint <= 0x9F
+        || codePoint == 0x200E
+        || codePoint == 0x200F
+        || codePoint >= 0x2028 && codePoint <= 0x202E
+        || codePoint >= 0x2066 && codePoint <= 0x2069
 
 //
 // The target
 //
 
-// What a target asks for: its path as Http.target writes it, the characters
-// G.11 names percent-encoded; the segments it names under the root; and
-// whether it asks for a directory.
-type Asked = Asked(written : String, segments : List(String), asksDirectory : Bool)
+// What a target asks for: its path and its query as Http.target writes them,
+// the characters G.11 names percent-encoded; the segments it names under
+// the root; and whether it asks for a directory.
+type Asked =
+    Asked(written : String, query : Optional(String), segments : List(String), asksDirectory : Bool)
 
 // The target read, its path split into segments and each decoded, or the
 // status it is refused with: 400, or 404 for a segment that begins with a
@@ -233,6 +265,7 @@ fn asked(request : Http.Request) : Either(Int, Asked) = {
     let _ <- if List.contains(segments, "..") then Left(400) else Right(Unit);
     let _ <- if List.any(segments, beginsWithDot) then Left(404) else Right(Unit);
     Right(Asked(=written,
+                query = reference.query,
                 =segments,
                 asksDirectory = String.endsWith(written, "/") || List.isEmpty(segments)))
 }
@@ -267,12 +300,7 @@ fn beginsWithDot(part : String) : Bool =
 /// // => #(Some("/docs?page=2"), Some("/?a%5B%5D=1"), Some("/?q=1"), None)
 /// ```
 export fn pathAndQuery(request : Http.Request) : Optional(String) =
-    Optional.map(form(request),
-                 fn(reference) =
-                     reference.path
-                         <> Optional.withDefault(Optional.map(reference.query,
-                                                              fn(query) = "?" <> query),
-                                                 ""))
+    Optional.map(form(request), fn(reference) = reference.path <> queried(reference.query))
 
 // The target read by Http.target in origin form, no scheme and no
 // authority before a path that begins with `/`, or in absolute form, a
@@ -295,7 +323,10 @@ fn form(request : Http.Request) : Optional(Uri.Reference) =
 // A segment decoded, as text: refused with 400 where it holds `/`, is not
 // UTF-8 or holds a control character.
 fn segment(written : String) : Either(Int, String) = {
-    let bytes <- Either.fromOptional(Uri.decode(written), 400);
+    let bytes = match Uri.decode(written) {
+        Some(bytes) -> bytes
+      | None -> fault("Http.target encodes every % that begins no encoding, so a segment decodes")
+    };
     let _ <- if Bytes.contains(bytes, slash) then Left(400) else Right(Unit);
     let text <- Either.fromOptional(String.fromUtf8(bytes), 400);
     if List.any(String.toList(text), isControl) then Left(400) else Right(text)
@@ -314,7 +345,8 @@ fn isControl(char : Char) : Bool = {
 //
 
 /// The response of the status and its body, plain text naming the status
-/// and its phrase, `404 Not Found` and a line feed.
+/// and its phrase, `404 Not Found` and a line feed, `Http.reason`'s and
+/// 431's, `Request Header Fields Too Large`, which it names none.
 ///
 /// A 404 answers the root's `404.html` instead, as HTML, where that is a
 /// regular file, and 500 where the file system refuses to read it, the path
@@ -344,7 +376,12 @@ export fn error(site : Site, status : Int, ms : Int) : #(Http.Response, Bytes) =
 // The status's response with its body plain text.
 fn plain(status : Int) : #(Http.Response, Bytes) =
     #(response(status, [header("Content-Type", "text/plain; charset=utf-8")]),
-      String.toUtf8(Int.toString(status) <> " " <> Http.reason(status) <> "\n"))
+      String.toUtf8(Int.toString(status) <> " " <> phrase(status) <> "\n"))
+
+// The status's phrase in an error's body: Http.reason's, RFC 9110's, and
+// 431's, RFC 6585's, which Http.reason names none.
+fn phrase(status : Int) : String =
+    if status == 431 then "Request Header Fields Too Large" else Http.reason(status)
 
 // A response of HTTP/1.1.
 fn response(status : Int, headers : List(Http.Header)) : Http.Response =
@@ -479,15 +516,22 @@ let servesFiles =
 
 // design §5: a directory asked for is served as its index.html, one asked
 // for without its `/` is redirected to it, its leading `/`s made one, and
-// one without an index.html is not found; a file asked for as a directory
-// is not found either.
+// its query kept after `?`, as Http.target writes it, an empty one among
+// them; one without an index.html is not found; a file asked for as a
+// directory is not found either.
 let servesDirectories =
     Test.Case(name = "serves a directory",
               run = fn() =
                   served([getting(withPage, "/", htmlFile("home")),
                           getting(withPage, "/docs/", htmlFile("docs")),
                           getting(withPage, "/docs", redirect("/docs/")),
-                          getting(withPage, "/docs?page=2", redirect("/docs/")),
+                          getting(withPage, "/docs?page=2", redirect("/docs/?page=2")),
+                          getting(withPage, "/docs?", redirect("/docs/?")),
+                          getting(withPage, "//docs?x=/y", redirect("/docs/?x=/y")),
+                          getting(withPage, "/[docs]?a[]=1", redirect("/%5Bdocs%5D/?a%5B%5D=1")),
+                          getting(withPage,
+                                  "http://ernest-lang.org/docs?page=2",
+                                  redirect("/docs/?page=2")),
                           getting(withPage, "//docs", redirect("/docs/")),
                           getting(bare, "/empty/", plainError(404)),
                           getting(withPage, "/a.txt/", notFoundPage)]))
@@ -773,14 +817,36 @@ let answersRefused = Test.Case(name = "answers a file it cannot read with 500", 
                           <> ": Io.Denied\n")))
 })
 
-// design §5: error answers a status's plain text, and the root's 404.html
-// for a 404.
+// design §5: error answers a status's plain text, its phrase Http.reason's
+// and 431's, which Http.reason names none, and the root's 404.html for a
+// 404.
 let writesErrors = Test.Case(name = "writes an error's response", run = fn() = match prepared() {
     Right(Unit) ->
         Test.equal([compared(error(bare, 400, 5000)),
+                    compared(error(bare, 431, 5000)),
                     compared(error(bare, 404, 5000)),
                     compared(error(withPage, 404, 5000))],
-                   [plainError(400), plainError(404), notFoundPage])
+                   [plainError(400),
+                    Answer(..plainError(431), body = Some("431 Request Header Fields Too Large\n")),
+                    plainError(404),
+                    notFoundPage])
   | Left(cause) ->
         Test.Failed("cannot prepare " <> scratch <> ": " <> Io.show(cause))
+})
+
+// design §5: the line a refusal writes on standard error has the path's
+// control characters, U+001B, U+007F and U+009B among them, and its
+// characters that turn or break a line, U+202E, U+2028 and U+2069 among
+// them, each as its bytes in UTF-8, `\xHH`; a backslash and any other
+// character past ASCII stand as themselves.
+let escapesRefusedPaths = Test.Case(name = "escapes the path a refusal writes", run = fn() = {
+    let path =
+        Path(scratch
+                 <> "/\u{9B}31m\u{202E}txt.exe\u{2028}forged: line\u{1B}\u{7F}\\\u{E9}\u{2069}");
+    let #(answer, captured) = Test.capture(fn() = compared(refused(path, Io.Denied)));
+    Test.equal(#(answer, String.fromUtf8(captured.stderr)),
+               #(plainError(500),
+                 Some(scratch
+                          <> "/\\xC2\\x9B31m\\xE2\\x80\\xAEtxt.exe\\xE2\\x80\\xA8forged: line"
+                          <> "\\x1B\\x7F\\\u{E9}\\xE2\\x81\\xA9: Io.Denied\n")))
 })

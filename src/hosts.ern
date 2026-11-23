@@ -4,17 +4,18 @@
 /// on the redirect listener (design §9).
 ///
 /// A connection asks `decide` for each request it does not refuse itself,
-/// and serves the request from the site where the answer is `Served`;
-/// otherwise it writes the answer's response, as it writes the site's. The
-/// connection is given the challenge site where it is the redirect
-/// listener's, and `None` on another.
+/// with the server's site, which answers the 421 and the 400, and serves
+/// the request from the site where the answer is `Served`; otherwise it
+/// writes the answer's response, as it writes the site's. The connection is
+/// given the challenge site where it is the redirect listener's, and `None`
+/// on another.
 ///
 /// A request's host is read from its target's authority where it has one,
 /// and from its `Host` header otherwise, `host`; it is compared with the
-/// hosts of the configuration's, read as its own is, `Config.host`, in any
-/// case, and a request that names none is the canonical host's. A redirect's `Location` is always on the
-/// canonical host, written as the configuration writes it, its port among
-/// it, over HTTPS.
+/// hosts of the configuration's, read as its own is, `Config.host`, in ASCII
+/// case, and a request that names none is the canonical host's. A
+/// redirect's `Location` is always on the canonical host, written as the
+/// configuration writes it, its port among it, over HTTPS.
 ///
 /// ## Examples
 ///
@@ -34,7 +35,10 @@
 ///                  target = "/docs?page=2",
 ///                  version = Http.http11,
 ///                  headers = [Http.Header(name = "Host", value = "WWW.ernest-lang.org:80")]);
-/// Either.map(Config.parse(text), fn(config) = Hosts.decide(config, None, request, 1000))
+/// Either.map(Config.parse(text), fn(config) = {
+///     let site = Static.site(config.root, config.contentTypes);
+///     Hosts.decide(config, site, None, request, 1000)
+/// })
 /// // => Right(Hosts.Answered(#(Http.Response(version = Http.Version(major = 1, minor = 1), status = 301, headers = [Http.Header(name = "Location", value = "https://ernest-lang.org/docs?page=2")]), <<>>)))
 /// ```
 
@@ -103,9 +107,10 @@ fn named(config : Config.Config, request : Http.Request) : Named = {
 // The answer
 //
 
-/// What the request's host decides before the site serves it, on a listener
-/// whose challenge site is `challenge`, the redirect listener's, or `None`
-/// on another; each read of the file system bounded by `ms` milliseconds.
+/// What the request's host decides before the site serves it, the 421 and
+/// the 400 answered from `site`, on a listener whose challenge site is
+/// `challenge`, the redirect listener's, or `None` on another; each read of
+/// the file system bounded by `ms` milliseconds.
 ///
 /// In this order: a host that is neither the canonical host nor a redirect
 /// host answers 421. On the redirect listener a request whose path and
@@ -120,40 +125,32 @@ fn named(config : Config.Config, request : Http.Request) : Named = {
 /// instead. A `HEAD`'s response has its body dropped, as
 /// `Static.withoutBody` drops it.
 export fn decide(config : Config.Config,
+                 site : Static.Site,
                  challenge : Optional(Static.Site),
                  request : Http.Request,
                  ms : Int) : Answer =
     match #(named(config, request), challenge) {
         #(Neither, _) ->
-            Answered(headed(request, Static.error(site(config), 421, ms)))
+            Answered(headed(request, Static.error(site, 421, ms)))
       | #(_, Some(challengeSite)) ->
             Answered(match Optional.andThen(Static.pathAndQuery(request), challenged) {
                 Some(target) -> challengeResponse(challengeSite, request, target, ms)
-              | None -> redirected(config, request, ms)
+              | None -> redirected(config, site, request, ms)
             })
       | #(RedirectHost, None) ->
-            Answered(redirected(config, request, ms))
+            Answered(redirected(config, site, request, ms))
       | #(CanonicalHost, None) ->
             Served
     }
 
-// The path the challenge's files are asked for under, which a challenge's
-// target begins with, and then a `/`.
-let challengePath : List(Char) = String.toList("/.well-known/acme-challenge")
-
 // A challenge's target on the challenge site: the path and query after
 // /.well-known/acme-challenge, where a `/` follows it; None for another.
-// By code point, as a target is read.
-fn challenged(pathAndQuery : String) : Optional(String) = {
-    let chars = String.toList(pathAndQuery);
-    let count = List.size(challengePath);
-    match List.drop(chars, count) {
-        '/' :: _ as rest when List.take(chars, count) == challengePath ->
-            Some(String.fromList(rest))
-      | _ ->
-            None
+// A target is visible ASCII (G.11), each character a grapheme of its own.
+fn challenged(pathAndQuery : String) : Optional(String) =
+    match String.stripPrefix(pathAndQuery, "/.well-known/acme-challenge") {
+        Some(rest) when String.startsWith(rest, "/") -> Some(rest)
+      | _ -> None
     }
-}
 
 // The challenge's file served from the challenge site with the target
 // given, a 301 for a directory being 404, since a challenge is a file.
@@ -171,7 +168,10 @@ fn challengeResponse(challengeSite : Static.Site,
 // The 301 to the canonical host over HTTPS, the target's path and query as
 // Static.pathAndQuery reads them, with no body; 400 for a target of another
 // form.
-fn redirected(config : Config.Config, request : Http.Request, ms : Int) : #(Http.Response, Bytes) =
+fn redirected(config : Config.Config,
+              site : Static.Site,
+              request : Http.Request,
+              ms : Int) : #(Http.Response, Bytes) =
     match Static.pathAndQuery(request) {
         Some(written) -> {
             let location =
@@ -182,12 +182,8 @@ fn redirected(config : Config.Config, request : Http.Request, ms : Int) : #(Http
                      <<>>))
         }
       | None ->
-            headed(request, Static.error(site(config), 400, ms))
+            headed(request, Static.error(site, 400, ms))
     }
-
-// The configuration's site, whose errors are the 421's and the 400's.
-fn site(config : Config.Config) : Static.Site =
-    Static.site(config.root, config.contentTypes)
 
 // The response, its body dropped for a HEAD.
 fn headed(request : Http.Request, response : #(Http.Response, Bytes)) : #(Http.Response, Bytes) =
@@ -284,11 +280,17 @@ fn decided(checks : List(Check)) : Test.Result =
 
 fn decidedUnder(text : String, checks : List(Check)) : Test.Result =
     match prepared(text) {
-        Right(config) ->
+        Right(config) -> {
+            let site = Static.site(config.root, config.contentTypes);
             Test.equal(List.map(checks,
                                 fn(check) =
-                                    compared(decide(config, check.challenge, check.request, 5000))),
+                                    compared(decide(config,
+                                                    site,
+                                                    check.challenge,
+                                                    check.request,
+                                                    5000))),
                        List.map(checks, fn(check) = check.expected))
+        }
       | Left(error) ->
             Test.Failed(error)
     }

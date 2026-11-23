@@ -18,11 +18,11 @@ What the readers found of Ernest's is lines 38 to 57 of `language_feedback.md`, 
 - **S2.** Real exposure: the per-address caps count a whole address, so five IPv4 addresses or one IPv6 /64 fill a listener, the cap evicts no idle connection, and fresh addresses lift the starts window (§7, §12). Done: item 12, an IPv6 address by its /64; the eviction at the cap dropped on the build's showing, the narrower promise in §7 and `known_issues.md`.
 - **S3.** Real exposure: the example's shell gives any local client that writes `Origin: http://localhost:8080` the developer's account and the server's whole environment, `SSH_AUTH_SOCK` among it, and so do the tests' servers (§11). Done in the third leg: `examples/README.md`'s sentence and the README's line on `make test`.
 - **S4.** Hardening: a cookie the client chooses names a new session and is never replaced, so a planted cookie is taken over later from any address (§11, *The cookie*). Planned: item 14, the cookie `__Host-shell` with `Path=/`.
-- **S5.** Hardening: a path the file system refuses reaches standard error unescaped, control and bidirectional characters among it (§5, *The errors*). Fix in the third leg.
+- **S5.** Hardening: a path the file system refuses reaches standard error unescaped, control and bidirectional characters among it (§5, *The errors*). Done in the third leg.
 - **S6.** Hardening, not run: the hangup's kill of the wrapper can leave its container running outside every cap where `podman rm` outlasts `shell.hangup` (§12, `deploy/shell.sh`). Planned: item 15.
 - **S7.** Hardening, not run: the one core is a container's, so two sessions take both of the machine's (§13). Planned: item 15, a slice of one core.
 - **S8.** Hardening, not run: the container's root is `httpd` on the host, which owns the keys (§13). Planned: item 15, `--userns=nomap`.
-- **S9.** `src/hosts.ern`'s module comment says "in any case" where §9 and the code say ASCII case. Fix in the third leg.
+- **S9.** `src/hosts.ern`'s module comment says "in any case" where §9 and the code say ASCII case. Done in the third leg.
 
 ### C, the code reader
 
@@ -35,29 +35,29 @@ What the readers found of Ernest's is lines 38 to 57 of `language_feedback.md`, 
 - **C7.** No test reaches the smoke test's dimmed answer (§13). Fix in the third leg.
 - **C8.** A warning that is no whole number of seconds tells the page the wrong milliseconds, 1500 as 1000 and 500 as 0 (§4, §14). Done in the third leg: `shell.warning` must `be a multiple of 1000`.
 - **C9.** A shell attaching has no deadline and watches nothing, so an end of the sessions process leaves it waiting in its place (§11, §12). Planned: item 13, the attach bounded by the idle deadline.
-- **C10.** The connection writes by `Tcp.write` over `Http.renderResponse`, against E.0's shape rule 11, as §6 says. Fix in the third leg: §6 names `Http.writeResponse`, and the code calls it.
+- **C10.** The connection writes by `Tcp.write` over `Http.renderResponse`, against E.0's shape rule 11, as §6 says. Done in the third leg: §6 names `Http.writeResponse`, and the code calls it.
 - **C11.** §6's "a 101 carries its own `Connection: Upgrade` and none of these" reads two ways (D22). Done in the third leg.
 - **C12.** `deploy/shell-start.sh` reads foo's output with `2>&1` where §13 says its standard error. Done in the third leg: §13 says both streams.
 - **C13.** Eight cases that cannot come answer a value where the style guide has them fault. Fix in the third leg: each faults.
 - **C14.** Three tests that launch the server take port 0 where the count of ports is wrong, and two others answer `Left`. Fix in the third leg.
 - **C15.** Forms written more than once: `header` four times, `headed`, `isControl`, the test's certificate, and `next` three times and twice. Dropped: `header`, the certificate and `next` wait on lines 49 and 50, and sharing the rest would export a private helper.
-- **C16.** `src/hosts.ern` builds the site and reads every configured host on each request, where once would do. Fix in the third leg.
+- **C16.** `src/hosts.ern` builds the site and reads every configured host on each request, where once would do. Done in the third leg for the site, which `decide` now takes from the server; the hosts' parse dropped, a few short texts, which held parsed would add a type to §6 and §9 (principle 5).
 - **C17.** Prefixes cut by hand where `String.stripPrefix` would do. Fix in the third leg.
-- **C18.** `src/shell.ern` line 130 takes `""` for no `Origin` or two. Fix in the third leg.
+- **C18.** `src/shell.ern` line 130 takes `""` for no `Origin` or two. Done in the third leg.
 - **C19.** Names: `Waiting` for a cap reached, locals `object` that hide `Config.object`, and a wait's beginning named `start` and `key` where the guide has `since`. Fix in the third leg, each word searched first.
-- **C20.** `responded` compares `version.minor == 0` where the module compares whole versions. Fix in the third leg.
+- **C20.** `responded` compares `version.minor == 0` where the module compares whole versions. Done in the third leg.
 
 ### K, the cold reader
 
 - **K1.** The README's `make release` names no need of a release's `ern`, and the refusal comes after the tests. Fix in the third leg: the README's line names a release's `ern`, and the Makefile checks it first.
 - **K2.** The smoke test cannot pass against a canonical host with a port: its 301 checks expect `https://` and the host, and it dials the port twice. Fix in the third leg.
 - **K3.** `shell.origins` takes what is no origin, a path, `*`, a bare host or an empty list, and every upgrade is then a 403 with no word (§4). Done in the third leg: each `be an origin`, and the list `not be empty`.
-- **K4.** A 431 has no phrase, `HTTP/1.1 431 ` and a body of `431 ` (K20). Fix in the third leg: the phrase in the program, line 41 naming it.
+- **K4.** A 431 has no phrase, `HTTP/1.1 431 ` and a body of `431 ` (K20). Done in the third leg: the phrase in the program, line 41 naming it.
 - **K5.** The installed launcher does not run through a symbolic link, taking its root from the link's place. Fix in the third leg.
 - **K6.** The launcher's command line: `--config-dir` alone is the shell's `can't shift`, `--help` is read as a path, the usage line lacks `--config-dir`, and an `ern` not found is `exec: ern: not found`. Fix in the third leg.
 - **K7.** `make run` without npm's reach fails in curl's, gzip's and tar's words, and the README's first step names no fetch. Fix in the third leg.
 - **K8.** An `access-log` that names a directory passes the start, and every response then loses its line; the member named twice is C4. Done in the third leg: `access-log` must `name no directory`.
-- **K9.** A directory's 301 drops the query, where the host's 301 keeps it (§5). Fix in the third leg: §5's `Location` keeps the query.
+- **K9.** A directory's 301 drops the query, where the host's 301 keeps it (§5). Done in the third leg: §5's `Location` keeps the query.
 - **K10.** `deploy/README.md` step 10 quotes `unknown user 'httpd'` where logrotate 3.22 says `unknown group 'httpd'`. Done in the third leg.
 - **K11.** D5. With D5.
 - **K12.** D4. With D4.
@@ -67,7 +67,7 @@ What the readers found of Ernest's is lines 38 to 57 of `language_feedback.md`, 
 - **K16.** A configuration that is not JSON is said as `Json.UnexpectedByte(byte = 111, ...)`. Done in the third leg: the error said in words.
 - **K17.** The shell page's `unavailable` says neither which cap nor when to come back. Dropped: the deployed page is Ernest's site, and the example's is a look at one's own machine.
 - **K18.** The installed example cannot show its shell: no `xterm/`, and its access log's directory is a checkout's. Done in the third leg.
-- **K19.** The example site has no icon, so a first visit's `/favicon.ico` is a 404 in the log and the console. Fix in the third leg.
+- **K19.** The example site has no icon, so a first visit's `/favicon.ico` is a 404 in the log and the console. Done in the third leg.
 
 ### D, the documents reader
 

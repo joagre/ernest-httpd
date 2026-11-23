@@ -122,8 +122,10 @@ fn head(connection : Connection, carried : Bytes) : Unit receiving Shell.ShellMs
             unread(connection, 414)
       | Left(Http.Protocol(Http.HeadersTooLarge)) ->
             unread(connection, 431)
-      | Left(Http.Protocol(_)) ->
-            unread(connection, 400) // Malformed: a head's read answers no BodyTooLarge
+      | Left(Http.Protocol(Http.Malformed)) ->
+            unread(connection, 400)
+      | Left(Http.Protocol(Http.BodyTooLarge)) ->
+            fault("a head's read answers no BodyTooLarge, which a body's read alone finds")
       | Left(Http.Socket(_)) ->
             Tcp.close(connection.socket)
     }
@@ -155,7 +157,7 @@ fn answered(connection : Connection,
                       headed(request, Static.error(server.site, status, ms)),
                       Close)
       | None ->
-            match Hosts.decide(server.config, server.challenge, request, ms) {
+            match Hosts.decide(server.config, server.site, server.challenge, request, ms) {
                 Hosts.Served ->
                     match routed(server, request) {
                         ByShell(sessions) ->
@@ -235,15 +237,17 @@ fn responded(connection : Connection,
     let persistence = match #(next, request) {
         #(Close, _) ->
             [header("Connection", "close")]
-      | #(ReadNext(_), Some(read)) when read.version.minor == 0 ->
+      | #(ReadNext(_), Some(read)) when read.version == version(1, 0) ->
             [header("Connection", "keep-alive")]
       | #(ReadNext(_), _) or #(Upgrade(), _) ->
             []
     };
     let headers =
         [header("Date", Http.date(time))] <> config.headers <> response.headers <> persistence;
-    let bytes = Http.renderResponse(Http.Response(..response, =headers), body);
-    match Tcp.write(connection.socket, bytes, config.timeouts.write) {
+    match Http.writeResponse(connection.socket,
+                             Http.Response(..response, =headers),
+                             body,
+                             config.timeouts.write) {
         Right(Unit) -> {
             send(connection.server.log,
                  AccessLog.Entry(remote = connection.remote,
@@ -616,9 +620,14 @@ fn headOfFile(last : List(Http.Header)) : Answer =
     Answer(..file([header("Content-Length", "5")] <> last), body = Some(""))
 
 // The answer of an error's plain text.
-fn plain(status : Int, last : List(Http.Header)) : Answer = {
-    let text = Int.toString(status) <> " " <> Http.reason(status) <> "\n";
-    Answer(=status, headers = first <> [textType] <> last, body = Some(text))
+fn plain(status : Int, last : List(Http.Header)) : Answer =
+    Answer(=status, headers = first <> [textType] <> last, body = Some(errorText(status)))
+
+// An error's plain text, as Static.error writes it: the status, its phrase,
+// Http.reason's or 431's, which it names none, and a line feed.
+fn errorText(status : Int) : String = {
+    let phrase = if status == 431 then "Request Header Fields Too Large" else Http.reason(status);
+    Int.toString(status) <> " " <> phrase <> "\n"
 }
 
 fn length(text : String) : Http.Header =
@@ -626,7 +635,7 @@ fn length(text : String) : Http.Header =
 
 // The answer of a refusal, which closes the connection.
 fn refused(status : Int) : Answer =
-    plain(status, [closing, length(Int.toString(status) <> " " <> Http.reason(status) <> "\n")])
+    plain(status, [closing, length(errorText(status))])
 
 // The entries the connection told the log for its next `count` responses,
 // by remote address, request, status and size, and what it told its
@@ -842,12 +851,14 @@ let refusesRequests = Test.Case(name = "refuses a request it does not serve", ru
 
 // design §6: a head refused before it is read whole, each closing the
 // connection and told with no request: a malformed line with 400, a line
-// past the limit with 414 and headers past theirs with 431.
+// past the limit with 414 and headers past theirs with 431, its body
+// naming its phrase, which Http.reason names none (design §5).
 let refusesHeads = Test.Case(name = "refuses a head it cannot read", run = fn() = {
-    fn entry(status : Int) : List(String) = {
-        let text = Int.toString(status) <> " " <> Http.reason(status) <> "\n";
-        ["127.0.0.1 - " <> Int.toString(status) <> " " <> Int.toString(String.size(text))]
-    };
+    fn entry(status : Int) : List(String) =
+        ["127.0.0.1 - "
+             <> Int.toString(status)
+             <> " "
+             <> Int.toString(String.size(errorText(status)))];
     let long = "GET /" <> String.repeat("a", 64) <> " HTTP/1.1\r\n\r\n";
     let large =
         "GET / HTTP/1.1\r\n"
@@ -1132,10 +1143,10 @@ let closesWhereAWriteFails = Test.Case(name = "closes where a write fails", run 
 let closesWhereAWriteWaits =
     Test.Case(name = "closes where a write does not end in time", run = fn() = {
         let result = {
-            let start = Clock.monotonic();
+            let since = Clock.monotonic();
             let #(client, socket) <- pipelined(200);
             let _ <- socketEnded(socket);
-            let waited = if Clock.monotonic() - start >= 200 then
+            let waited = if Clock.monotonic() - since >= 200 then
                 "past the deadline"
             else
                 "before the deadline";

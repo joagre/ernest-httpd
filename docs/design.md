@@ -132,11 +132,11 @@ Static.pathAndQuery : (Http.Request) -> Optional(String) // the target's path an
 
 The path is split at `/` into segments, each percent-decoded, `Uri.decode`, G.12, and read as UTF-8: a segment that holds `/`, written `%2F` in either case, that is not UTF-8, or that holds a control character, U+0000 to U+001F or U+007F, answers 400. An empty segment and `.` are then dropped; `..` answers 400, and otherwise a segment beginning with `.` answers 404. A path that ends in `/`, or has no segments, asks for a directory.
 
-**The file.** The segments name a path under the root, links followed, one that leads out of the root among them. One that leads nowhere, through a regular file or a loop of links among them, or whose name the host cannot take, `Io.Invalid`, answers 404. One that leads to a directory and did not ask for one answers 301 with no body and `Location` the path, its leading `/`s made one, with `/` appended. A directory asked for is served as its `index.html`, and answers 404 where that is no regular file. A regular file is served where the path did not ask for a directory; anything else answers 404.
+**The file.** The segments name a path under the root, links followed, one that leads out of the root among them. One that leads nowhere, through a regular file or a loop of links among them, or whose name the host cannot take, `Io.Invalid`, answers 404. One that leads to a directory and did not ask for one answers 301 with no body and `Location` the path, its leading `/`s made one, with `/` appended, then `?` and the query where the target has one. A directory asked for is served as its `index.html`, and answers 404 where that is no regular file. A regular file is served where the path did not ask for a directory; anything else answers 404.
 
 **The response.** A file is served with the status 200, `Content-Type` from the site's table by the file's extension with its dot, `application/octet-stream` where the table has none, `Last-Modified` the file's modification time as RFC 9110's date, and the file's bytes as the body. Where the request carries `If-Modified-Since` that `Http.parseDate` reads, and the file was modified at or before that time, it answers 304 with no body and no header of this section's.
 
-**The errors.** An error's body is plain text, `text/plain; charset=utf-8`: the status, its phrase and a line feed, `404 Not Found`. A 404 answers the root's `404.html` instead, as `text/html; charset=utf-8`, where that is a regular file. A file the file system refuses to describe or to read, or does not answer within `ms`, the root's `404.html` among them, answers 500, said on standard error as a line of the path, `: `, and the error as `Io.show` writes it.
+**The errors.** An error's body is plain text, `text/plain; charset=utf-8`: the status, its phrase and a line feed, `404 Not Found`, the phrase `Http.reason`'s, and 431's, which it names none, `Request Header Fields Too Large`; the status line carries `Http.reason`'s alone. A 404 answers the root's `404.html` instead, as `text/html; charset=utf-8`, where that is a regular file. A file the file system refuses to describe or to read, or does not answer within `ms`, the root's `404.html` among them, answers 500, said on standard error as a line of the path, `: `, and the error as `Io.show` writes it, the path's control characters, U+0000 to U+001F and U+007F to U+009F, and its characters that turn or break a line, U+200E, U+200F, U+2028, U+2029, U+202A to U+202E and U+2066 to U+2069, each written as its bytes in UTF-8, `\xHH`, as `ern` writes a path in a refusal.
 
 **The table.** The built-in content types, by extension:
 
@@ -176,7 +176,7 @@ Any other request is answered as its host decides, `Hosts.decide`, §9, and wher
 
 **The response.** Every response carries `Date`, the time it is written as RFC 9110's date, then the configuration's `headers`, then its own, and `Connection: close` where the connection closes after it, or `Connection: keep-alive` where a 1.0 request's connection is kept; a 101 carries its own `Connection: Upgrade`, and neither `Connection: close` nor `keep-alive`.
 
-It is written with `Http.renderResponse` within the write deadline, `timeouts.write`; a write that fails or does not end in time closes the connection, and is told neither to the log nor to the listener, though what it wrote may still reach the client whole. The connection closes after a response of *Reading*, after a refusal of *The request*, after a 1.1 request whose `Connection` headers list `close`, and after a 1.0 request whose `Connection` headers do not list `keep-alive`, the headers' elements, `Http.elements`, compared in ASCII case; otherwise it reads the next request with the bytes after the head carried.
+It is written with `Http.writeResponse` within the write deadline, `timeouts.write`; a write that fails or does not end in time closes the connection, and is told neither to the log nor to the listener, though what it wrote may still reach the client whole. The connection closes after a response of *Reading*, after a refusal of *The request*, after a 1.1 request whose `Connection` headers list `close`, and after a 1.0 request whose `Connection` headers do not list `keep-alive`, the headers' elements, `Http.elements`, compared in ASCII case; otherwise it reads the next request with the bytes after the head carried.
 
 **The line.** Each response written is told to the access log, §8, as an entry: the remote address, the time of its `Date`, the request line as the client wrote it, its method, target and version, `HTTP/1.1`, parted by spaces, or none where no head was read, the status, and the size of the body written, 0 for a `HEAD` and a 304.
 
@@ -220,12 +220,12 @@ AccessLog.line : (LogMsg) -> Optional(String) // an Entry's line, without its li
 
 ## 9. The hosts
 
-`Hosts.decide(config, challenge, request, ms)` is what a request's host decides before the site serves it: `Served` where the site serves the request, or the response that answers it instead. `challenge` is the redirect listener's challenge site, `None` on a `plain` or a `tls` listener; `ms` bounds each read of the file system.
+`Hosts.decide(config, site, challenge, request, ms)` is what a request's host decides before the site serves it: `Served` where the site serves the request, or the response that answers it instead. `site` is the server's, whose errors answer a 421 and a 400; `challenge` is the redirect listener's challenge site, `None` on a `plain` or a `tls` listener; `ms` bounds each read of the file system.
 
 ```
 type Answer = Served | Answered(#(Http.Response, Bytes))
 Hosts.host : (Http.Request) -> Optional(String) // the request's host, as Uri.Authority holds it; None where the request names none
-Hosts.decide : (Config.Config, Optional(Static.Site), Http.Request, Int) -> Answer
+Hosts.decide : (Config.Config, Static.Site, Optional(Static.Site), Http.Request, Int) -> Answer
 ```
 
 **The host.** A request's host is the host of its target's authority, where `Http.target` reads one, whether or not it names userinfo, and otherwise the host `Config.host` reads from its first `Host` header; a request of which neither reads one names none. It is compared with the hosts `Config.host` reads from the configuration's `canonical-host` and `redirect-hosts`, in ASCII case.
@@ -431,7 +431,7 @@ The names that recur across modules, one for each concept, in every module. A na
 - **site**: the root and the content types a request for a file is served from, `Static.Site`, §5.
 - **root**: the directory the site's files stand under, §5. Not `docroot`, `base`.
 - **target**: a request's target as the client wrote it, `Http.Request`'s, read by `Http.target`; its **path** is the target's path, split into **segments**, each decoded, §5.
-- **response**: an `Http.Response` with its body beside it, `#(Http.Response, Bytes)`, as `Static.serve` answers it and `Http.renderResponse` takes it, §5. Not `reply`, which is the prelude's.
+- **response**: an `Http.Response` with its body beside it, `#(Http.Response, Bytes)`, as `Static.serve` answers it and `Http.writeResponse` writes it, §5. Not `reply`, which is the prelude's.
 - **table**: the content types by extension, the built-in table extended by the configuration's, §5. Not `mimeTypes`.
 - **server**: the program as it runs, and what every connection of a listener shares of it, `Connection.Server`: the configuration, the site, the redirect listener's challenge site, the access log's address and the sessions, §6.
 - **connection**: a socket a listener accepted and the process that serves it, §6, §7. Not `client`, `handler`.
