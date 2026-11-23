@@ -10,7 +10,7 @@ What the readers found of Ernest's is lines 38 to 57 of `language_feedback.md`, 
 
 - **P1.** §12's deadline sets its alarm again for a warning time already passed where the warning is more than half the lifetime, which Ernest's panel run met. Fix in the third leg.
 - **P2.** A write cut short at its deadline reaches its client whole on 0.11, though §6 tells it to neither the log nor the listener. Done in the third leg: §6 says it holds no line, though its bytes may reach the client.
-- **P3.** `shell.path` and `shell.client`, which §4 has begin with `/` alone, are compared with a path `Http.target` encodes. Fix in the third leg: §4's rule, `begin with / and hold only letters, digits and - . _ ~ ! $ & ' ( ) * + , ; = : @ /`.
+- **P3.** `shell.path` and `shell.client`, which §4 has begin with `/` alone, are compared with a path `Http.target` encodes. Done in the third leg: §4's rule, `begin with / and hold only letters, digits and - . _ ~ ! $ & ' ( ) * + , ; = : @ /`.
 
 ### S, the security reader
 
@@ -26,14 +26,14 @@ What the readers found of Ernest's is lines 38 to 57 of `language_feedback.md`, 
 
 ### C, the code reader
 
-- **C1.** The configuration's `headers` may name `Cache-Control` and `Sec-WebSocket-Version`, which the server writes itself, so a response carries two of each, and a test expects it (§4; D2). Fix in the third leg.
+- **C1.** The configuration's `headers` may name `Cache-Control` and `Sec-WebSocket-Version`, which the server writes itself, so a response carries two of each, and a test expects it (§4; D2). Done in the third leg.
 - **C2.** The template's: `tools/docs.ern` checks no backticked path after the design's line 94, whose double-backtick span holds a backtick. Held for the template.
-- **C3.** A control character in a configuration member's name reaches standard error raw, in `is no field of` and in a field's name (§4). Fix in the third leg.
-- **C4.** A member named twice is taken silently, the last winning (§4 is silent; K8). Fix in the third leg: §4's rule as it stands, the last kept; the refusal waits on line 38.
+- **C3.** A control character in a configuration member's name reaches standard error raw, in `is no field of` and in a field's name (§4). Done in the third leg.
+- **C4.** A member named twice is taken silently, the last winning (§4 is silent; K8). Done in the third leg: §4's rule as it stands, the last kept; the refusal waits on line 38.
 - **C5.** A Close echoed as 1000 whatever its code passes every test (§11). Fix in the third leg.
 - **C6.** The browser test cannot tell the warning's seconds from a constant (§14). Fix in the third leg.
 - **C7.** No test reaches the smoke test's dimmed answer (§13). Fix in the third leg.
-- **C8.** A warning that is no whole number of seconds tells the page the wrong milliseconds, 1500 as 1000 and 500 as 0 (§4, §14). Fix in the third leg: `shell.warning` must `be a multiple of 1000`.
+- **C8.** A warning that is no whole number of seconds tells the page the wrong milliseconds, 1500 as 1000 and 500 as 0 (§4, §14). Done in the third leg: `shell.warning` must `be a multiple of 1000`.
 - **C9.** A shell attaching has no deadline and watches nothing, so an end of the sessions process leaves it waiting in its place (§11, §12). Planned: item 13, the attach bounded by the idle deadline.
 - **C10.** The connection writes by `Tcp.write` over `Http.renderResponse`, against E.0's shape rule 11, as §6 says. Fix in the third leg: §6 names `Http.writeResponse`, and the code calls it.
 - **C11.** §6's "a 101 carries its own `Connection: Upgrade` and none of these" reads two ways (D22). Done in the third leg.
@@ -51,12 +51,12 @@ What the readers found of Ernest's is lines 38 to 57 of `language_feedback.md`, 
 
 - **K1.** The README's `make release` names no need of a release's `ern`, and the refusal comes after the tests. Fix in the third leg: the README's line names a release's `ern`, and the Makefile checks it first.
 - **K2.** The smoke test cannot pass against a canonical host with a port: its 301 checks expect `https://` and the host, and it dials the port twice. Fix in the third leg.
-- **K3.** `shell.origins` takes what is no origin, a path, `*`, a bare host or an empty list, and every upgrade is then a 403 with no word (§4). Fix in the third leg: each `be an origin`, and the list `not be empty`.
+- **K3.** `shell.origins` takes what is no origin, a path, `*`, a bare host or an empty list, and every upgrade is then a 403 with no word (§4). Done in the third leg: each `be an origin`, and the list `not be empty`.
 - **K4.** A 431 has no phrase, `HTTP/1.1 431 ` and a body of `431 ` (K20). Fix in the third leg: the phrase in the program, line 41 naming it.
 - **K5.** The installed launcher does not run through a symbolic link, taking its root from the link's place. Fix in the third leg.
 - **K6.** The launcher's command line: `--config-dir` alone is the shell's `can't shift`, `--help` is read as a path, the usage line lacks `--config-dir`, and an `ern` not found is `exec: ern: not found`. Fix in the third leg.
 - **K7.** `make run` without npm's reach fails in curl's, gzip's and tar's words, and the README's first step names no fetch. Fix in the third leg.
-- **K8.** An `access-log` that names a directory passes the start, and every response then loses its line; the member named twice is C4. Fix in the third leg: `access-log` must `name no directory`.
+- **K8.** An `access-log` that names a directory passes the start, and every response then loses its line; the member named twice is C4. Done in the third leg: `access-log` must `name no directory`.
 - **K9.** A directory's 301 drops the query, where the host's 301 keeps it (§5). Fix in the third leg: §5's `Location` keeps the query.
 - **K10.** `deploy/README.md` step 10 quotes `unknown user 'httpd'` where logrotate 3.22 says `unknown group 'httpd'`. Done in the third leg.
 - **K11.** D5. With D5.
@@ -64,7 +64,7 @@ What the readers found of Ernest's is lines 38 to 57 of `language_feedback.md`, 
 - **K13.** The tree is 0.1.0 by `VERSION` and 0.11 by `package.conf`, and `CHANGES.md`'s 0.1.0 names `ern 0.9` (D1, D33). With D1 and D33.
 - **K14.** The configuration's members stand in no page a user of the program reads but the design. Done in the third leg: the README names §4 as the configuration's reference.
 - **K15.** D24. With D24.
-- **K16.** A configuration that is not JSON is said as `Json.UnexpectedByte(byte = 111, ...)`. Fix in the third leg: the error said in words.
+- **K16.** A configuration that is not JSON is said as `Json.UnexpectedByte(byte = 111, ...)`. Done in the third leg: the error said in words.
 - **K17.** The shell page's `unavailable` says neither which cap nor when to come back. Dropped: the deployed page is Ernest's site, and the example's is a look at one's own machine.
 - **K18.** The installed example cannot show its shell: no `xterm/`, and its access log's directory is a checkout's. Done in the third leg.
 - **K19.** The example site has no icon, so a first visit's `/favicon.ico` is a 404 in the log and the console. Fix in the third leg.

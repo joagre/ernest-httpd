@@ -149,16 +149,44 @@ export fn parse(text : String) : Either(Error, Config) = {
 }
 
 /// The error in prose, after which the operator reads the file's path:
-/// `cannot read the file: ` and the error, `is not JSON: ` and the error,
-/// the field, ` must `, the rule, `: ` and the value refused, or, where
-/// there is no value, the field, a space and the rule.
+/// `cannot read the file: ` and the error, `is not JSON: ` and the error in
+/// words, where it stands and what was not expected or cannot be read, the
+/// field, ` must `, the rule, `: ` and the value refused, or, where there
+/// is no value, the field, a space and the rule.
 export fn reason(error : Error) : String =
     match error {
         Unreadable(cause) -> "cannot read the file: " <> Io.show(cause)
-      | NotJson(cause) -> "is not JSON: " <> Io.show(cause)
+      | NotJson(cause) -> "is not JSON: " <> notJson(cause)
       | Invalid(=field, =rule, value = Some(value)) -> field <> " must " <> rule <> ": " <> value
       | Invalid(=field, =rule, value = None) -> field <> " " <> rule
     }
+
+// Why a text is not JSON, in words: its end, or the line and the column
+// and what stands there (design §4).
+fn notJson(error : Json.Error) : String =
+    match error {
+        Json.UnexpectedEnd ->
+            "the text ends before its value does"
+      | Json.UnexpectedByte(=byte, =at) ->
+            position(at) <> byteText(byte) <> " was not expected"
+      | Json.UnexpectedSequence(=text, =at) ->
+            position(at) <> shown(Json.Text(text)) <> " cannot be read"
+    }
+
+fn position(at : Json.Position) : String =
+    "line " <> Int.toString(at.line) <> ", column " <> Int.toString(at.column) <> ": "
+
+// A byte not expected: a printable ASCII byte as Json.encode writes it, and
+// any other as two uppercase hexadecimal digits, since it may begin a
+// character the text breaks off.
+fn byteText(byte : Int) : String =
+    match Char.fromCodePoint(byte) {
+        Some(char) when byte >= 32 && byte <= 126 -> Json.encode(Json.Text(Char.toString(char)))
+      | _ -> "the byte 0x" <> hexDigit(byte / 16) <> hexDigit(byte % 16)
+    }
+
+fn hexDigit(digit : Int) : String =
+    String.slice("0123456789ABCDEF", digit, digit + 1)
 
 /// The host an authority names, as `Uri.Authority` holds it: the text's
 /// host, its case kept, without its port and an IPv6 address without its
@@ -282,11 +310,12 @@ fn headers(top : Map(String, Json.Value)) : Either(Error, List(Http.Header)) =
         Right(Http.Header(=name, value = text))
     })
 
-// The headers the server writes itself, a response's of design §5, §6, §9
-// and §11, which the configuration's may not name, in lower case, and the
-// rule that says so.
+// The headers the server writes itself, a response's of design §5, §6, §9,
+// §11 and §14, which the configuration's may not name, in lower case, and
+// the rule that says so.
 let written : List(String) =
     ["allow",
+     "cache-control",
      "connection",
      "content-length",
      "content-type",
@@ -294,20 +323,25 @@ let written : List(String) =
      "last-modified",
      "location",
      "sec-websocket-accept",
+     "sec-websocket-version",
      "set-cookie",
      "transfer-encoding",
      "upgrade"]
 
 let writtenRule : String =
-    "be none of Allow, Connection, Content-Length, Content-Type, Date, Last-Modified, Location, "
-        <> "Sec-WebSocket-Accept, Set-Cookie, Transfer-Encoding and Upgrade"
+    "be none of Allow, Cache-Control, Connection, Content-Length, Content-Type, Date, "
+        <> "Last-Modified, Location, Sec-WebSocket-Accept, Sec-WebSocket-Version, Set-Cookie, "
+        <> "Transfer-Encoding and Upgrade"
 
 // A character of a token, RFC 9110's: a letter, a digit, or one of
 // !#$%&'*+-.^_`|~.
 fn isTokenChar(char : Char) : Bool =
-    Char.isAlpha(char) && Char.toCodePoint(char) < 128
+    isAsciiLetter(char)
         || Char.isAsciiDigit(char)
         || List.contains(String.toList("!#$%&'*+-.^_`|~"), char)
+
+fn isAsciiLetter(char : Char) : Bool =
+    Char.isAlpha(char) && Char.toCodePoint(char) < 128
 
 fn shell(top : Map(String, Json.Value)) : Either(Error, Optional(Shell)) =
     match Map.get(top, "shell") {
@@ -330,19 +364,14 @@ fn shell(top : Map(String, Json.Value)) : Either(Error, Optional(Shell)) =
                          "warning",
                          "message-limit",
                          "hangup"]);
-            let path <- string(object, "shell", "path");
-            let _ <- if beginsWith(path, '/') then
-                Right(Unit)
-            else
-                Left(invalid("shell.path", "begin with /", Json.Text(path)));
-            let client <- string(object, "shell", "client");
-            let _ <- if !beginsWith(client, '/') then
-                Left(invalid("shell.client", "begin with /", Json.Text(client)))
-            else if client == path then
+            let path <- shellPath(object, "path");
+            let client <- shellPath(object, "client");
+            let _ <- if client == path then
                 Left(invalid("shell.client", "not be shell.path", Json.Text(client)))
             else
                 Right(Unit);
-            let origins <- elements(object, "shell", "origins", nonEmptyString);
+            let origins <- elements(object, "shell", "origins", origin);
+            let _ <- notEmptyArray("shell.origins", origins);
             let command <- elements(object, "shell", "command", stringValue);
             let _ <- notEmptyArray("shell.command", command);
             let mostAtOnce <- positive(object, "shell", "most-at-once");
@@ -351,6 +380,10 @@ fn shell(top : Map(String, Json.Value)) : Either(Error, Optional(Shell)) =
             let lifetime <- positive(object, "shell", "lifetime");
             let warning <- positive(object, "shell", "warning");
             let messageLimit <- positive(object, "shell", "message-limit");
+            let _ <- if warning % 1000 == 0 then
+                Right(Unit)
+            else
+                Left(invalid("shell.warning", "be a multiple of 1000", Json.Integer(warning)));
             let _ <- if warning < lifetime then
                 Right(Unit)
             else
@@ -378,12 +411,76 @@ fn starts(shell : Map(String, Json.Value)) : Either(Error, Starts) = {
     Right(Starts(=count, =within))
 }
 
+// A path of the shell's: a string that begins with / and holds only the
+// characters design §4's rule names.
+fn shellPath(shell : Map(String, Json.Value), name : String) : Either(Error, String) = {
+    let field = member("shell", name);
+    let text <- string(shell, "shell", name);
+    let _ <- if beginsWith(text, '/') then
+        Right(Unit)
+    else
+        Left(invalid(field, "begin with /", Json.Text(text)));
+    if List.all(String.toList(text), isPathChar) then
+        Right(text)
+    else
+        Left(invalid(field,
+                     "hold only ASCII letters, digits and - . _ ~ ! $ & ' ( ) * + , ; = : @ /",
+                     Json.Text(text)))
+}
+
+fn isPathChar(char : Char) : Bool =
+    isAsciiLetter(char)
+        || Char.isAsciiDigit(char)
+        || List.contains(String.toList("-._~!$&'()*+,;=:@/"), char)
+
+// An origin of the shell's, a string that is an origin.
+fn origin(field : String, value : Json.Value) : Either(Error, String) = {
+    let text <- stringValue(field, value);
+    if isOrigin(text) then Right(text) else Left(invalid(field, "be an origin", value))
+}
+
+// Whether the text is an origin as a browser writes `Origin`: `http://` or
+// `https://`, then an authority of the scheme's (design §4).
+fn isOrigin(text : String) : Bool =
+    match String.splitOnce(text, "://") {
+        Some(#("http", authority)) -> isOriginAuthority(authority, 80)
+      | Some(#("https", authority)) -> isOriginAuthority(authority, 443)
+      | _ -> false
+    }
+
+// Whether the authority is an origin's, its scheme's own port given: a host
+// `host` reads, not empty and in lower case, with no port or one of 1 to
+// 65535 that is not the scheme's own, and nothing after it; so the
+// authority is what its host and its port write, an IPv6 address in its
+// brackets and the port in digits with no leading zero, as a browser
+// writes them.
+fn isOriginAuthority(authority : String, own : Int) : Bool =
+    match Uri.parseAuthority(authority) {
+        Some(Uri.Authority(userinfo = None, =host, =port)) -> {
+            let bracketed = if String.contains(host, ":") then "[" <> host <> "]" else host;
+            let portText = match port {
+                Some(number) -> ":" <> Int.toString(number)
+              | None -> ""
+            };
+            let isOriginPort = match port {
+                Some(number) -> number >= 1 && number <= 65535 && number != own
+              | None -> true
+            };
+            !String.isEmpty(host)
+                && host == String.toAsciiLower(host)
+                && isOriginPort
+                && authority == bracketed <> portText
+        }
+      | _ ->
+            false
+    }
+
 //
 // The rules of the file system's
 //
 
 // The rules of the file system's, in the table's order: each listener's
-// files, the root, and the access log's directory.
+// files, the root, and the access log's directory and the log itself.
 fn files(config : Config, ms : Int) : Either(Error, Unit) = {
     let _ <- List.tryFold(List.indexed(config.listeners), Unit, fn(_, #(index, listener)) = {
         let field = element("listeners", index);
@@ -409,13 +506,19 @@ fn files(config : Config, ms : Int) : Either(Error, Unit) = {
     });
     let _ <- directory("root", config.root, ms);
     let parent = Optional.withDefault(Path.parent(config.accessLog), Path("."));
-    match Fs.stat(parent, ms) {
+    let _ <- match Fs.stat(parent, ms) {
         Right(Fs.Entry(kind = Fs.Directory)) ->
             Right(Unit)
       | _ ->
             Left(invalid("access-log",
                          "stand in a directory that exists",
                          pathValue(config.accessLog)))
+    };
+    match Fs.stat(config.accessLog, ms) {
+        Right(Fs.Entry(kind = Fs.Directory)) ->
+            Left(invalid("access-log", "name no directory", pathValue(config.accessLog)))
+      | _ ->
+            Right(Unit)
     }
 }
 
@@ -472,11 +575,15 @@ fn members(object : Map(String, Json.Value),
     }
 
 // The field breaking the rule with the value refused, as the refusal
-// writes it: as `Json.encode` writes it, on one line, and U+007F, which it
-// writes bare, as `\u007f`, so that a control character refused is seen
-// (design §4).
+// writes it, `shown`.
 fn invalid(field : String, rule : String, value : Json.Value) : Error =
-    Invalid(=field, =rule, value = Some(String.replace(Json.encode(value), "\u{7f}", "\\u007f")))
+    Invalid(=field, =rule, value = Some(shown(value)))
+
+// A value as an error writes it: as `Json.encode` writes it, on one line,
+// and U+007F, which it writes bare, as `\u007f`, so that a control
+// character is seen (design §4).
+fn shown(value : Json.Value) : String =
+    String.replace(Json.encode(value), "\u{7f}", "\\u007f")
 
 // The field's value, which is required.
 fn required(object : Map(String, Json.Value),
@@ -485,10 +592,20 @@ fn required(object : Map(String, Json.Value),
     Either.fromOptional(Map.get(object, name),
                         Invalid(field = member(prefix, name), rule = "is required", value = None))
 
+// An object, the first of its members by their names' code points whose
+// name holds a control character answered before any other rule of the
+// object, under the object's field, so that no field holds one (design
+// §4).
 fn object(field : String, value : Json.Value) : Either(Error, Map(String, Json.Value)) =
     match value {
-        Json.Object(members) -> Right(members)
-      | _ -> Left(invalid(field, "be an object", value))
+        Json.Object(members) ->
+            match List.find(List.sort(Map.keys(members)),
+                            fn(name) = List.any(String.toList(name), isControl)) {
+                Some(name) -> Left(invalid(field, "hold no control character", Json.Text(name)))
+              | None -> Right(members)
+            }
+      | _ ->
+            Left(invalid(field, "be an object", value))
     }
 
 fn objectField(object : Map(String, Json.Value),
@@ -610,20 +727,14 @@ fn elements(object : Map(String, Json.Value),
 }
 
 // An object of strings at the top, its members read by `step` in the order
-// of their names' code points, each name's control characters checked
-// first; `step` checks the name's rule, then the value's.
+// of their names' code points, after `object` has checked every name's
+// control characters; `step` checks the name's rule, then the value's.
 fn strings(top : Map(String, Json.Value),
            name : String,
            step : (String, String, Json.Value) -> Either(Error, a)) : Either(Error, List(a)) = {
     let members <- objectField(top, "", name);
-    List.tryMap(List.sortBy(Map.toList(members), fn(#(key, _)) = key), fn(#(key, value)) = {
-        let field = member(name, key);
-        let _ <- if List.any(String.toList(key), isControl) then
-            Left(invalid(field, "hold no control character", Json.Text(key)))
-        else
-            Right(Unit);
-        step(field, key, value)
-    })
+    List.tryMap(List.sortBy(Map.toList(members), fn(#(key, _)) = key),
+                fn(#(key, value)) = step(member(name, key), key, value))
 }
 
 //
@@ -831,7 +942,6 @@ let refusesValues =
                                             "\"canonical-host\": \"ernest\\u007flang.org\"")),
                               broken(edited("\".wasm\"", "\"wasm\"")),
                               broken(edited("\".wasm\": \"application/wasm\"", "\".wasm\": \"\"")),
-                              broken(edited("\".wasm\"", "\".w\\tasm\"")),
                               broken(edited("\"X-Content-Type-Options\"", "\"X Content\"")),
                               broken(edited("\"X-Content-Type-Options\"", "\"\"")),
                               broken(edited("\"X-Content-Type-Options\"", "\"date\"")),
@@ -877,9 +987,6 @@ let refusesValues =
                                      Some("\"ernest\\u007flang.org\""))),
                               Some(#("content-types.wasm", "begin with a dot", Some("\"wasm\""))),
                               Some(#("content-types..wasm", "not be empty", Some("\"\""))),
-                              Some(#("content-types..w\tasm",
-                                     "hold no control character",
-                                     Some("\".w\\tasm\""))),
                               Some(#("headers.X Content", "be a token", Some("\"X Content\""))),
                               Some(#("headers.", "be a token", Some("\"\""))),
                               Some(#("headers.date", writtenByTheServer, Some("\"date\""))),
@@ -926,6 +1033,229 @@ let refusesPerAddress =
                               Some(#("shell.most-at-once", "be above 0", Some("0"))),
                               Some(#("shell.per-address", "be above 0", Some("0")))]))
 
+// design §4, §11, §14: `headers` refuses Cache-Control and
+// Sec-WebSocket-Version too, in ASCII case, which the server writes itself.
+let refusesWrittenHeaders =
+    Test.Case(name = "refuses a header the server writes itself",
+              run = fn() =
+                  Test.equal([broken(edited("\"X-Content-Type-Options\"", "\"cache-control\"")),
+                              broken(edited("\"X-Content-Type-Options\"",
+                                            "\"Sec-WebSocket-VERSION\""))],
+                             [Some(#("headers.cache-control",
+                                     writtenByTheServer,
+                                     Some("\"cache-control\""))),
+                              Some(#("headers.Sec-WebSocket-VERSION",
+                                     writtenByTheServer,
+                                     Some("\"Sec-WebSocket-VERSION\"")))]))
+
+// design §4: a member's name that holds a control character is answered
+// before every other rule of its object, a member of no field and a
+// header's name among them, under the object's field, `the configuration`
+// at the top, with the name as Json.encode writes it and U+007F as
+// \u007f, the first by the names' code points; so no field holds a control
+// character.
+let refusesControlNames =
+    Test.Case(name = "refuses a member's name that holds a control character",
+              run = fn() =
+                  Test.equal([broken(edited("\"root\":",
+                                            "\"aaa\": 1, \"r\\u007fot\": 2, \"root\":")),
+                              broken(edited("\"root\":",
+                                            "\"a\\u0001\": 1, \"\\u0001b\": 2, \"root\":")),
+                              broken(edited("\"kind\": \"plain\", ", "\"ki\\nnd\": \"plain\", ")),
+                              broken(edited("\"head\": 10000,",
+                                            "\"he\\u001fad\": 1, \"head\": 10000,")),
+                              broken(edited("\"X-Content-Type-Options\"",
+                                            "\"Date\": \"now\", \"X\\u0000\"")),
+                              broken(edited("\".wasm\"", "\".w\\tasm\""))],
+                             [Some(#("the configuration",
+                                     "hold no control character",
+                                     Some("\"r\\u007fot\""))),
+                              Some(#("the configuration",
+                                     "hold no control character",
+                                     Some("\"\\u0001b\""))),
+                              Some(#("listeners[2]",
+                                     "hold no control character",
+                                     Some("\"ki\\nnd\""))),
+                              Some(#("timeouts",
+                                     "hold no control character",
+                                     Some("\"he\\u001Fad\""))),
+                              Some(#("headers", "hold no control character", Some("\"X\\u0000\""))),
+                              Some(#("content-types",
+                                     "hold no control character",
+                                     Some("\".w\\tasm\"")))]))
+
+// design §4: a member named twice in one object is read at its last, the
+// configuration's and a listener's.
+let readsTheLastOfAName =
+    Test.Case(name = "reads a member named twice at its last",
+              run = fn() =
+                  Test.equal(Either.map(parse(edited("\"port\": 8080",
+                                                     "\"port\": -1, \"port\": 8081")
+                                                  |> String.replace("\"root\": \"/home/httpd/ernest-httpd/site\"",
+                                                                    "\"root\": 1, \"root\": \"/srv/site\"")),
+                                        fn(config) =
+                                            #(config.root,
+                                              List.map(config.listeners,
+                                                       fn(listener) = listener.port))),
+                             Right(#(Path("/srv/site"), [443, 80, 8081]))))
+
+// design §4: `shell.warning` is a multiple of 1000, after each `be above 0`
+// of its row and before `be below the lifetime`.
+let refusesWarnings =
+    Test.Case(name = "refuses a warning that is no whole second",
+              run = fn() =
+                  Test.equal([broken(edited("\"warning\": 60000", "\"warning\": 60500")),
+                              broken(edited("\"warning\": 60000", "\"warning\": 0")),
+                              broken(edited("\"warning\": 60000", "\"warning\": 300500")),
+                              broken(String.replace(edited("\"warning\": 60000",
+                                                           "\"warning\": 60500"),
+                                                    "\"message-limit\": 65536",
+                                                    "\"message-limit\": 0")),
+                              broken(edited("\"warning\": 60000", "\"warning\": 300000"))],
+                             [Some(#("shell.warning", "be a multiple of 1000", Some("60500"))),
+                              Some(#("shell.warning", "be above 0", Some("0"))),
+                              Some(#("shell.warning", "be a multiple of 1000", Some("300500"))),
+                              Some(#("shell.message-limit", "be above 0", Some("0"))),
+                              Some(#("shell.warning", "be below the lifetime", Some("300000")))]))
+
+// The example with its shell's origins the JSON text given.
+fn withOrigins(text : String) : String =
+    edited("\"origins\": [\"https://ernest-lang.org\"]", "\"origins\": " <> text)
+
+// design §4: `shell.origins` is an array, not empty, of origins as a
+// browser writes `Origin`: `http://` or `https://`, a host Config.host
+// reads, in lower case, with a port, where there is one, of 1 to 65535 and
+// not its scheme's own, and nothing after it, each element's type and
+// control characters before its rule. The empty port and the port's
+// leading zero are the code's reading of "as a browser writes Origin",
+// which §4 does not spell out.
+let refusesOrigins =
+    Test.Case(name = "refuses an origin that is none",
+              run = fn() =
+                  Test.equal(#(List.map(["[]",
+                                         "\"https://ernest-lang.org\"",
+                                         "[\"https://ernest-lang.org\", 2]",
+                                         "[\"https://ernest\\u0000lang.org\"]",
+                                         "[\"\"]",
+                                         "[\"ernest-lang.org\"]",
+                                         "[\"ftp://ernest-lang.org\"]",
+                                         "[\"HTTPS://ernest-lang.org\"]",
+                                         "[\"https://Ernest-Lang.org\"]",
+                                         "[\"https://ernest-lang.org/\"]",
+                                         "[\"https://ernest-lang.org?a\"]",
+                                         "[\"https://ernest-lang.org:443\"]",
+                                         "[\"http://ernest-lang.org:80\"]",
+                                         "[\"https://user@ernest-lang.org\"]",
+                                         "[\"https://\"]",
+                                         "[\"https://:8443\"]",
+                                         "[\"https://ernest-lang.org:\"]",
+                                         "[\"https://ernest-lang.org:08443\"]",
+                                         "[\"http://localhost:0\"]",
+                                         "[\"http://localhost:70000\"]",
+                                         "[\"http://[::1]\", \"http://[::1\"]"],
+                                        fn(text) = broken(withOrigins(text))),
+                               Either.map(parse(withOrigins("[\"https://ernest-lang.org\", \"http://localhost:8080\", \"https://ernest-lang.org:80\", \"http://[::1]:8443\", \"http://127.0.0.1\", \"http://localhost:65535\", \"https://localhost:1\"]")),
+                                          fn(config) =
+                                              Optional.map(config.shell,
+                                                           fn(shell) = shell.origins))),
+                             #([Some(#("shell.origins", "not be empty", Some("[]"))),
+                                Some(#("shell.origins",
+                                       "be an array",
+                                       Some("\"https://ernest-lang.org\""))),
+                                Some(#("shell.origins[1]", "be a string", Some("2"))),
+                                Some(#("shell.origins[0]",
+                                       "hold no control character",
+                                       Some("\"https://ernest\\u0000lang.org\""))),
+                                Some(#("shell.origins[0]", "be an origin", Some("\"\""))),
+                                Some(#("shell.origins[0]",
+                                       "be an origin",
+                                       Some("\"ernest-lang.org\""))),
+                                Some(#("shell.origins[0]",
+                                       "be an origin",
+                                       Some("\"ftp://ernest-lang.org\""))),
+                                Some(#("shell.origins[0]",
+                                       "be an origin",
+                                       Some("\"HTTPS://ernest-lang.org\""))),
+                                Some(#("shell.origins[0]",
+                                       "be an origin",
+                                       Some("\"https://Ernest-Lang.org\""))),
+                                Some(#("shell.origins[0]",
+                                       "be an origin",
+                                       Some("\"https://ernest-lang.org/\""))),
+                                Some(#("shell.origins[0]",
+                                       "be an origin",
+                                       Some("\"https://ernest-lang.org?a\""))),
+                                Some(#("shell.origins[0]",
+                                       "be an origin",
+                                       Some("\"https://ernest-lang.org:443\""))),
+                                Some(#("shell.origins[0]",
+                                       "be an origin",
+                                       Some("\"http://ernest-lang.org:80\""))),
+                                Some(#("shell.origins[0]",
+                                       "be an origin",
+                                       Some("\"https://user@ernest-lang.org\""))),
+                                Some(#("shell.origins[0]", "be an origin", Some("\"https://\""))),
+                                Some(#("shell.origins[0]",
+                                       "be an origin",
+                                       Some("\"https://:8443\""))),
+                                Some(#("shell.origins[0]",
+                                       "be an origin",
+                                       Some("\"https://ernest-lang.org:\""))),
+                                Some(#("shell.origins[0]",
+                                       "be an origin",
+                                       Some("\"https://ernest-lang.org:08443\""))),
+                                Some(#("shell.origins[0]",
+                                       "be an origin",
+                                       Some("\"http://localhost:0\""))),
+                                Some(#("shell.origins[0]",
+                                       "be an origin",
+                                       Some("\"http://localhost:70000\""))),
+                                Some(#("shell.origins[1]",
+                                       "be an origin",
+                                       Some("\"http://[::1\"")))],
+                               Right(Some(["https://ernest-lang.org",
+                                           "http://localhost:8080",
+                                           "https://ernest-lang.org:80",
+                                           "http://[::1]:8443",
+                                           "http://127.0.0.1",
+                                           "http://localhost:65535",
+                                           "https://localhost:1"])))))
+
+// The rule of design §4's table on the shell's paths, as the table writes
+// it.
+let pathRule : String = "hold only ASCII letters, digits and - . _ ~ ! $ & ' ( ) * + , ; = : @ /"
+
+// design §4: `shell.path` and `shell.client` each hold only the characters
+// the rule names, after `begin with /`, and the client's `not be
+// shell.path` stays last; a path of every character the rule allows is
+// read.
+let refusesShellPaths =
+    Test.Case(name = "refuses a shell's path of another character",
+              run = fn() =
+                  Test.equal(#([broken(edited("\"/shell/session\"", "\"/shell session\"")),
+                                broken(edited("\"/shell/session\"", "\"/shell%20session\"")),
+                                broken(edited("\"/shell/session\"", "\"/sh\\u00e9ll\"")),
+                                broken(edited("\"/shell/session\"", "\"shell session\"")),
+                                broken(edited("\"/shell/client.js\"", "\"/shell/client.js?v=1\"")),
+                                broken(edited("\"/shell/client.js\"", "\"/shell#client\"")),
+                                broken(edited("\"/shell/client.js\"", "\"shell client\"")),
+                                broken(edited("\"/shell/client.js\"", "\"/shell/session\""))],
+                               Either.map(parse(edited("\"/shell/session\"",
+                                                       "\"/Az09-._~!$&'()*+,;=:@/\"")),
+                                          fn(config) =
+                                              Optional.map(config.shell, fn(shell) = shell.path))),
+                             #([Some(#("shell.path", pathRule, Some("\"/shell session\""))),
+                                Some(#("shell.path", pathRule, Some("\"/shell%20session\""))),
+                                Some(#("shell.path", pathRule, Some("\"/sh\u{e9}ll\""))),
+                                Some(#("shell.path", "begin with /", Some("\"shell session\""))),
+                                Some(#("shell.client", pathRule, Some("\"/shell/client.js?v=1\""))),
+                                Some(#("shell.client", pathRule, Some("\"/shell#client\""))),
+                                Some(#("shell.client", "begin with /", Some("\"shell client\""))),
+                                Some(#("shell.client",
+                                       "not be shell.path",
+                                       Some("\"/shell/session\"")))],
+                               Right(Some("/Az09-._~!$&'()*+,;=:@/")))))
+
 // The rule of design §4's table on a host of the file, as the table writes
 // it.
 let hostRule : String = "be a host, with or without a port"
@@ -933,7 +1263,7 @@ let hostRule : String = "be a host, with or without a port"
 // The rule of design §4's table on a header the server writes itself, as
 // the table writes it.
 let writtenByTheServer : String =
-    "be none of Allow, Connection, Content-Length, Content-Type, Date, Last-Modified, Location, Sec-WebSocket-Accept, Set-Cookie, Transfer-Encoding and Upgrade"
+    "be none of Allow, Cache-Control, Connection, Content-Length, Content-Type, Date, Last-Modified, Location, Sec-WebSocket-Accept, Sec-WebSocket-Version, Set-Cookie, Transfer-Encoding and Upgrade"
 
 // design §4: the fields are checked in the table's order, a row's rules in
 // theirs: a bad port before a bad root, a listener before the next, an
@@ -1043,11 +1373,40 @@ let writesReasons =
                                 | Right(_) -> "read"
                               }],
                              ["cannot read the file: Io.NotFound",
-                              "is not JSON: Json.UnexpectedEnd",
+                              "is not JSON: the text ends before its value does",
                               "limits.headers must be above 0: 0",
                               "root is required",
                               "roots is no field of the configuration",
                               "listeners[2].port must be 0 to 65535: 70000"]))
+
+// design §4: a text that is not JSON is written in words: one that ends
+// before its value does, a byte not expected, a printable ASCII byte as
+// Json.encode writes it and any other as two uppercase hexadecimal digits,
+// and a sequence that cannot be read as Json.encode writes it, each with
+// its line and column.
+let writesJsonErrors =
+    Test.Case(name = "writes a text that is not JSON in words",
+              run = fn() =
+                  Test.equal(List.map(["{",
+                                       "no",
+                                       "[1, \"\"\"]",
+                                       "\u{e9}",
+                                       "[1]\u{1}",
+                                       "\u{7f}",
+                                       "{\n  \"a\": \"\\u12\"}",
+                                       "[1E400]"],
+                                      fn(text) = match parse(text) {
+                                          Left(error) -> reason(error)
+                                        | Right(_) -> "read"
+                                      }),
+                             ["is not JSON: the text ends before its value does",
+                              "is not JSON: line 1, column 2: \"o\" was not expected",
+                              "is not JSON: line 1, column 7: \"\\\"\" was not expected",
+                              "is not JSON: line 1, column 1: the byte 0xC3 was not expected",
+                              "is not JSON: line 1, column 4: the byte 0x01 was not expected",
+                              "is not JSON: line 1, column 1: the byte 0x7F was not expected",
+                              "is not JSON: line 2, column 9: \"\\\\u12\" cannot be read",
+                              "is not JSON: line 1, column 2: \"1.0e400\" cannot be read"]))
 
 // The scratch directory the tests of `read` write under.
 let scratch : String = "build/scratch/config"
@@ -1170,6 +1529,23 @@ let readsFiles =
                 | Left(error) ->
                       Test.Failed("cannot prepare " <> scratch <> ": " <> Io.show(error))
               })
+
+// design §4: the access log names no directory, a rule of the file
+// system's, after the root's, and after every rule but the file system's.
+let refusesALogDirectory =
+    Test.Case(name = "refuses an access log that is a directory", run = fn() = match prepared() {
+        Right(text) -> {
+            let logged = String.replace(text, scratch <> "/access.log", scratch <> "/acme");
+            Test.equal([brokenFile(logged),
+                        brokenFile(String.replace(logged, scratch <> "/site", scratch <> "/none")),
+                        brokenFile(String.replace(logged, "\"port\": 443", "\"port\": -1"))],
+                       [Right(Some(#("access-log", "name no directory", scratchValue("acme")))),
+                        Right(Some(#("root", "name a directory", scratchValue("none")))),
+                        Right(Some(#("listeners[0].port", "be 0 to 65535", Some("-1"))))])
+        }
+      | Left(error) ->
+            Test.Failed("cannot prepare " <> scratch <> ": " <> Io.show(error))
+    })
 
 // design §4: a file that cannot be read, and one that is not UTF-8.
 let refusesUnreadable = Test.Case(name = "refuses a file that cannot be read", run = fn() = {

@@ -400,7 +400,7 @@ fn configuration(idle : Int, head : Int) : String =
         <> " \"limits\": {\"request-line\": 64, \"headers\": 256,\n"
         <> "            \"connections\": 4, \"connections-per-address\": 4},\n"
         <> " \"content-types\": {},\n"
-        <> " \"headers\": {\"X-Content-Type-Options\": \"nosniff\", \"Cache-Control\": \"no-store\"},\n"
+        <> " \"headers\": {\"X-Content-Type-Options\": \"nosniff\", \"Referrer-Policy\": \"no-referrer\"},\n"
         <> " \"access-log\": \""
         <> scratch
         <> "/access.log\"}\n"
@@ -597,7 +597,7 @@ let host : Http.Header = header("Host", "localhost")
 // The headers every response begins with: Date, then the configuration's.
 let first : List(Http.Header) =
     [header("Date", "a date"),
-     header("Cache-Control", "no-store"),
+     header("Referrer-Policy", "no-referrer"),
      header("X-Content-Type-Options", "nosniff")]
 
 let textType : Http.Header = header("Content-Type", "text/plain; charset=utf-8")

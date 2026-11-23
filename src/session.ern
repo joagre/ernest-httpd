@@ -1176,9 +1176,9 @@ fn endOf() : String receiving Seen =
 let keepsTheDeadline = Test.Case(name = "warns and ends at its deadline", run = fn() = {
     let still = started(["cat"], 1100, 1000, 5000);
     send(still, Attach(shell("still")));
-    let moved = started(["cat"], 700, 500, 5000);
+    let moved = started(["cat"], 1100, 1000, 5000);
     send(moved, Attach(shell("moved")));
-    let extended = started(["cat"], 700, 500, 5000);
+    let extended = started(["cat"], 1100, 1000, 5000);
     send(extended, Attach(shell("extended")));
     let attached = #(next("still"), next("moved"), next("extended"));
     let warned = #(next("moved"), next("extended"));
@@ -1193,16 +1193,16 @@ let keepsTheDeadline = Test.Case(name = "warns and ends at its deadline", run = 
     Test.equal(#(attached,
                  warned,
                  movedTold,
-                 afterKey >= 700,
+                 afterKey >= 1100,
                  extendedTold,
-                 afterExtend >= 700,
+                 afterExtend >= 1100,
                  stillTold,
                  List.map([1, 2, 3], fn(_) = sessionEnded())),
                #(#("Attached(New)", "Attached(New)", "Attached(New)"),
-                 #("Warning(0)", "Warning(0)"),
-                 ["Warning(0)", "Ended(4001)"],
+                 #("Warning(1)", "Warning(1)"),
+                 ["Warning(1)", "Ended(4001)"],
                  true,
-                 ["Warning(0)", "Ended(4001)"],
+                 ["Warning(1)", "Ended(4001)"],
                  true,
                  ["Warning(1)", "Ended(4001)"],
                  ["Returned", "Returned", "Returned"]))

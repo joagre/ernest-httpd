@@ -1074,7 +1074,7 @@ let carriesASession = Test.Case(name = "carries a session through the sessions",
 // shell with 4001; the shell, attached, is not closed by the rounds of the
 // idle deadline that pass meanwhile.
 let warnsAndExpires = Test.Case(name = "writes the warning and closes at the expiry", run = fn() = {
-    let sessions = Sessions.start(configured(1, 600, 500, 1024), deadlines(200));
+    let sessions = Sessions.start(configured(1, 1100, 1000, 1024), deadlines(200));
     let result = {
         let client <- opened(sessions, deadlines(200), [], <<>>);
         let _ = sent(client, page("{\"resize\": [24, 80]}"));
@@ -1084,7 +1084,7 @@ let warnsAndExpires = Test.Case(name = "writes the warning and closes at the exp
     };
     let expected =
         Io.show(WebSocket.Text(Json.format(Json.Object(Map.fromList([#("warning",
-                                                                       Json.Integer(0))])))));
+                                                                       Json.Integer(1))])))));
     Test.equal(#(result, stopped(sessions)),
                #(Right(#(attachedText("new"), expected, ["Close(4001)", "closed"], "Returned")),
                  true))
