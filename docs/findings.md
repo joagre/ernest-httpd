@@ -14,8 +14,8 @@ What the readers found of Ernest's is lines 38 to 57 of `language_feedback.md`, 
 
 ### S, the security reader
 
-- **S1.** Real exposure: one address starts every session `most-at-once` allows and keeps each by a reattach and an extend, and nothing caps one address's live sessions (§12, `src/sessions.ern` line 117). Planned: item 12, `shell.per-address`, 2 deployed.
-- **S2.** Real exposure: the per-address caps count a whole address, so five IPv4 addresses or one IPv6 /64 fill a listener, the cap evicts no idle connection, and fresh addresses lift the starts window (§7, §12). Planned: item 12, an IPv6 address by its /64, and the connection longest outside a request ended at the cap.
+- **S1.** Real exposure: one address starts every session `most-at-once` allows and keeps each by a reattach and an extend, and nothing caps one address's live sessions (§12, `src/sessions.ern` line 117). Done: item 12, `shell.per-address`, 2 deployed.
+- **S2.** Real exposure: the per-address caps count a whole address, so five IPv4 addresses or one IPv6 /64 fill a listener, the cap evicts no idle connection, and fresh addresses lift the starts window (§7, §12). Done: item 12, an IPv6 address by its /64; the eviction at the cap dropped on the build's showing, the narrower promise in §7 and `known_issues.md`.
 - **S3.** Real exposure: the example's shell gives any local client that writes `Origin: http://localhost:8080` the developer's account and the server's whole environment, `SSH_AUTH_SOCK` among it, and so do the tests' servers (§11). Fix in the third leg: `examples/README.md`'s sentence and the README's line on `make test`.
 - **S4.** Hardening: a cookie the client chooses names a new session and is never replaced, so a planted cookie is taken over later from any address (§11, *The cookie*). Planned: item 14, the cookie `__Host-shell` with `Path=/`.
 - **S5.** Hardening: a path the file system refuses reaches standard error unescaped, control and bidirectional characters among it (§5, *The errors*). Fix in the third leg.
@@ -137,7 +137,7 @@ What the readers found of Ernest's is lines of `language_feedback.md`:
 - line 53: S16;
 - lines 54 to 57: L13, L15, L16 and L17, line 54 after L1.
 
-S12, that no function reads an IP address's text into its bytes, becomes line 58 with item 12, whose parser it names. S15, that `Crypto` has no HMAC, is no line, since the cookie's fix needs none.
+S12, that no function reads an IP address's text into its bytes, is line 58, which names item 12's parser. S15, that `Crypto` has no HMAC, is no line, since the cookie's fix needs none.
 
 ## The readers' lists
 

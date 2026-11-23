@@ -1231,7 +1231,7 @@ let withShell : String =
                    "/access.log\",\n"
                        <> " \"shell\": {\"path\": \"/shell\", \"client\": \"/shell/client.js\",\n"
                        <> "           \"origins\": [\"http://localhost\"],\n"
-                       <> "           \"command\": [\"cat\"], \"most-at-once\": 2,\n"
+                       <> "           \"command\": [\"cat\"], \"most-at-once\": 2, \"per-address\": 2,\n"
                        <> "           \"starts\": {\"count\": 10, \"within\": 60000},\n"
                        <> "           \"lifetime\": 60000, \"warning\": 30000,\n"
                        <> "           \"message-limit\": 1024, \"hangup\": 1000}}\n")

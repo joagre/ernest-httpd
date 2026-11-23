@@ -24,6 +24,7 @@
 ///                  origins = ["https://ernest-lang.org"],
 ///                  command = ["sh"],
 ///                  mostAtOnce = 6,
+///                  perAddress = 2,
 ///                  starts = Config.Starts(count = 10, within = 3600000),
 ///                  lifetime = 300000,
 ///                  warning = 60000,
@@ -238,6 +239,7 @@ let shell : Config.Shell =
                  origins = ["https://ernest-lang.org"],
                  command = ["sh"],
                  mostAtOnce = 6,
+                 perAddress = 2,
                  starts = Config.Starts(count = 10, within = 3600000),
                  lifetime = 300000,
                  warning = 60000,
@@ -315,7 +317,7 @@ let configuration : String =
         <> "/access.log\",\n"
         <> " \"shell\": {\"path\": \"/shell/session\", \"client\": \"/shell/client.js\",\n"
         <> "           \"origins\": [\"http://client.localhost\"], \"command\": [\"sh\"],\n"
-        <> "           \"most-at-once\": 4, \"starts\": {\"count\": 2, \"within\": 60000},\n"
+        <> "           \"most-at-once\": 4, \"per-address\": 4, \"starts\": {\"count\": 2, \"within\": 60000},\n"
         <> "           \"lifetime\": 2000, \"warning\": 1000,\n"
         <> "           \"message-limit\": 65536, \"hangup\": 1000}}\n"
 

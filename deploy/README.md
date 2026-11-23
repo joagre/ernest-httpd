@@ -125,6 +125,7 @@ The rest of the step is run when the configuration takes a shell. `deploy/config
               "--memory", "128m", "--pids-limit", "128", "--cpus", "1",
               "--mount", "type=tmpfs,destination=/home/shell,tmpfs-size=64m,U=true", "ernest-shell"],
   "most-at-once": 6,
+  "per-address": 2,
   "starts": { "count": 10, "within": 3600000 },
   "lifetime": 300000, "warning": 60000,
   "message-limit": 65536, "hangup": 5000

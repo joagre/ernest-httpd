@@ -1,0 +1,213 @@
+/// The address a remote address is counted under, by which the listener
+/// counts its connections and the sessions their visitors (design §7,
+/// §12).
+///
+/// An IPv4 address is counted as written. An IPv6 address is counted by
+/// its first 64 bits, a prefix one host may hold whole, so that a host
+/// counts once whichever of its addresses it uses. It is read in any form
+/// RFC 4291 writes one: in full or compressed by `::`, in either case, with
+/// leading zeros or without, with a dotted IPv4 tail, and with a zone after
+/// `%`, which is dropped. Any other text faults, since `Tcp.remote` writes
+/// none.
+///
+/// ## Examples
+///
+/// ```ernest
+/// [Remote.counted("192.0.2.7"),
+///  Remote.counted("2001:DB8:0:1:0:0:0:5"),
+///  Remote.counted("fe80::1%eth0")]
+/// // => ["192.0.2.7", "2001:db8:0:1::/64", "fe80:0:0:0::/64"]
+/// ```
+
+//
+// Counting
+//
+
+/// The address the remote address `host`, as `Tcp.remote` writes it, is
+/// counted under: an IPv4 address as written, and an IPv6 address its
+/// first four groups in lower-case hexadecimal without leading zeros, then
+/// `::/64`. Any other text faults.
+export fn counted(host : String) : String =
+    match ipv4(host) {
+        Some(_) ->
+            host
+      | None ->
+            match ipv6(host) {
+                Some(groups) -> String.join(List.map(List.take(groups, 4), hex), ":") <> "::/64"
+              | None -> fault("Tcp.remote writes an IPv4 or an IPv6 address, not " <> Io.show(host))
+            }
+    }
+
+// The two groups of 16 bits an IPv4 address in dotted decimal stands for,
+// each of its four parts a decimal 0 to 255 written without a leading
+// zero, as RFC 3986 writes one; None for another text.
+fn ipv4(text : String) : Optional(#(Int, Int)) =
+    match String.split(text, ".") {
+        [first, second, third, fourth] -> {
+            let high <- octets(first, second);
+            let low <- octets(third, fourth);
+            Some(#(high, low))
+        }
+      | _ ->
+            None
+    }
+
+// The group of two parts of an IPv4 address.
+fn octets(high : String, low : String) : Optional(Int) = {
+    let first <- octet(high);
+    let second <- octet(low);
+    Some(first * 256 + second)
+}
+
+// A part written as Int.toString writes its value, 0 to 255.
+fn octet(text : String) : Optional(Int) = {
+    let value <- String.toInt(text);
+    if value >= 0 && value <= 255 && Int.toString(value) == text then Some(value) else None
+}
+
+// The eight groups of an IPv6 address, its zone dropped and a dotted tail
+// read as the two groups it stands for: in full, or compressed by one
+// `::`, which stands for one group of zeros or more; None for another
+// text.
+fn ipv6(host : String) : Optional(List(Int)) = {
+    let address <- zoneless(host);
+    match String.split(dotless(address), "::") {
+        [full] -> {
+            let all <- groups(full);
+            if List.size(all) == 8 then Some(all) else None
+        }
+      | [head, tail] -> {
+            let leading <- groups(head);
+            let trailing <- groups(tail);
+            let zeros = 8 - List.size(leading) - List.size(trailing);
+            if zeros > 0 then Some(leading <> List.repeat(0, zeros) <> trailing) else None
+        }
+      | _ ->
+            None
+    }
+}
+
+// The address before its zone, `%` and a zone of one character or more;
+// None for an empty zone.
+fn zoneless(host : String) : Optional(String) =
+    match String.splitOnce(host, "%") {
+        Some(#(address, zone)) -> if String.isEmpty(zone) then None else Some(address)
+      | None -> Some(host)
+    }
+
+// The address with a dotted IPv4 tail after its last `:` written as the
+// two groups it stands for, and otherwise as it is.
+fn dotless(address : String) : String =
+    match String.lastIndexOf(address, ":") {
+        Some(index) ->
+            match ipv4(String.drop(address, index + 1)) {
+                Some(#(high, low)) ->
+                    String.slice(address, 0, index + 1) <> hex(high) <> ":" <> hex(low)
+              | None ->
+                    address
+            }
+      | None ->
+            address
+    }
+
+// The groups of a text of groups parted by `:`, none for an empty text;
+// None where a part is no group.
+fn groups(text : String) : Optional(List(Int)) =
+    if String.isEmpty(text) then
+        Some([])
+    else List.foldRight(String.split(text, ":"), Some([]), fn(acc, part) = {
+        let rest <- acc;
+        let value <- group(part);
+        Some(value :: rest)
+    })
+
+// A group of one to four hexadecimal digits, in either case, and its value.
+fn group(text : String) : Optional(Int) = {
+    let digits = String.toList(text);
+    if List.size(digits) >= 1
+        && List.size(digits) <= 4
+        && List.all(digits, fn(char) = Char.digitValue(char, 16) != None) then
+        String.toIntBase(text, 16)
+    else
+        None
+}
+
+// A group in lower-case hexadecimal without leading zeros.
+fn hex(group : Int) : String =
+    match Int.toStringBase(group, 16) {
+        Some(digits) -> String.toAsciiLower(digits)
+      | None -> fault("16 is a base Int.toStringBase writes in, 2 to 36")
+    }
+
+//
+// Tests
+//
+
+// design §7: an IPv4 address is counted as written.
+let countsIpv4 =
+    Test.Case(name = "counts an IPv4 address as written",
+              run = fn() =
+                  Test.equal(List.map(["192.0.2.7", "127.0.0.1", "0.0.0.0", "255.255.255.255"],
+                                      counted),
+                             ["192.0.2.7", "127.0.0.1", "0.0.0.0", "255.255.255.255"]))
+
+// design §7: an IPv6 address is counted by its first 64 bits, in any form
+// RFC 4291 writes one: compressed, in full with upper-case digits and
+// leading zeros, the loopback, with a zone, with a dotted tail, and with
+// every group given; the groups lower-case without leading zeros.
+let countsIpv6 =
+    Test.Case(name = "counts an IPv6 address by its first 64 bits",
+              run = fn() =
+                  Test.equal(List.map(["2001:db8::1",
+                                       "2001:0DB8:0000:0000:0000:0000:0000:0002",
+                                       "::1",
+                                       "fe80::1%eth0",
+                                       "::ffff:192.0.2.7",
+                                       "2001:db8:1:2:3:4:192.0.2.7",
+                                       "2001:db8:1:2:3:4:5:6",
+                                       "2001:db8:1:2:3:4:5::",
+                                       "::"],
+                                      counted),
+                             ["2001:db8:0:0::/64",
+                              "2001:db8:0:0::/64",
+                              "0:0:0:0::/64",
+                              "fe80:0:0:0::/64",
+                              "0:0:0:0::/64",
+                              "2001:db8:1:2::/64",
+                              "2001:db8:1:2::/64",
+                              "2001:db8:1:2::/64",
+                              "0:0:0:0::/64"]))
+
+// design §7: any other text faults, since Tcp.remote writes none: a name,
+// an empty text, an IPv4 address of three parts, of a part past 255, of a
+// leading zero or a sign, or with a zone; an IPv6 address of seven groups,
+// of nine, with two `::`, with a `::` that stands for no group, with a
+// group of five digits or none, of a digit no hexadecimal one, with a
+// dotted tail before its end or of five groups' place, or with an empty
+// zone.
+let faultsOtherwise = Test.Case(name = "faults for a text that is no address", run = fn() = {
+    let texts =
+        ["localhost",
+         "",
+         "192.0.2",
+         "192.0.2.256",
+         "192.0.2.07",
+         "192.0.2.-1",
+         "192.0.2.7%eth0",
+         "1:2:3:4:5:6:7",
+         "1:2:3:4:5:6:7:8:9",
+         "1::2::3",
+         "1:2:3:4:5:6:7::8",
+         "12345::",
+         "1:::2",
+         "2001:db8::g",
+         "192.0.2.7::",
+         "1:2:3:4:5:6:7:192.0.2.7",
+         "::1%"];
+    Test.equal(List.map(texts,
+                        fn(text) =
+                            Test.faults(fn() = counted(text),
+                                        "Tcp.remote writes an IPv4 or an IPv6 address, not "
+                                            <> Io.show(text))),
+               List.repeat(Test.Passed, List.size(texts)))
+})

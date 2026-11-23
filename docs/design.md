@@ -39,6 +39,7 @@ Each module has one job, which its doc block states.
 | `Static` | `src/static.ern` | a request for a file to its response, §5 |
 | `Connection` | `src/connection.ern` | a socket's life: each request read, checked, served and answered, and its line told to the log, §6 |
 | `Hosts` | `src/hosts.ern` | a request's host and what it decides before the site: the canonical host served, a redirect host and the redirect listener answered 301, a host that is neither 421, and the ACME challenge served, §9 |
+| `Remote` | `src/remote.ern` | the address a remote address is counted under, `Remote.counted`, by which §7 and §12 count |
 | `Listener` | `src/listener.ern` | the connections of one listening socket: accepted within the caps, each in a process of its own, and closed in order at the end, §7 |
 | `AccessLog` | `src/access_log.ern` | the access log: each response a line of Common Log Format, appended by the file's path in batches, §8 |
 | `WebSocket` | `src/web_socket.ern` | RFC 6455's frames and its accept value: messages decoded from bytes and encoded to frames, knowing no socket, §10 |
@@ -63,7 +64,7 @@ type Timeouts = Timeouts(head : Int, idle : Int, write : Int, file : Int) // mil
 type Limits = Limits(requestLine : Int, headers : Int, connections : Int,
   connectionsPerAddress : Int) // bytes, bytes, counts
 type Shell = Shell(path : String, client : String, origins : List(String), command : List(String),
-  mostAtOnce : Int, starts : Starts, lifetime : Int, warning : Int, messageLimit : Int, hangup : Int)
+  mostAtOnce : Int, perAddress : Int, starts : Starts, lifetime : Int, warning : Int, messageLimit : Int, hangup : Int)
 type Starts = Starts(count : Int, within : Int) // within in milliseconds
 type Error = Unreadable(Io.Error) | NotJson(Json.Error) | Invalid(field : String, rule : String, value : Optional(String))
 Config.read : (Path, Int) -> Either(Error, Config) // the file read within the milliseconds, each rule checked
@@ -99,6 +100,7 @@ A string of the file, a member's name among them, breaks `hold no control charac
 | `shell.origins` | an array of strings | each `not be empty` |
 | `shell.command` | an array of strings | `not be empty`; the first is the program |
 | `shell.most-at-once` | an integer, a count | `be above 0` |
+| `shell.per-address` | an integer, a count: the sessions one counted address may have started, §12 | `be above 0` |
 | `shell.starts.count`, `shell.starts.within` | integers, a count and milliseconds | each `be above 0` |
 | `shell.lifetime`, `shell.warning`, `shell.message-limit` | integers, milliseconds, milliseconds and bytes | each `be above 0`, and the warning `be below the lifetime` |
 | `shell.hangup` | an integer, milliseconds: what a program has to exit after its terminal is hung up | `be above 0` |
@@ -191,7 +193,9 @@ Listener.serve : (Address(Tcp.ListenerMsg), Connection.Server) -> Unit receiving
 
 **Accepting.** The acceptor accepts one connection each time the listener asks it, `Accept`: it calls `Tcp.accept` in rounds of the idle deadline, `timeouts.idle`, until a connection comes or the accept fails otherwise than by its time, gives the socket to the listener, `Tcp.give`, and tells it `Accepted` with the socket or the error. The listener asks for the first accept at its start and for the next once it has placed the one before, while fewer than `limits.connections` connections are open; at the cap it asks for none until one ends, the rest waiting in the host's backlog. What a connection that has ended told is dropped.
 
-An accepted socket whose remote address, `Tcp.remote`'s host, has `limits.connections-per-address` connections open, or whose remote address the host cannot tell, is closed at once, without a response; any other is given to a connection process spawned and monitored for it, which runs `Connection.serve` with the listener's address adapted to `Told`.
+An accepted socket whose counted address has `limits.connections-per-address` connections open, or whose remote address the host cannot tell, is closed at once, without a response; any other is given to a connection process spawned and monitored for it, which runs `Connection.serve` with the listener's address adapted to `Told`. The caps bound what one counted address holds, and the counted addresses of `limits.connections` over `limits.connections-per-address` fill a listener.
+
+**The counted address.** `Remote.counted(host)` answers the address a remote address is counted under: an IPv4 address as written, and an IPv6 address, in any form RFC 4291 writes one and a zone after `%` dropped, its first 64 bits, the four groups in lower-case hexadecimal without leading zeros and then `::/64`, `2001:db8:0:1::/64`. Any other text faults, since `Tcp.remote` writes none.
 
 An accept that fails is said by the acceptor on standard error, as a line of `cannot accept: ` and the error as `Io.show` writes it, and the listener asks again after an idle deadline, by an alarm, `Retry`, a connection that comes meanwhile waiting in the host's backlog until a later accept takes it; at the limit of open files an accept fails whether or not a connection waits. An acceptor that ends before the stop ends the listener, which closes the socket and returns. The listener alone closes the socket, and only once its acceptor has ended.
 
@@ -307,7 +311,7 @@ type Session.Ending = Ending(process : Process, reply : Reply(Unit)) // the call
 Session.serve : (Config.Shell, Config.Timeouts, Terminal.Size, Address(Ending)) -> Unit receiving SessionMsg
 ```
 
-**An attach.** `Attach` whose cookie names a live session is passed to it, `Session.Attach` with the shell's address. Otherwise a session is started for the cookie where fewer than `shell.most-at-once` live and the remote address has fewer than `shell.starts.count` starts within the last `shell.starts.within` milliseconds, the start then counted and the starts older than the window dropped; else the shell is told `Unavailable`.
+**An attach.** `Attach` whose cookie names a live session is passed to it, `Session.Attach` with the shell's address. Otherwise a session is started for the cookie where fewer than `shell.most-at-once` live, fewer than `shell.per-address` of the sessions counted against it were started from the shell's counted address, and that address has fewer than `shell.starts.count` starts within the last `shell.starts.within` milliseconds, the start then counted and the starts older than the window dropped; else the shell is told `Unavailable`.
 
 A session is spawned, monitored, with `Session.serve` of the size, and told `Attach`; one whose end has begun, `SessionEnding`, is dropped by its cookie, its call then answered, and counted among the live until it ends, `SessionEnded`, so that an attach under its cookie starts a new session, which then counts in its place: a session whose end has begun counts no more against an attach under its cookie, nor after the session that attach starts, though the stop still waits for it, so that a restart, a `Stop` and an attach under one cookie, never meets the cap. Each start counted drops every remote address's starts older than the window. After `Stop` the sessions live on, telling each attach `Unavailable` and answering a second `Stop` at once.
 
@@ -365,7 +369,7 @@ The start copies both into the home, since the container is read-only and a node
 
 **The configuration**, `deploy/config.json`, installed as `node/config.json`: a `tls` listener on 443 and a `redirect` listener on 80 on each of `0.0.0.0` and `::`, since a listener takes its address's family alone (E.18), the two `tls` listeners naming one certificate and key; the hosts of §9; the headers `Strict-Transport-Security: max-age=31536000`, `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' wss://` and the canonical host; the log above; `limits.connections`, which §7 counts by listener, and `limits.connections-per-address` sized so that the two `tls` listeners' connections together times what one holds after the site's largest file, five times the file over TLS, stays under 256 MiB, and `timeouts.idle` 15000, so that an idle connection gives it back soon; and no `shell`, until the site's page has one. `Config.parse` reads it in a test, every rule but the file system's.
 
-**The shell's member.** Where the site's page has a shell, the configuration takes the member `shell`: `path` `/shell/session`, `client` `/shell/client.js`, the path the site imports the client from, §14, `origins` `["https://ernest-lang.org"]`, the command above, `most-at-once` 6, sized to the machine's 1.9 GB of memory, `starts` 10 within 3600000, `lifetime` 300000, `warning` 60000, `message-limit` 65536 and `hangup` 5000.
+**The shell's member.** Where the site's page has a shell, the configuration takes the member `shell`: `path` `/shell/session`, `client` `/shell/client.js`, the path the site imports the client from, §14, `origins` `["https://ernest-lang.org"]`, the command above, `most-at-once` 6, sized to the machine's 1.9 GB of memory, `per-address` 2, `starts` 10 within 3600000, `lifetime` 300000, `warning` 60000, `message-limit` 65536 and `hangup` 5000.
 
 **The smoke test**, `Smoke`, `make smoke HOST=` and the canonical host, `ern run` on the module's own `.erc`, `build/smoke.erc`, with the host and `deploy/config.json` as its arguments, since `--main` names a function of the file's own module alone: against the deployed site over TLS, verified against the host's bundle, `/etc/ssl/certs/ca-certificates.crt`, each check a line on standard output, the check's name and `ok`, or `failed: ` and what came; the program exits 0 where every check passed and 1 otherwise. `Smoke` exports what the checks speak with, a `GET`, an upgrade, a message masked as a browser masks it and the shell's output read, and the server's start by its launcher on a configuration, under a limit of open files where one is given, which `sh` sets by `ulimit -n` before it runs the launcher in its place, and its end by the termination signal, which the end-to-end tests run with.
 
@@ -431,7 +435,8 @@ The names that recur across modules, one for each concept, in every module. A na
 - **connection**: a socket a listener accepted and the process that serves it, §6, §7. Not `client`, `handler`.
 - **listener**: a listening socket of the configuration and the process that accepts on it, §7. Not `acceptor`.
 - **deadline**: a time of the configuration's a wait is bounded by, the idle, head, write and file deadlines, `timeouts`, §4, §6. Not `timeout`, which is the library's `Io.Timeout`.
-- **remote address**: the host of a connection's far end, `Tcp.remote`'s, by which connections are capped and logged, §7, §8. Not `peer`, which is the report's.
+- **remote address**: the host of a connection's far end, `Tcp.remote`'s, by which connections are logged, §8. Not `peer`, which is the report's.
+- **counted address**: what the caps count a remote address under, `Remote.counted`: an IPv4 address as written, and an IPv6 address its first 64 bits, §7, §12.
 - **entry**: what a connection tells the access log of one response, `AccessLog.Entry`, written as a line, §8.
 - **host**: a request's host, the host of its target's authority or, `Config.host`, of its `Host` header, §9; the **canonical host** is the configuration's `canonical-host`, served, and a **redirect host** one of its `redirect-hosts`, answered 301. Not `domain`, `vhost`.
 - **challenge**: the ACME challenge's files, served from the redirect listener's challenge site, `Static.Site` of its directory's `.well-known/acme-challenge`, §9. Not `webroot`.

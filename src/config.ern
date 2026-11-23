@@ -69,7 +69,8 @@ export type Limits =
     Limits(requestLine : Int, headers : Int, connections : Int, connectionsPerAddress : Int)
 
 /// The shell: the WebSocket's path, the client's path (design §14), the
-/// origins allowed, the command a session runs, how many at once, each
+/// origins allowed, the command a session runs, how many at once, how many
+/// of those one counted address may have started (design §12), each
 /// visitor's starts, a session's lifetime and its warning in milliseconds,
 /// the most bytes of a message, and the milliseconds a program has to exit
 /// after its terminal is hung up.
@@ -79,6 +80,7 @@ export type Shell =
           origins : List(String),
           command : List(String),
           mostAtOnce : Int,
+          perAddress : Int,
           starts : Starts,
           lifetime : Int,
           warning : Int,
@@ -322,6 +324,7 @@ fn shell(top : Map(String, Json.Value)) : Either(Error, Optional(Shell)) =
                          "origins",
                          "command",
                          "most-at-once",
+                         "per-address",
                          "starts",
                          "lifetime",
                          "warning",
@@ -343,6 +346,7 @@ fn shell(top : Map(String, Json.Value)) : Either(Error, Optional(Shell)) =
             let command <- elements(object, "shell", "command", stringValue);
             let _ <- notEmptyArray("shell.command", command);
             let mostAtOnce <- positive(object, "shell", "most-at-once");
+            let perAddress <- positive(object, "shell", "per-address");
             let starts <- starts(object);
             let lifetime <- positive(object, "shell", "lifetime");
             let warning <- positive(object, "shell", "warning");
@@ -357,6 +361,7 @@ fn shell(top : Map(String, Json.Value)) : Either(Error, Optional(Shell)) =
                              =origins,
                              =command,
                              =mostAtOnce,
+                             =perAddress,
                              =starts,
                              =lifetime,
                              =warning,
@@ -658,7 +663,7 @@ let example : String =
                        <> "    \"path\": \"/shell/session\", \"client\": \"/shell/client.js\",\n"
                        <> "    \"origins\": [\"https://ernest-lang.org\"],\n"
                        <> "    \"command\": [\"podman\", \"run\", \"-it\", \"--rm\", \"ernest-shell\"],\n"
-                       <> "    \"most-at-once\": 10,\n"
+                       <> "    \"most-at-once\": 10, \"per-address\": 2,\n"
                        <> "    \"starts\": { \"count\": 10, \"within\": 3600000 },\n"
                        <> "    \"lifetime\": 300000, \"warning\": 60000,\n"
                        <> "    \"message-limit\": 65536, \"hangup\": 5000\n"
@@ -712,6 +717,7 @@ let readsTheExample =
                                     origins = ["https://ernest-lang.org"],
                                     command = ["podman", "run", "-it", "--rm", "ernest-shell"],
                                     mostAtOnce = 10,
+                                    perAddress = 2,
                                     starts = Starts(count = 10, within = 3600000),
                                     lifetime = 300000,
                                     warning = 60000,
@@ -898,6 +904,27 @@ let refusesValues =
                               Some(#("shell.warning", "be below the lifetime", Some("300000"))),
                               Some(#("shell.hangup", "be above 0", Some("0"))),
                               Some(#("shell.hangup", "is required", None))]))
+
+// design §4: `shell.per-address` is a count above 0 and required, as every
+// field of the shell is, checked in the table's order, after
+// `shell.most-at-once` and before `shell.starts`.
+let refusesPerAddress =
+    Test.Case(name = "refuses a shell's per-address cap that breaks a rule",
+              run = fn() =
+                  Test.equal([broken(edited("\"per-address\": 2", "\"per-address\": 0")),
+                              broken(edited(", \"per-address\": 2", "")),
+                              broken(String.replace(edited("\"per-address\": 2",
+                                                           "\"per-address\": 0"),
+                                                    "\"most-at-once\": 10",
+                                                    "\"most-at-once\": 0")),
+                              broken(String.replace(edited("\"per-address\": 2",
+                                                           "\"per-address\": 0"),
+                                                    "\"count\": 10",
+                                                    "\"count\": 0"))],
+                             [Some(#("shell.per-address", "be above 0", Some("0"))),
+                              Some(#("shell.per-address", "is required", None)),
+                              Some(#("shell.most-at-once", "be above 0", Some("0"))),
+                              Some(#("shell.per-address", "be above 0", Some("0")))]))
 
 // The rule of design §4's table on a host of the file, as the table writes
 // it.

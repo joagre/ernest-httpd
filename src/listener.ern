@@ -7,9 +7,10 @@
 /// time the listener asks, and gives it each socket; the listener itself
 /// waits on its mailbox alone, so that a `Stop` is taken at once. It
 /// counts its connections by what they tell it and by their ends: in all,
-/// where at the cap it asks for no accept until one ends, and by remote
-/// address, where a socket past the cap is closed at once. Each connection
-/// is given its socket and the listener's address, adapted to `Told`.
+/// where at the cap it asks for no accept until one ends, and by counted
+/// address, `Remote.counted`, where a socket past the cap is closed at
+/// once. Each connection is given its socket and the listener's address,
+/// adapted to `Told`.
 ///
 /// Told to `Stop`, the listener ends the acceptor, closes the listening
 /// socket, ends each connection that waits for a request, lets each that
@@ -44,8 +45,9 @@ type Listening =
               told : Address(Connection.Told),
               acceptor : Address(AcceptorMsg))
 
-// A connection open: its remote address, and what it does by what it told.
-type Open = Open(remote : String, doing : Doing)
+// A connection open: its counted address, and what it does by what it
+// told.
+type Open = Open(counted : String, doing : Doing)
 
 // What a connection does: it waits for a request, it serves one, having
 // told RequestRead and not yet ResponseWritten, or it is a shell, having
@@ -144,26 +146,28 @@ fn asked(listening : Listening, connections : Map(Process, Open)) : Unit receivi
         waiting(listening, connections, Waiting)
 
 // The socket given to a connection process spawned and monitored for it,
-// or closed at once where its remote address has its cap of connections
-// open or the host cannot tell it.
+// or closed at once where the host cannot tell its remote address or its
+// counted address has its cap of connections open.
 fn admitted(listening : Listening,
             connections : Map(Process, Open),
             socket : Address(Tcp.SocketMsg)) : Map(Process, Open) receiving ListenerMsg = {
     let cap = listening.server.config.limits.connectionsPerAddress;
     match Tcp.remote(socket) {
-        Right(endpoint) ->
-            if count(connections, endpoint.host) < cap then {
+        Right(endpoint) -> {
+            let address = Remote.counted(endpoint.host);
+            if count(connections, address) < cap then {
                 let server = listening.server;
                 let told = listening.told;
                 let connection =
                     spawnMonitored(fn() = Connection.serve(socket, server, told), ConnectionEnded);
                 let process = Process.fromAddress(connection);
                 Tcp.give(socket, process);
-                Map.put(connections, process, Open(remote = endpoint.host, doing = AwaitingRequest))
+                Map.put(connections, process, Open(counted = address, doing = AwaitingRequest))
             } else {
                 Tcp.close(socket);
                 connections
             }
+        }
       | Left(_) -> {
             Tcp.close(socket);
             connections
@@ -171,9 +175,9 @@ fn admitted(listening : Listening,
     }
 }
 
-// The connections open from the remote address.
-fn count(connections : Map(Process, Open), remote : String) : Int =
-    Map.fold(connections, 0, fn(acc, _, open) = if open.remote == remote then acc + 1 else acc)
+// The connections open from the counted address.
+fn count(connections : Map(Process, Open), address : String) : Int =
+    Map.fold(connections, 0, fn(acc, _, open) = if open.counted == address then acc + 1 else acc)
 
 // What a connection told, recorded where it is open; what one that has
 // ended told, which may come after its end, is dropped.
@@ -388,8 +392,9 @@ fn stopped(listener : Address(ListenerMsg)) : #(String, Int) receiving Seen = {
 fn prompt(#(end, ms) : #(String, Int)) : #(String, Bool) =
     #(end, ms < 2000)
 
-// design §7: a socket whose remote address has its cap of connections open
-// is closed at once, without a response, and the connection open goes on.
+// design §7: a socket whose counted address has its cap of connections
+// open is closed at once, without a response, and the connection open goes
+// on.
 let capsAddresses = Test.Case(name = "closes a connection past an address's cap", run = fn() = {
     let result = {
         let #(listener, port) <- listening(60000, 4, 1);
@@ -427,6 +432,48 @@ let capsConnections =
                            #(200, 5),
                            #("Returned", true))))
     })
+
+// A listener serving on the socket beside a stand-in for a connection that
+// waits for a request, open from the remote address given.
+fn servingBeside(socket : Address(Tcp.ListenerMsg),
+                 server : Connection.Server,
+                 remote : String) : Unit receiving ListenerMsg = {
+    let standIn = Process.fromAddress(spawnMonitored(standing, ConnectionEnded));
+    let me = self();
+    let acceptor = spawnMonitored(fn() = accepting(socket, me, 60000), AcceptorEnded);
+    send(acceptor, Accept);
+    waiting(Listening(=socket, =server, told = adapted(me, Told), =acceptor),
+            Map.fromList([#(standIn,
+                            Open(counted = Remote.counted(remote), doing = AwaitingRequest))]),
+            Asked)
+}
+
+// design §7: two addresses of one /64 count together against
+// `limits.connections-per-address`. The loopback gives a socket one address
+// alone, `::1`, so a stand-in stands for a connection from `::2`, counted
+// as the listener counts it: at the cap of 2, the first connection from
+// `::1` is served and the second is closed at once, without a response.
+let capsA64 = Test.Case(name = "counts the addresses of one /64 together", run = fn() = {
+    let result = {
+        let _ <- Either.mapLeft(prepared(), Io.show);
+        let config <- Either.mapLeft(Config.parse(configuration(60000, 4, 2)), Config.reason);
+        let socket <- Either.mapLeft(Tcp.listen("::1", 0), Io.show);
+        let port <- Either.mapLeft(Tcp.port(socket), Io.show);
+        let server =
+            Connection.Server(=config,
+                              site = Static.site(config.root, config.contentTypes),
+                              challenge = None,
+                              log = adapted(self(), Logged),
+                              sessions = None);
+        let listener = spawnMonitored(fn() = servingBeside(socket, server, "::2"), Ended);
+        let first <- Either.mapLeft(Tcp.connect("::1", port, 5000), Io.show);
+        let one <- got(first, "/a.txt", [], 5000);
+        let second <- Either.mapLeft(Tcp.connect("::1", port, 5000), Io.show);
+        let refused = next(second);
+        Right(#(one, refused, prompt(stopped(listener))))
+    };
+    Test.equal(result, Right(#(#(200, 5), "closed", #("Returned", true))))
+})
 
 // The entries told to the log, by request, status and size, taken once
 // the connections that told them have ended.
@@ -607,7 +654,7 @@ fn endingWithStandIns(me : Address(Seen),
     let serving = Process.fromAddress(spawnMonitored(standing, ConnectionEnded));
     let listener = self();
     let acceptor = spawnMonitored(fn() = accepting(socket, listener, 60000), AcceptorEnded);
-    let open = Open(remote = "192.0.2.7", doing = AwaitingRequest);
+    let open = Open(counted = "192.0.2.7", doing = AwaitingRequest);
     send(me, Spawned(=idle, =serving));
     ending(Listening(=socket, =server, told = adapted(listener, Told), =acceptor),
            Map.fromList([#(idle, open), #(serving, Open(..open, doing = ServingRequest))]))
@@ -681,7 +728,7 @@ fn endingWithAShell(me : Address(Seen),
     send(me, ShellSpawned(shell));
     ending(Listening(=socket, =server, told = adapted(listener, Told), =acceptor),
            Map.fromList([#(Process.fromAddress(shell),
-                           Open(remote = "192.0.2.7", doing = ServingShell(shell)))]))
+                           Open(counted = "192.0.2.7", doing = ServingShell(shell)))]))
 }
 
 // design §7: at the end a connection that told Upgraded, a shell, is not
@@ -741,7 +788,7 @@ fn stoppingFirst(me : Address(Seen),
     receive {
         Stop ->
             ending(Listening(=socket, =server, told = adapted(listener, Told), =acceptor),
-                   Map.fromList([#(serving, Open(remote = "192.0.2.7", doing = ServingRequest))]))
+                   Map.fromList([#(serving, Open(counted = "192.0.2.7", doing = ServingRequest))]))
     }
 }
 

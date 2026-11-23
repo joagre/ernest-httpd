@@ -581,6 +581,7 @@ fn configured(command : List(String), lifetime : Int, warning : Int, hangup : In
                  origins = ["http://localhost"],
                  =command,
                  mostAtOnce = 4,
+                 perAddress = 4,
                  starts = Config.Starts(count = 4, within = 60000),
                  =lifetime,
                  =warning,
