@@ -1,0 +1,12 @@
+# The shell's slice of ernest-httpd, installed as
+# /home/httpd/.config/systemd/user/ernest-shell.slice (docs/design.md §13):
+# a slice of the systemd instance of the server's user, httpd, which the
+# shell's command names as each container's cgroup parent, so that every
+# visitor's container together takes at most one of the machine's cores
+# and leaves the server the other.
+
+[Unit]
+Description=ernest-httpd's shell, every visitor's container
+
+[Slice]
+CPUQuota=100%

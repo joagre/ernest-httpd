@@ -103,7 +103,7 @@ The certificate is the server's own until certbot's first replaces it, in step 9
 
 ## 7. The shell
 
-The linger and podman's directories are made whether or not the configuration takes a shell, since the unit's `ExecStartPre` runs podman and its `ReadWritePaths` names podman's storage and run directories. The user's systemd instance, kept running by its linger, gives podman its run directory, `/run/user/` and the user's number, and the limits of the container's memory and processes; `podman info` makes podman's storage under the user's home, `/home/httpd/.local/share/containers`, and names the two:
+The linger and podman's directories are made whether or not the configuration takes a shell, since the unit's `ExecStartPre` runs podman and its `ReadWritePaths` names podman's storage and run directories. The user's systemd instance, kept running by its linger, gives podman its run directory, `/run/user/` and the user's number, and the limits of the container's memory, processes and processor; `podman info` makes podman's storage under the user's home, `/home/httpd/.local/share/containers`, and names the two:
 
 ```console
 $ sudo loginctl enable-linger httpd
@@ -121,8 +121,9 @@ The rest of the step is run when the configuration takes a shell. `deploy/config
   "client": "/shell/client.js",
   "origins": ["https://ernest-lang.org"],
   "command": ["/home/httpd/ernest-httpd/shell.sh", "-it", "--rm", "--network", "none", "--read-only",
-              "--cap-drop=ALL", "--security-opt=no-new-privileges",
-              "--memory", "128m", "--pids-limit", "128", "--cpus", "1",
+              "--cap-drop=ALL", "--security-opt=no-new-privileges", "--userns=nomap", "--log-driver=none",
+              "--memory", "128m", "--memory-swap", "128m", "--pids-limit", "128",
+              "--cgroup-parent=ernest-shell.slice",
               "--mount", "type=tmpfs,destination=/home/shell,tmpfs-size=64m,U=true", "ernest-shell"],
   "most-at-once": 6,
   "per-address": 2,
@@ -132,14 +133,21 @@ The rest of the step is run when the configuration takes a shell. `deploy/config
 }
 ```
 
-The visitor's shell runs in a container of the image `ernest-shell`, built by `httpd` from `deploy/Containerfile` with the shell's start, `deploy/shell-start.sh`, and Ernest's archive beside it, the archive as `ern.tar.gz`, through the shell's wrapper, `deploy/shell.sh`, installed in the server's directory:
+The visitor's shell runs in a container of the image `ernest-shell`, built by `httpd` from `deploy/Containerfile` with the shell's start, `deploy/shell-start.sh`, and Ernest's archive beside it, the archive as `ern.tar.gz`, through the shell's wrapper, `deploy/shell.sh`, installed in the server's directory, and in the shell's slice, `deploy/ernest-shell.slice`, installed in the user's systemd instance, which holds every container together to one of the machine's cores. `systemctl --user` needs the user's run directory, which `sudo -u` does not set, so a shell of `httpd`'s exports it from here on:
 
 ```console
 httpd$ mkdir image && cp ernest_httpd-RELEASE/deploy/Containerfile ernest_httpd-RELEASE/deploy/shell-start.sh image/
 httpd$ cp ern-VERSION.tar.gz image/ern.tar.gz
 httpd$ podman build -t ernest-shell image
 httpd$ install -m 0755 ernest_httpd-RELEASE/deploy/shell.sh ernest-httpd/shell.sh
+httpd$ install -D -m 0644 ernest_httpd-RELEASE/deploy/ernest-shell.slice .config/systemd/user/ernest-shell.slice
+httpd$ export XDG_RUNTIME_DIR=/run/user/$(id -u)
+httpd$ systemctl --user daemon-reload
+httpd$ systemctl --user show ernest-shell.slice -p CPUQuotaPerSecUSec
+CPUQuotaPerSecUSec=1s
 ```
+
+A `systemctl --user` without the export says `Failed to connect to user scope bus via local transport: $DBUS_SESSION_BUS_ADDRESS and $XDG_RUNTIME_DIR not defined`, and a slice not installed shows `CPUQuotaPerSecUSec=infinity`.
 
 The image holds the two nodes' configuration directories under `/usr/local/share/ernest-shell/`, `a` and `foo`, and its command is the start, `/usr/local/bin/shell-start`, which copies both into the home, starts `foo` and, once it listens, runs the shell on `a`. A build whose `ernest.conf` did not take the limits stops at that `RUN` step, which exits with 1.
 
@@ -148,10 +156,22 @@ The image answers lines of Ernest, here from standard input, and the shell's com
 ```console
 httpd$ printf '1 + 2\nPeer.computeAt("foo", fn() = 3 + 4, 5000)\n' | podman run -i --rm --network none ernest-shell
 httpd$ ernest-httpd/shell.sh -it --rm --network none --read-only --cap-drop=ALL \
-      --security-opt=no-new-privileges --memory 128m --pids-limit 128 --cpus 1 \
+      --security-opt=no-new-privileges --userns=nomap --log-driver=none \
+      --memory 128m --memory-swap 128m --pids-limit 128 --cgroup-parent=ernest-shell.slice \
       --mount type=tmpfs,destination=/home/shell,tmpfs-size=64m,U=true ernest-shell
 httpd$ podman ps
 ```
+
+While the wrapper's container runs, a second shell of `httpd`'s, which exports the run directory too, shows it keeping no log and standing in the slice, and the slice holding one core, its `ControlGroup` under the user's instance, where systemd reads the name's dash as `ernest.slice` holding `ernest-shell.slice`:
+
+```console
+httpd$ podman inspect --format '{{.HostConfig.LogConfig.Type}} {{.HostConfig.CgroupParent}}' $(podman ps -q)
+none ernest-shell.slice
+httpd$ cat /sys/fs/cgroup$(systemctl --user show ernest-shell.slice -p ControlGroup --value)/cpu.max
+100000 100000
+```
+
+A slice whose user's instance holds no `cpu` controller has no `cpu.max`, and `cat` says `No such file or directory`.
 
 A start whose `foo` did not listen says `foo did not start`, and the container ends with the status 1.
 
@@ -172,7 +192,7 @@ An operator in the group `adm` or `systemd-journal` reads the journal without `s
 
 The unit binds 80 and 443 as no root by `AmbientCapabilities=CAP_NET_BIND_SERVICE`, a capability that goes with systemd; a server without it says `0.0.0.0:443: Io.Denied: a port below 1024 needs CAP_NET_BIND_SERVICE`. A server run without systemd binds the two ports by `setcap cap_net_bind_service=+ep` on the BEAM binary `erl` runs, `/usr/local/lib/erlang/erts-*/bin/beam.smp`, the binary itself and not a link to it, redone at each install of OTP, a file capability putting the binary in secure-exec mode, which drops `LD_LIBRARY_PATH` and the like; authbind and privbind, root's helpers in front of `ern`, are not used.
 
-The unit's `ExecStartPre` runs `podman system migrate` as `httpd`, which ends podman's pause process of the instance before, whose private `/tmp` the restart deleted; without it a visitor's shell after a restart fails with `container create failed (no logs from conmon)`, and the journal has conmon's `Failed to generate random path for console-socket`. `systemctl reload ernest-httpd` reads the node's peers again, `ern reload`, and nothing of `config.json`, whose change is `systemctl restart ernest-httpd`; `systemctl stop ernest-httpd` ends the server in order, each shell closed with 1001.
+The unit's `ExecStartPre` runs `podman system migrate` as `httpd`, which ends podman's pause process of the instance before, whose private `/tmp` the restart deleted; without it a visitor's shell after a restart fails with `container create failed (no logs from conmon)`, and the journal has conmon's `Failed to generate random path for console-socket`. `systemctl reload ernest-httpd` reads the node's peers again, `ern reload`, and nothing of `config.json`, whose change is `systemctl restart ernest-httpd`; `systemctl stop ernest-httpd` ends the server in order, each shell closed with 1001, and then removes every container of `httpd`'s, `ExecStopPost`, so that `podman ps -a` lists none after a stop, nor after a server that died and was started again.
 
 ## 9. The certificate
 
@@ -217,6 +237,15 @@ https://ernest-lang.org:443/shell/session runs 1 + 2 and closes with 4004 at a s
 ```
 
 A check that fails says what came, and `make smoke` then exits with an error: `failed: Io.Refused` where nothing listens; `failed: Io.Other("TLS client: ... Bad Certificate ...")` where the certificate is still step 6's or names another host; and for the shell, `failed: output "..." then WebSocket.Close(code = Some(4003), reason = "")` where no session is free, or the output podman wrote before the session closed where the container did not start.
+
+A visitor's session the server started, the shell of the site's page, holds the container's caps, which step 7's terminal does not show, since the server's unit starts that container. A line typed there reads its memory, its swap, its processes and the map of its users:
+
+```console
+> Either.map(Os.run(Os.command("cat", ["/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.swap.max", "/sys/fs/cgroup/pids.max", "/proc/self/uid_map"]), 5000), fn(done) = String.fromUtf8Lossy(done.stdout))
+Right("134217728\n0\n128\n         0          1      65536\n") : Either(Io.Error, String)
+```
+
+That is 128 MiB of memory, no swap and 128 processes, and the container's root is the first of the user's subordinate numbers, `1` of podman's namespace. A map that names the user's own number, `id -u`'s, as its second, `0 1001 1` where `httpd` is 1001, has `httpd` itself as the container's root: the command without `--userns=nomap`.
 
 ## 12. Looking in
 

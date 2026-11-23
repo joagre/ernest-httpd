@@ -23,6 +23,10 @@ Environment=PATH=/home/httpd/opt/local/bin:/usr/local/bin:/usr/bin:/bin
 # new one in this instance's namespace.
 ExecStartPre=/usr/bin/podman system migrate
 ExecStart=/home/httpd/opt/local/bin/ernest_httpd --config-dir /home/httpd/ernest-httpd/node /home/httpd/ernest-httpd/node/config.json
+# Every container of the user's removed once the server has stopped: a
+# container whose wrapper was killed before its removal ran runs on outside
+# this unit.
+ExecStopPost=/usr/bin/podman rm --all --force --time 0
 # A reload reads the node's peers again, and nothing of config.json, whose
 # change is a restart.
 ExecReload=/home/httpd/opt/local/bin/ern reload --config-dir /home/httpd/ernest-httpd/node
