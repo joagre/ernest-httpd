@@ -19,6 +19,11 @@
 /// at a time: an attach takes the session over, and the shell attached
 /// before is told `Ended(4002)`. Each shell attached is told so, `New`
 /// where it is the first since the session's start and `Joined` after it.
+/// What a shell sends the session, its keys, a resize, an extension, its
+/// stop and its word that a piece is written, carries the shell, and the
+/// session drops it from a shell not attached, so that a shell taken over
+/// reaches the session no more. A resize is answered `Resized`, so that the
+/// shell keeps one outstanding and the session's mailbox holds one at most.
 ///
 /// The session lives `lifetime` milliseconds from its start, its last key or
 /// its last `Extend`, kept by one alarm at a time, and the attached shell is
@@ -43,12 +48,14 @@
 
 /// What a shell is told by a session or by the sessions: it is attached,
 /// with the session's address and whether it is the session's first shell;
-/// no session is to be had; the program's output; a warning, with the
-/// seconds left; and the session's end, with the close code.
+/// no session is to be had; the program's output; its resize is done; a
+/// warning, with the seconds left; and the session's end, with the close
+/// code.
 export type Told =
     Attached(session : Address(SessionMsg), attachment : Attachment)
   | Unavailable
   | Output(Bytes)
+  | Resized
   | Warning(Int)
   | Ended(Int)
 
@@ -57,20 +64,21 @@ export type Told =
 export type Attachment = New | Joined
 
 /// What a session takes: a shell's attach and its detach, the attached
-/// shell's end, the visitor's keys, a shell's word that it has written a
-/// piece of output, a resize of the terminal, an extension of the deadline,
-/// the visitor's stop and an end with a close code, which the sessions
+/// shell's end; from a shell, with its address, the visitor's keys, its word
+/// that it has written a piece of output, a resize of the terminal, an
+/// extension of the deadline and the visitor's stop, each dropped where that
+/// shell is not attached; an end with a close code, which the sessions
 /// send; what its reader's read answered and the reader's end; its writer's
 /// word that a write is done and the writer's end; and the deadline's alarm.
 export type SessionMsg =
     Attach(Address(Told))
   | Detach(Address(Told))
   | ShellEnded(Down)
-  | Keys(Bytes)
+  | Keys(shell : Address(Told), bytes : Bytes)
   | Written(Address(Told))
-  | Resize(Terminal.Size)
-  | Extend
-  | Stop
+  | Resize(shell : Address(Told), size : Terminal.Size)
+  | Extend(Address(Told))
+  | Stop(Address(Told))
   | End(Int)
   | Answered(Either(Io.Error, Os.Output))
   | ReaderEnded(Down)
@@ -255,20 +263,33 @@ fn serving(started : Started, state : Serving) : Unit receiving SessionMsg =
             serving(started, detached(state, Process.fromAddress(shell)))
       | ShellEnded(down) ->
             serving(started, detached(state, down.process))
-      | Keys(bytes) ->
-            serving(started, typed(started, Serving(..state, last = Clock.monotonic()), bytes))
+      | Keys(=shell, =bytes) ->
+            if isAttached(state, shell) then
+                serving(started, typed(started, Serving(..state, last = Clock.monotonic()), bytes))
+            else
+                serving(started, state)
       | Wrote ->
             serving(started, wrote(started, state))
       | Written(shell) ->
             serving(started, writtenBy(started, state, Process.fromAddress(shell)))
-      | Resize(size) -> {
-            let _ = Os.resize(started.program, size);
+      | Resize(=shell, =size) -> {
+            if isAttached(state, shell) then {
+                let _ = Os.resize(started.program, size);
+                send(shell, Resized)
+            } else
+                Unit;
             serving(started, state)
         }
-      | Extend ->
-            serving(started, Serving(..state, last = Clock.monotonic()))
-      | Stop ->
-            ended(started, state, 4004)
+      | Extend(shell) ->
+            if isAttached(state, shell) then
+                serving(started, Serving(..state, last = Clock.monotonic()))
+            else
+                serving(started, state)
+      | Stop(shell) ->
+            if isAttached(state, shell) then
+                ended(started, state, 4004)
+            else
+                serving(started, state)
       | End(code) ->
             ended(started, state, code)
       | Answered(Right(Os.Exited(_))) -> {
@@ -343,6 +364,14 @@ fn detached(state : Serving, process : Process) : Serving =
         }
       | _ ->
             state
+    }
+
+// Whether the shell is the one attached, compared by its process, since an
+// address has no equality (report §3.10).
+fn isAttached(state : Serving, shell : Address(Told)) : Bool =
+    match state.attached {
+        Some(attached) -> Process.fromAddress(attached) == Process.fromAddress(shell)
+      | None -> false
     }
 
 // A piece of the program's output: written to the attached shell, whose
@@ -676,6 +705,7 @@ fn shown(told : Told) : String =
       | Attached(attachment = Joined) -> "Attached(Joined)"
       | Unavailable -> "Unavailable"
       | Output(bytes) -> "Output(" <> Optional.withDefault(String.fromUtf8(bytes), "?") <> ")"
+      | Resized -> "Resized"
       | Warning(seconds) -> "Warning(" <> Int.toString(seconds) <> ")"
       | Ended(code) -> "Ended(" <> Int.toString(code) <> ")"
     }
@@ -740,8 +770,21 @@ fn toldOutput(name : String) : Bool receiving Seen =
       | after 0 -> false
     }
 
-fn keys(text : String) : SessionMsg =
-    Keys(String.toUtf8(text))
+// The shell's keys of the text.
+fn keys(shell : Address(Told), text : String) : SessionMsg =
+    Keys(=shell, bytes = String.toUtf8(text))
+
+// What the named shell has been told so far, none waited for.
+fn toldSoFar(name : String) : List(String) receiving Seen =
+    receive {
+        Heard(shell = from, =told) when from == name -> shown(told) :: toldSoFar(name)
+      | after 0 -> []
+    }
+
+// The program of the process number sent the signal `USR1`, through a
+// shell's `kill`: whether the kill ran.
+fn signaled(pid : String) : Bool =
+    Either.isRight(Os.run(Os.command("sh", ["-c", "kill -USR1 \"$1\"", "sh", pid]), 5000))
 
 // The lines of the character, 400 of 79 and a line feed, 32000 bytes, more
 // than a terminal whose program reads nothing takes, about 19000 bytes on
@@ -796,28 +839,54 @@ fn writerWaits() : Test.Result =
     else
         Test.Failed("the writer does not wait in its write")
 
+// A program that says its process number, echoes a line, and at the signal
+// `USR1` writes `beta` and then copies what it reads.
+let writesAtTheSignal : String =
+    "trap 'echo beta; exec cat' USR1; echo $$; read line; echo \"$line\"; sleep 30 & wait"
+
+// Whether the session has taken what came and its reader is in a read: the
+// session waiting with nothing in its mailbox, its reader calling and its
+// writer waiting for its next Write.
+fn readerReads(session : Address(SessionMsg)) : Test.Result = {
+    let idle = match Process.status(Process.fromAddress(session)) {
+        Some(Process.Status(queued = 0, activity = Process.Receiving)) -> true
+      | _ -> false
+    };
+    let reading = List.size(spawnedInServe(isCalling)) == 1;
+    let writerIdle = List.size(spawnedInServe(isReceiving)) == 1;
+    if idle && reading && writerIdle then
+        Test.Passed
+    else
+        Test.Failed("the reader is not in a read")
+}
+
 // design §12: the program's output is written to the attached shell, keys
 // echoed; a shell detached is written nothing more, and the piece a read
 // answered after the detach is held and written to the next shell attached,
-// before what follows it.
+// before what follows it. The read is under way as the session takes the
+// detach, and the program writes only at the signal the test then sends it.
 let holdsForTheNext =
     Test.Case(name = "writes the output to the attached shell alone", run = fn() = {
-        let session = cat();
+        let session = started(["sh", "-c", writesAtTheSignal], 60000, 30000, 5000);
         let one = shell("one");
         send(session, Attach(one));
         let attached = next("one");
-        send(session, keys("alpha\n"));
+        let pid = String.trim(heard("one", "\r\n", ""));
+        send(session, keys(one, "alpha\n"));
         let echoed = heard("one", "alpha\r\nalpha\r\n", "");
+        let reading = Test.until(fn() = readerReads(session), 5000);
         send(session, Detach(one));
-        send(session, keys("beta\n"));
+        let detached = Test.until(fn() = readerReads(session), 5000);
+        let signal = signaled(pid);
         let held = Test.until(fn() = readerWaits(session), 5000);
         let two = shell("two");
         send(session, Attach(two));
         let reattached = next("two");
         let first = next("two");
+        send(session, keys(two, "gamma\n"));
         let rest =
             heard("two",
-                  "beta\r\nbeta\r\n",
+                  "beta\r\ngamma\r\ngamma\r\n",
                   String.replace(String.replace(first, "Output(", ""), ")", ""));
         let detachedOutput = toldOutput("one");
         send(session, End(1000));
@@ -825,6 +894,9 @@ let holdsForTheNext =
         kill(Process.fromAddress(one));
         Test.equal(#(attached,
                      echoed,
+                     reading,
+                     detached,
+                     signal,
                      held,
                      reattached,
                      String.startsWith(first, "Output(beta"),
@@ -835,9 +907,12 @@ let holdsForTheNext =
                    #("Attached(New)",
                      "alpha\r\nalpha\r\n",
                      Test.Passed,
+                     Test.Passed,
+                     true,
+                     Test.Passed,
                      "Attached(Joined)",
                      true,
-                     "beta\r\nbeta\r\n",
+                     "beta\r\ngamma\r\ngamma\r\n",
                      false,
                      "Ended(1000)",
                      "Returned"))
@@ -898,22 +973,26 @@ let waitsForWritten = Test.Case(name = "reads on once its shell has written", ru
                  "Returned"))
 })
 
-// design §12: keys are written to the program, and a resize resizes its
-// terminal, which `stty size` under `sh -c` shows.
+// design §12: keys are written to the program, and a resize from the
+// attached shell resizes its terminal, which `stty size` under `sh -c`
+// shows, and is answered Resized, before the output that follows it.
 let writesAndResizes = Test.Case(name = "writes keys and resizes the terminal", run = fn() = {
     let session = started(["sh", "-c", "stty size; read line; stty size; cat"], 60000, 30000, 5000);
-    send(session, Attach(shell("shell")));
+    let attachedShell = shell("shell");
+    send(session, Attach(attachedShell));
     let attached = next("shell");
     let before = heard("shell", "24 80\r\n", "");
-    send(session, Resize(size(30, 100)));
-    send(session, keys("\n"));
+    send(session, Resize(shell = attachedShell, size = size(30, 100)));
+    send(session, keys(attachedShell, "\n"));
+    let answered = next("shell");
     let resized = heard("shell", "30 100\r\n", "");
-    send(session, keys("gamma\n"));
+    send(session, keys(attachedShell, "gamma\n"));
     let typed = heard("shell", "gamma\r\ngamma\r\n", "");
     send(session, End(1000));
-    Test.equal(#(attached, before, resized, typed, next("shell"), sessionEnded()),
+    Test.equal(#(attached, before, answered, resized, typed, next("shell"), sessionEnded()),
                #("Attached(New)",
                  "24 80\r\n",
+                 "Resized",
                  "\r\n30 100\r\n",
                  "gamma\r\ngamma\r\n",
                  "Ended(1000)",
@@ -987,26 +1066,32 @@ let dropsKeysPastTheLimit =
             startedUnder(Config.Shell(..configured(["sh", "-c", readsAtResize], 60000, 30000, 5000),
                                       messageLimit = 32000),
                          answering());
-        send(session, Attach(shell("shell")));
+        let attachedShell = shell("shell");
+        send(session, Attach(attachedShell));
         let attached = next("shell");
         let ready = heard("shell", "ready\r\n", "");
-        send(session, keys(lines("a")));
+        send(session, keys(attachedShell, lines("a")));
         let waiting = Test.until(writerWaits, 5000);
-        send(session, keys(lines("b")));
-        send(session, keys("gamma\n"));
-        send(session, Resize(size(30, 100)));
+        send(session, keys(attachedShell, lines("b")));
+        send(session, keys(attachedShell, "gamma\n"));
+        send(session, Resize(shell = attachedShell, size = size(30, 100)));
         let both = String.replace(lines("a") <> lines("b"), "\n", "\r\n");
         let written = heard("shell", both, "");
-        send(session, keys("delta\n"));
+        send(session, keys(attachedShell, "delta\n"));
         let typed = heard("shell", "delta\r\n", written);
         send(session, End(1000));
         Test.equal(#(attached,
                      ready,
                      waiting,
                      typed == both <> "delta\r\n",
-                     next("shell"),
+                     messages("shell"),
                      sessionEnded()),
-                   #("Attached(New)", "ready\r\n", Test.Passed, true, "Ended(1000)", "Returned"))
+                   #("Attached(New)",
+                     "ready\r\n",
+                     Test.Passed,
+                     true,
+                     ["Resized", "Ended(1000)"],
+                     "Returned"))
     })
 
 // design §12: the session's mailbox never waits on the program: under a
@@ -1016,10 +1101,11 @@ let dropsKeysPastTheLimit =
 let endsWhileAWriteWaits = Test.Case(name = "ends at once while a write waits", run = fn() = {
     let session =
         started(["sh", "-c", "stty -echo; echo ready; exec sleep 30"], 60000, 30000, 5000);
-    send(session, Attach(shell("shell")));
+    let attachedShell = shell("shell");
+    send(session, Attach(attachedShell));
     let attached = next("shell");
     let ready = heard("shell", "ready\r\n", "");
-    send(session, keys(lines("a")));
+    send(session, keys(attachedShell, lines("a")));
     let waiting = Test.until(writerWaits, 5000);
     let since = Clock.monotonic();
     send(session, End(1001));
@@ -1043,7 +1129,7 @@ let takesOver = Test.Case(name = "is taken over by a second shell", run = fn() =
     let takenOver = next("first");
     let attachedSecond = next("second");
     send(session, Detach(first));
-    send(session, keys("delta\n"));
+    send(session, keys(second, "delta\n"));
     let typed = heard("second", "delta\r\ndelta\r\n", "");
     let firstOutput = toldOutput("first");
     send(session, End(1000));
@@ -1057,6 +1143,70 @@ let takesOver = Test.Case(name = "is taken over by a second shell", run = fn() =
                  "Ended(1000)",
                  "Returned"))
 })
+
+// A session of the command with the lifetime and the warning given, taken
+// over: a shell of the test's process attached under the name `first`, and
+// then one of a process of its own, `second`; the two shells, and what each
+// was told, the second's last.
+fn takenOver(command : List(String),
+             lifetime : Int,
+             warning : Int) : #(Address(SessionMsg),
+                                Address(Told),
+                                Address(Told),
+                                List(String)) receiving Seen = {
+    let session = started(command, lifetime, warning, 5000);
+    let first = named("first");
+    send(session, Attach(first));
+    let attachedFirst = next("first");
+    let second = shell("second");
+    send(session, Attach(second));
+    let ended = next("first");
+    #(session, first, second, [attachedFirst, ended, next("second")])
+}
+
+// design §12: a Keys, a Resize, an Extend or a Stop from a shell not
+// attached is dropped: after a take-over, the shell taken over tells the
+// session keys, a resize, an extension and its stop, and the session lives
+// on, the new shell's keys alone echoed, and the shell taken over told
+// nothing more, no Resized among it; and in a session whose lifetime is
+// 2000 milliseconds, an Extend from the shell taken over just after the new
+// shell's warning moves nothing, the end coming with no second warning.
+let dropsWhatAShellTakenOverSends =
+    Test.Case(name = "drops what a shell taken over sends", run = fn() = {
+        let #(session, first, second, told) = takenOver(["cat"], 60000, 30000);
+        send(session, keys(first, "lost\n"));
+        send(session, Resize(shell = first, size = size(30, 100)));
+        send(session, Extend(first));
+        send(session, Stop(first));
+        send(session, keys(second, "delta\n"));
+        let typed = heard("second", "delta\r\ndelta\r\n", "");
+        send(session, End(1000));
+        let end = messages("second");
+        let ended = sessionEnded();
+        let firstTold = toldSoFar("first");
+        let #(expiring, expiringFirst, _, expiringTold) = takenOver(["cat"], 2000, 1000);
+        let warned = next("second");
+        send(expiring, Extend(expiringFirst));
+        let expired = messages("second");
+        Test.equal(#(told,
+                     typed,
+                     end,
+                     ended,
+                     firstTold,
+                     expiringTold,
+                     warned,
+                     expired,
+                     sessionEnded()),
+                   #(["Attached(New)", "Ended(4002)", "Attached(Joined)"],
+                     "delta\r\ndelta\r\n",
+                     ["Ended(1000)"],
+                     "Returned",
+                     [],
+                     ["Attached(New)", "Ended(4002)", "Attached(Joined)"],
+                     "Warning(1)",
+                     ["Ended(4001)"],
+                     "Returned"))
+    })
 
 // design §12: an attach tells the shell Attached with New where no shell
 // was attached to the session before, and with Joined otherwise: after the
@@ -1091,11 +1241,12 @@ let tellsTheAttachment =
 // the session's process.
 let endsWithCodes = Test.Case(name = "ends with a close code", run = fn() = {
     fn ending(command : List(String),
-              message : SessionMsg) : #(List(String), String) receiving Seen = {
+              message : (Address(Told)) -> SessionMsg) : #(List(String), String) receiving Seen = {
         let session = started(command, 60000, 30000, 5000);
-        send(session, Attach(shell("shell")));
+        let attachedShell = shell("shell");
+        send(session, Attach(attachedShell));
         let attached = next("shell");
-        send(session, message);
+        send(session, message(attachedShell));
         #(attached :: messages("shell"), sessionEnded())
     };
     let exited = {
@@ -1105,7 +1256,7 @@ let endsWithCodes = Test.Case(name = "ends with a close code", run = fn() = {
         let output = heard("shell", "bye\r\n", "");
         #([attached, output] <> messages("shell"), sessionEnded())
     };
-    Test.equal([ending(["cat"], Stop), exited, ending(["cat"], End(1001))],
+    Test.equal([ending(["cat"], Stop), exited, ending(["cat"], fn(_) = End(1001))],
                [#(["Attached(New)", "Ended(4004)"], "Returned"),
                 #(["Attached(New)", "bye\r\n", "Ended(4004)"], "Returned"),
                 #(["Attached(New)", "Ended(1001)"], "Returned")])
@@ -1175,14 +1326,16 @@ let keepsTheDeadline = Test.Case(name = "warns and ends at its deadline", run = 
     let still = started(["cat"], 2000, 1000, 5000);
     send(still, Attach(shell("still")));
     let moved = started(["cat"], 2000, 1000, 5000);
-    send(moved, Attach(shell("moved")));
+    let movedShell = shell("moved");
+    send(moved, Attach(movedShell));
     let extended = started(["cat"], 2000, 1000, 5000);
-    send(extended, Attach(shell("extended")));
+    let extendedShell = shell("extended");
+    send(extended, Attach(extendedShell));
     let attached = #(next("still"), next("moved"), next("extended"));
     let warned = #(next("moved"), next("extended"));
     let since = Clock.monotonic();
-    send(moved, keys("k"));
-    send(extended, Extend);
+    send(moved, keys(movedShell, "k"));
+    send(extended, Extend(extendedShell));
     let movedTold = messages("moved");
     let afterKey = Clock.monotonic() - since;
     let extendedTold = messages("extended");
@@ -1215,10 +1368,11 @@ let keepsTheDeadline = Test.Case(name = "warns and ends at its deadline", run = 
 let warnsWithItsSecondsAgain =
     Test.Case(name = "warns again with its seconds left after an Extend", run = fn() = {
         let session = started(["cat"], 4000, 2000, 5000);
-        send(session, Attach(shell("shell")));
+        let attachedShell = shell("shell");
+        send(session, Attach(attachedShell));
         let attached = next("shell");
         let first = next("shell");
-        send(session, Extend);
+        send(session, Extend(attachedShell));
         let second = next("shell");
         let since = Clock.monotonic();
         let end = next("shell");
@@ -1319,10 +1473,11 @@ let endsItsReaderAndWriterWithIt =
 // after it, and asserts the session's end alone.
 let dropsKeysAtTheExit = Test.Case(name = "drops keys written as its program exits", run = fn() = {
     let session = started(["sh", "-c", "read line; exit 0"], 60000, 30000, 5000);
-    send(session, Attach(shell("shell")));
+    let attachedShell = shell("shell");
+    send(session, Attach(attachedShell));
     let attached = next("shell");
-    send(session, keys("go\n"));
-    send(session, keys("late"));
+    send(session, keys(attachedShell, "go\n"));
+    send(session, keys(attachedShell, "late"));
     Test.equal(#(attached, messages("shell"), sessionEnded()),
                #("Attached(New)", ["Ended(4004)"], "Returned"))
 })

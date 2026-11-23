@@ -22,6 +22,13 @@
 /// it reads its program on, with the page's resizes, extensions and stop
 /// beside them as small JSON texts, and the attach's completion, whether it
 /// started the session or joined it, and the session's warning as two more.
+/// What the shell tells its session carries the shell's address. The shell
+/// keeps one resize outstanding, the attach until it is answered and a
+/// resize until the session says it is done, and holds the latest size that
+/// comes meanwhile, so that a page that resizes without end costs the
+/// session one resize at a time. An attach that no answer reaches within
+/// the idle deadline closes the shell with 1011.
+///
 /// A shell closes with a close code that says why: 4001 its session
 /// expired, 4002 another shell took it over, 4003 no session was to be had
 /// and 4004 it was stopped, or a code of RFC 6455's.
@@ -68,13 +75,19 @@ type Connected =
               timeouts : Config.Timeouts,
               told : Address(Session.Told))
 
-// The state of the shell's attach: no session, an attach under way with
+// The state of the shell's attach: no session; an attach under way, with
 // what followed the first resize in its Received for the session, the
-// latest first, or the session attached.
+// latest first, the latest size of a resize since, and the time the attach
+// began, as Clock.monotonic counts; or the session attached, with its
+// resize.
 type AttachState =
     Unattached
-  | Attaching(List(Session.SessionMsg))
-  | AttachedTo(Address(Session.SessionMsg))
+  | Attaching(held : List(Session.SessionMsg), size : Optional(Terminal.Size), since : Int)
+  | AttachedTo(session : Address(Session.SessionMsg), resizing : Resizing)
+
+// The resize of the attached session's: none outstanding, or a Resize told
+// it and not yet answered Resized, with the latest size of a resize since.
+type Resizing = NoneOutstanding | Outstanding(Optional(Terminal.Size))
 
 // What the page asks in a text: a resize of its terminal, an extension of
 // the session's deadline, or its stop.
@@ -299,16 +312,17 @@ fn answered(socket : Address(Tcp.SocketMsg),
 // the connection closes. `reader` is the reader's address while it lives,
 // asked to read again once the shell has handled its last answer, every
 // message of a Received or an Idle it drops; where a Received leaves an
-// attach under way, it is asked once Attached comes instead, so that no
-// read is asked for meanwhile (design §11).
+// attach under way, the shell waits for the attach's answer instead, and
+// the reader is asked once Attached comes, so that no read is asked for
+// meanwhile (design §11).
 fn serving(connected : Connected,
            attachState : AttachState,
            reader : Optional(Address(ReaderMsg))) : Unit receiving ShellMsg =
     receive {
         Received(messages) ->
             match received(connected, attachState, reader, messages) {
-                Some(Attaching(_) as attaching) ->
-                    serving(connected, attaching, reader)
+                Some(Attaching(=since) as underWay) ->
+                    attaching(connected, underWay, reader, since)
               | Some(next) -> {
                     readNext(reader);
                     serving(connected, next, reader)
@@ -322,13 +336,13 @@ fn serving(connected : Connected,
             closed(connected, attachState, reader)
       | Idle ->
             match attachState {
-                AttachedTo(_) -> {
+                AttachedTo() -> {
                     readNext(reader);
                     serving(connected, attachState, reader)
                 }
               | Unattached ->
                     closed(connected, attachState, reader)
-              | Attaching(_) ->
+              | Attaching() ->
                     fault("no Read is outstanding while an attach is under way, so no Idle comes")
             }
       | ReaderEnded(down) ->
@@ -344,6 +358,37 @@ fn serving(connected : Connected,
               | None -> Unit
             }
       | SessionEnded(_) ->
+            closedWith(connected, attachState, reader, 1011)
+    }
+
+// The wait for the attach's answer, which began at `since`: what the
+// session or the sessions tell, Attached, Unavailable or Ended, taken as
+// any message of theirs, or, where none comes within the idle deadline
+// from the attach, the close with 1011 (design §11). No Read is
+// outstanding, so the reader tells nothing, and the session is monitored
+// only once it has attached the shell.
+fn attaching(connected : Connected,
+             attachState : AttachState,
+             reader : Optional(Address(ReaderMsg)),
+             since : Int) : Unit receiving ShellMsg =
+    receive {
+        Told(told) ->
+            match toldBy(connected, attachState, reader, told) {
+                Some(next) -> serving(connected, next, reader)
+              | None -> Unit
+            }
+      | ReaderEnded(down) ->
+            match down.reason {
+                Returned ->
+                    fault("no Read is outstanding while an attach is under way, so the reader waits")
+              | _ ->
+                    closed(connected, attachState, None)
+            }
+      | Received(_) or Failed(_) or Idle or Closed ->
+            fault("no Read is outstanding while an attach is under way, so the reader tells nothing")
+      | SessionEnded(_) ->
+            fault("the session is monitored once Attached comes, which ends the attach's wait")
+      | after Int.max(0, since + connected.timeouts.idle - Clock.monotonic()) ->
             closedWith(connected, attachState, reader, 1011)
     }
 
@@ -385,16 +430,16 @@ fn handled(connected : Connected,
                 Some(Resize(size)) ->
                     Some(resized(connected, attachState, size))
               | Some(Extend) ->
-                    Some(toSession(attachState, Session.Extend))
+                    Some(toSession(attachState, Session.Extend(connected.told)))
               | Some(Stop) ->
-                    Some(toSession(attachState, Session.Stop))
+                    Some(toSession(attachState, Session.Stop(connected.told)))
               | None -> {
                     closedWith(connected, attachState, reader, 1008);
                     None
                 }
             }
       | WebSocket.Binary(bytes) ->
-            Some(toSession(attachState, Session.Keys(bytes)))
+            Some(toSession(attachState, Session.Keys(shell = connected.told, =bytes)))
       | WebSocket.Ping(payload) ->
             written(connected, attachState, reader, WebSocket.Pong(payload))
       | WebSocket.Pong(_) ->
@@ -433,8 +478,10 @@ fn resize(rows : Int, columns : Int) : Optional(Asked) =
     else
         None
 
-// A resize: the shell attached where no session is, and otherwise the
-// session told it; the attach state after it.
+// A resize: the shell attached where no session is, the attach then the
+// resize outstanding; otherwise the session told it where none is
+// outstanding, and the size held in place of the one held where one is
+// (design §11, *A resize*). The attach state after it.
 fn resized(connected : Connected, attachState : AttachState, size : Terminal.Size) : AttachState =
     match attachState {
         Unattached -> {
@@ -443,33 +490,53 @@ fn resized(connected : Connected, attachState : AttachState, size : Terminal.Siz
                                  remote = connected.remote,
                                  =size,
                                  shell = connected.told));
-            Attaching([])
+            Attaching(held = [], size = None, since = Clock.monotonic())
         }
-      | Attaching(_) or AttachedTo(_) ->
-            toSession(attachState, Session.Resize(size))
+      | Attaching(=held, =since) ->
+            Attaching(=held, size = Some(size), =since)
+      | AttachedTo(=session, resizing = NoneOutstanding) ->
+            AttachedTo(=session, resizing = toldSize(connected, session, Some(size)))
+      | AttachedTo(=session, resizing = Outstanding(_)) ->
+            AttachedTo(=session, resizing = Outstanding(Some(size)))
+    }
+
+// The size held told the session as Resize, which is then outstanding with
+// none held; where none is held, none is outstanding.
+fn toldSize(connected : Connected,
+            session : Address(Session.SessionMsg),
+            size : Optional(Terminal.Size)) : Resizing =
+    match size {
+        Some(held) -> {
+            send(session, Session.Resize(shell = connected.told, size = held));
+            Outstanding(None)
+        }
+      | None ->
+            NoneOutstanding
     }
 
 // The message sent to the attached session, held while the attach is under
 // way, and dropped where no session is.
 fn toSession(attachState : AttachState, message : Session.SessionMsg) : AttachState =
     match attachState {
-        AttachedTo(session) -> {
+        AttachedTo(=session) -> {
             send(session, message);
             attachState
         }
-      | Attaching(held) ->
-            Attaching(message :: held)
+      | Attaching(=held, =size, =since) ->
+            Attaching(held = message :: held, =size, =since)
       | Unattached ->
             Unattached
     }
 
 // What the session, or the sessions, told: the session attached and
-// monitored, told what was held for it meanwhile, in order, and the
-// attachment written as a text, before any output, the reader then asked
-// to read again where the attach was under way; no session to be had; the
-// program's output written as a binary message, and the session told it
-// is written; the warning as a text; and the session's end with its close
-// code. The attach state after it, or None where it closed the connection.
+// monitored, told what was held for it meanwhile, in order, then the size
+// held, and the attachment written as a text, before any output, the
+// reader then asked to read again where the attach was under way; no
+// session to be had; the program's output written as a binary message, and
+// the session told it is written; the resize outstanding done, the size
+// held then told; the warning as a text; and the session's end with its
+// close code. The attach state after it, or None where it closed the
+// connection.
 fn toldBy(connected : Connected,
           attachState : AttachState,
           reader : Optional(Address(ReaderMsg)),
@@ -477,9 +544,9 @@ fn toldBy(connected : Connected,
     match told {
         Session.Attached(=session, =attachment) ->
             match attachState {
-                Attaching(held) ->
-                    attached(connected, reader, session, attachment, held)
-              | Unattached or AttachedTo(_) ->
+                Attaching(=held, =size) ->
+                    attached(connected, reader, session, attachment, held, size)
+              | Unattached or AttachedTo() ->
                     fault("Attached answers the one Attach, sent as the attach began")
             }
       | Session.Unavailable -> {
@@ -488,6 +555,13 @@ fn toldBy(connected : Connected,
         }
       | Session.Output(bytes) ->
             outputWritten(connected, attachState, reader, bytes)
+      | Session.Resized ->
+            match attachState {
+                AttachedTo(=session, resizing = Outstanding(size)) ->
+                    Some(AttachedTo(=session, resizing = toldSize(connected, session, size)))
+              | AttachedTo(resizing = NoneOutstanding) or Unattached or Attaching() ->
+                    fault("Resized answers the one Resize outstanding, told once the shell is attached")
+            }
       | Session.Warning(seconds) -> {
             let text =
                 Json.format(Json.Object(Map.fromList([#("warning", Json.Integer(seconds))])));
@@ -500,22 +574,24 @@ fn toldBy(connected : Connected,
     }
 
 // The shell attached to the session: the session monitored and told what
-// was held for it, in order, the attachment written as a text, and the
-// reader asked to read again; the attach state after it, or None where the
-// write closed the connection.
+// was held for it, in order, and then the size held, the attachment written
+// as a text, and the reader asked to read again; the attach state after
+// it, or None where the write closed the connection.
 fn attached(connected : Connected,
             reader : Optional(Address(ReaderMsg)),
             session : Address(Session.SessionMsg),
             attachment : Session.Attachment,
-            held : List(Session.SessionMsg)) : Optional(AttachState) receiving ShellMsg = {
+            held : List(Session.SessionMsg),
+            size : Optional(Terminal.Size)) : Optional(AttachState) receiving ShellMsg = {
     monitor(Process.fromAddress(session), SessionEnded);
     List.forEach(List.reverse(held), fn(message) = send(session, message));
+    let resizing = toldSize(connected, session, size);
     let word = match attachment {
         Session.New -> "new"
       | Session.Joined -> "joined"
     };
     let text = Json.format(Json.Object(Map.fromList([#("attached", Json.Text(word))])));
-    let state = written(connected, AttachedTo(session), reader, WebSocket.Text(text));
+    let state = written(connected, AttachedTo(=session, =resizing), reader, WebSocket.Text(text));
     if Optional.isSome(state) then readNext(reader) else Unit;
     state
 }
@@ -547,9 +623,9 @@ fn outputWritten(connected : Connected,
     match write(connected, WebSocket.Binary(bytes)) {
         Right(Unit) -> {
             match attachState {
-                AttachedTo(session) ->
+                AttachedTo(=session) ->
                     send(session, Session.Written(connected.told))
-              | Unattached or Attaching(_) ->
+              | Unattached or Attaching() ->
                     fault("Output follows Attached from the one session, which attaches the shell")
             };
             Some(attachState)
@@ -593,8 +669,8 @@ fn closed(connected : Connected,
     };
     Tcp.close(connected.socket);
     match attachState {
-        AttachedTo(session) -> send(session, Session.Detach(connected.told))
-      | Unattached or Attaching(_) -> Unit
+        AttachedTo(=session) -> send(session, Session.Detach(connected.told))
+      | Unattached or Attaching() -> Unit
     }
 }
 
@@ -1253,17 +1329,25 @@ let closesAtItsSessionsEnd =
         Test.equal(result, Right(#(attachedText("new"), ["Close(1011)", "closed"], "Returned")))
     })
 
-// The message a session's stand-in took, as a test compares it, a Written
-// by whether it names the shell.
+// The message a session's stand-in took, as a test compares it, each that
+// carries a shell's address by whether it names the shell, and `another`
+// for the rest.
 fn toldSession(message : Session.SessionMsg, shell : Process) : String =
     match message {
-        Session.Keys(bytes) -> "Keys(" <> Optional.withDefault(String.fromUtf8(bytes), "?") <> ")"
-      | Session.Written(by) when Process.fromAddress(by) == shell -> "Written by the shell"
-      | Session.Detach(by) when Process.fromAddress(by) == shell -> "Detach of the shell"
-      | Session.Extend -> "Extend"
-      | Session.Stop -> "Stop"
-      | Session.Resize(_) -> "Resize"
-      | _ -> "another"
+        Session.Keys(shell = by, =bytes) when Process.fromAddress(by) == shell ->
+            "Keys(" <> Optional.withDefault(String.fromUtf8(bytes), "?") <> ")"
+      | Session.Resize(shell = by, =size) when Process.fromAddress(by) == shell ->
+            "Resize(" <> Int.toString(size.rows) <> ", " <> Int.toString(size.columns) <> ")"
+      | Session.Extend(by) when Process.fromAddress(by) == shell ->
+            "Extend"
+      | Session.Stop(by) when Process.fromAddress(by) == shell ->
+            "Stop"
+      | Session.Written(by) when Process.fromAddress(by) == shell ->
+            "Written by the shell"
+      | Session.Detach(by) when Process.fromAddress(by) == shell ->
+            "Detach of the shell"
+      | _ ->
+            "another"
     }
 
 // design §11: before the first resize keys, extend and stop are dropped,
@@ -1568,3 +1652,170 @@ let endsItsReaderWithIt = Test.Case(name = "ends its reader with it", run = fn()
     kill(Process.fromAddress(sessions.address));
     Test.equal(result, Right(#("Killed", "Returned")))
 })
+
+// Whether the process has taken what came: waiting with nothing in its
+// mailbox.
+fn settled(process : Process) : Test.Result =
+    match Process.status(process) {
+        Some(Process.Status(queued = 0, activity = Process.Receiving)) -> Test.Passed
+      | _ -> Test.Failed("the process has not taken what came")
+    }
+
+// The page's resize to the rows and the columns, masked as a client sends
+// it.
+fn resizeFrame(rows : Int, columns : Int) : Bytes = {
+    let size = Int.toString(rows) <> ", " <> Int.toString(columns);
+    Smoke.masked(page("{\"resize\": [" <> size <> "]}"))
+}
+
+// The visitor's keys of the text, masked as a client sends them.
+fn keysFrame(text : String) : Bytes =
+    Smoke.masked(WebSocket.Binary(String.toUtf8(text)))
+
+// The client's bytes written in one write with a ping of the payload after
+// them, whose pong, which the shell writes once it has handled every
+// message before the ping, is the next message read; that message, and the
+// client after it.
+fn handledThrough(client : Client, bytes : Bytes, payload : String) : #(String, Client) = {
+    let _ =
+        Tcp.write(client.socket,
+                  bytes <> Smoke.masked(WebSocket.Ping(String.toUtf8(payload))),
+                  5000);
+    nextMessage(client)
+}
+
+// design §11: a resize: the shell keeps one outstanding and holds the
+// latest size: of four resizes after the attach, keys among them, the
+// session's stand-in takes the first as Resize and then the keys, which go
+// on while a resize is outstanding, and the next Resize only once it tells
+// the shell Resized, of the latest size alone; at the Resized after that,
+// none held, none is outstanding, and the next resize is told at once.
+// Each carries the shell's address. A ping after the resizes, its pong
+// read, shows the shell has handled them before the test tells it Resized,
+// and the shell's empty mailbox that it has taken the Resized before the
+// next resize is written.
+let holdsTheLatestResize =
+    Test.Case(name = "keeps one resize outstanding and holds the latest", run = fn() = {
+        let #(sessions, session) = standingIn();
+        let result = {
+            let AttachedClient(=client, text = attached, =shell) <-
+                attachedClient(sessions, deadlines(60000));
+            let #(pong, client) =
+                handledThrough(client,
+                               resizeFrame(30, 100)
+                                   <> resizeFrame(31, 101)
+                                   <> keysFrame("k")
+                                   <> resizeFrame(32, 102)
+                                   <> resizeFrame(33, 103),
+                               "resized");
+            let first = takenBySession(shell);
+            let keys = takenBySession(shell);
+            send(shell, Session.Resized);
+            let latest = takenBySession(shell);
+            send(shell, Session.Resized);
+            let answered = Test.until(fn() = settled(Process.fromAddress(shell)), 5000);
+            let #(again, client) = handledThrough(client, resizeFrame(34, 104), "again");
+            let next = takenBySession(shell);
+            let _ = sent(client, WebSocket.Close(code = Some(1000), reason = ""));
+            let closing = messages(client, 2);
+            let end = ended();
+            Right(#(attached,
+                    pong,
+                    first,
+                    keys,
+                    latest,
+                    answered,
+                    again,
+                    next,
+                    closing,
+                    end,
+                    takenBySession(shell)))
+        };
+        kill(Process.fromAddress(session));
+        kill(Process.fromAddress(sessions.address));
+        Test.equal(result,
+                   Right(#(attachedText("new"),
+                           "Pong(resized)",
+                           "Resize(30, 100)",
+                           "Keys(k)",
+                           "Resize(33, 103)",
+                           Test.Passed,
+                           "Pong(again)",
+                           "Resize(34, 104)",
+                           ["Close(1000)", "closed"],
+                           "Returned",
+                           "Detach of the shell")))
+    })
+
+// design §11: the attach is the resize outstanding: the resizes that follow
+// the first in its Received, here the bytes carried with the upgrade, among
+// keys, an extend and a stop, come to one, the latest size, told the
+// session once Attached comes, after the keys, the extend and the stop held
+// for it, in order, each with the shell's address; at the session's
+// Resized, none held, none is outstanding, and the next resize is told at
+// once.
+let holdsTheResizesOfItsAttach =
+    Test.Case(name = "holds the resizes of its attach as one", run = fn() = {
+        let #(sessions, session) = standingIn();
+        let carried =
+            resizeFrame(24, 80)
+                <> keysFrame("a")
+                <> resizeFrame(30, 100)
+                <> Smoke.masked(page("{\"extend\": true}"))
+                <> resizeFrame(31, 101)
+                <> Smoke.masked(page("{\"stop\": true}"))
+                <> keysFrame("b");
+        let result = {
+            let client <- opened(sessions, deadlines(60000), [], carried);
+            let #(attached, client) = nextMessage(client);
+            let shell <- receive {
+                ShellAttached(shell) -> Right(shell)
+              | after 5000 -> Left("no shell")
+            };
+            let held = List.map(List.range(1, 5), fn(_) = takenBySession(shell));
+            send(shell, Session.Resized);
+            let answered = Test.until(fn() = settled(Process.fromAddress(shell)), 5000);
+            let #(again, client) = handledThrough(client, resizeFrame(32, 102), "again");
+            let next = takenBySession(shell);
+            let _ = sent(client, WebSocket.Close(code = Some(1000), reason = ""));
+            let closing = messages(client, 2);
+            Right(#(attached, held, answered, again, next, closing, ended()))
+        };
+        kill(Process.fromAddress(session));
+        kill(Process.fromAddress(sessions.address));
+        Test.equal(result,
+                   Right(#(attachedText("new"),
+                           ["Keys(a)", "Extend", "Stop", "Keys(b)", "Resize(31, 101)"],
+                           Test.Passed,
+                           "Pong(again)",
+                           "Resize(32, 102)",
+                           ["Close(1000)", "closed"],
+                           "Returned")))
+    })
+
+// design §11: an attach that no answer reaches within the idle deadline,
+// 200 milliseconds here, closes with 1011: the sessions' stand-in answers
+// no attach, and the shell, no Read outstanding, closes no sooner than the
+// deadline after the client began its upgrade, which comes before the
+// attach, and returns.
+let closesAnUnansweredAttach =
+    Test.Case(name = "closes with 1011 where its attach is not answered in time", run = fn() = {
+        let me = self();
+        let sessions =
+            Sessions.Sessions(shell = configured(1, 60000, 30000, 1024),
+                              address = spawn(fn() = answeringNone(me)));
+        let since = Clock.monotonic();
+        let result = {
+            let client <-
+                opened(sessions, deadlines(200), [], Smoke.masked(page("{\"resize\": [24, 80]}")));
+            let attach = receive {
+                ShellAttached(_) -> "attached"
+              | after 5000 -> "no attach"
+            };
+            let closing = messages(client, 2);
+            let end = ended();
+            Right(#(attach, closing, end, Clock.monotonic() - since >= 200))
+        };
+        kill(Process.fromAddress(sessions.address));
+        Test.equal(result, Right(#("attached", ["Close(1011)", "closed"], "Returned", true)))
+    })

@@ -13,16 +13,17 @@
 /// address of the same IPv6 /64.
 ///
 /// A session calls the sessions as its end begins, `SessionEnding`: its
-/// cookie names it no more, so that an attach under that cookie starts a new
-/// session, and the call is then answered, so that every attach passed to
-/// the session before stands in its mailbox, told its end's code. The
-/// session is counted among the live until it has ended or a session is
-/// started under its cookie, which then counts in its place, so that a
-/// visitor's restart never meets the cap.
+/// cookie names it no more, and the call is then answered, so that every
+/// attach passed to the session before stands in its mailbox, told its
+/// end's code. The session is counted among the live until it has ended,
+/// and an attach under its cookie meanwhile waits, held in order with any
+/// other under that cookie, until it has ended, and is then taken as any
+/// attach is, so that a visitor's restart starts its session in the place
+/// of the one ending and never meets the cap, nor runs two programs at once.
 ///
-/// `Stop` ends every session with 1001, which closes every shell attached,
-/// and answers once each has ended; after it every attach is told
-/// `Unavailable`.
+/// `Stop` tells each attach waiting `Unavailable` and ends every session
+/// with 1001, which closes every shell attached, and answers once each has
+/// ended; after it every attach is told `Unavailable`.
 
 //
 // Types
@@ -44,19 +45,23 @@ export type SessionsMsg =
 
 // What the sessions hold: the shell's configuration and the deadlines each
 // session is started with, the live sessions by their cookies, the ones
-// whose end has begun with their cookies, counted among the live, the ones
-// whose end has begun and under whose cookie a session has since started,
-// not counted, the counted address each session counted was started from,
-// and the times of the starts within the window by counted address, as
+// whose end has begun with their cookies, counted among the live until they
+// end, the attaches that wait for such a session's end by its cookie, in
+// order, the counted address each session counted was started from, and
+// the times of the starts within the window by counted address, as
 // Clock.monotonic counts them.
 type Held =
     Held(shell : Config.Shell,
          timeouts : Config.Timeouts,
          live : Map(String, Address(Session.SessionMsg)),
          ending : Map(Process, String),
-         replaced : Set(Process),
+         waiting : Map(String, List(Waiting)),
          startedFrom : Map(Process, String),
          starts : Map(String, List(Int)))
+
+// An attach that waits for the end of the session under its cookie: the
+// shell's remote address, the page's size and the shell's address.
+type Waiting = Waiting(remote : String, size : Terminal.Size, shell : Address(Session.Told))
 
 //
 // Serving
@@ -71,7 +76,7 @@ export fn start(shell : Config.Shell, timeouts : Config.Timeouts) : Sessions =
                                               =timeouts,
                                               live = Map.empty,
                                               ending = Map.empty,
-                                              replaced = Set.empty,
+                                              waiting = Map.empty,
                                               startedFrom = Map.empty,
                                               starts = Map.empty))))
 
@@ -82,24 +87,27 @@ fn serving(held : Held) : Unit receiving SessionsMsg =
         Attach(=cookie, =remote, =size, =shell) ->
             serving(attached(held, cookie, remote, size, shell))
       | SessionEnding(Session.Ending(=process, =reply)) -> {
-            let dropped = ending(held, process);
+            let counted = ending(held, process);
             answer(reply, Unit);
-            serving(dropped)
+            serving(counted)
         }
       | SessionEnded(down) ->
             serving(ended(held, down.process))
       | Stop(reply) -> {
+            Map.forEach(held.waiting,
+                        fn(_, waiting) =
+                            List.forEach(waiting,
+                                         fn(attach) = send(attach.shell, Session.Unavailable)));
             Map.forEach(held.live, fn(_, session) = send(session, Session.End(1001)));
-            stopping(held);
+            stopping(Held(..held, waiting = Map.empty));
             answer(reply, Unit);
             stopped()
         }
     }
 
-// An attach passed to the live session its cookie names, or a session
-// started for the cookie within the caps, or the shell told Unavailable. A
-// session whose end has begun under the cookie is not counted against the
-// caps, and once a session is started in its place is counted no more.
+// An attach passed to the live session its cookie names; held, after any
+// other held under the cookie, where the session under it has begun its
+// end; or otherwise admitted within the caps.
 fn attached(held : Held,
             cookie : String,
             remote : String,
@@ -110,41 +118,54 @@ fn attached(held : Held,
             send(session, Session.Attach(shell));
             held
         }
-      | None -> {
-            let address = Remote.counted(remote);
-            let now = Clock.monotonic();
-            let window = now - held.shell.starts.within;
-            let made =
-                List.filter(Optional.withDefault(Map.get(held.starts, address), []),
-                            fn(time) = time > window);
-            // the ending sessions under the cookie, which a start replaces
-            let ours = Map.filter(held.ending, fn(_, under) = under == cookie);
-            let others = Map.filter(held.ending, fn(_, under) = under != cookie);
-            let counting =
-                Map.filter(held.startedFrom, fn(process, _) = !Map.contains(ours, process));
-            let fromAddress = Map.filter(counting, fn(_, from) = from == address);
-            if Map.size(held.live) + Map.size(others) < held.shell.mostAtOnce
-                && Map.size(fromAddress) < held.shell.perAddress
-                && List.size(made) < held.shell.starts.count then {
-                let config = held.shell;
-                let timeouts = held.timeouts;
-                let sessions = adapted(self(), SessionEnding);
-                let session =
-                    spawnMonitored(fn() = Session.serve(config, timeouts, size, sessions),
-                                   SessionEnded);
-                send(session, Session.Attach(shell));
+      | None ->
+            if Map.any(held.ending, fn(_, under) = under == cookie) then {
+                let attach = Waiting(=remote, =size, =shell);
                 Held(..held,
-                     live = Map.put(held.live, cookie, session),
-                     ending = others,
-                     replaced = Set.union(held.replaced, Set.fromList(Map.keys(ours))),
-                     startedFrom = Map.put(counting, Process.fromAddress(session), address),
-                     starts = Map.put(pruned(held.starts, window), address, now :: made))
-            } else {
-                send(shell, Session.Unavailable);
-                held
-            }
-        }
+                     waiting = Map.update(held.waiting,
+                                          cookie,
+                                          fn(waiting) =
+                                              Optional.withDefault(waiting, []) <> [attach]))
+            } else
+                admitted(held, cookie, remote, size, shell)
     }
+
+// An attach under a cookie that names no session: a session started for it
+// where fewer than `most-at-once` live, those whose end has begun among
+// them, fewer than `per-address` of the sessions counted were started from
+// the shell's counted address, and that address made fewer than
+// `starts.count` starts within the window, the start then counted; or the
+// shell told Unavailable.
+fn admitted(held : Held,
+            cookie : String,
+            remote : String,
+            size : Terminal.Size,
+            shell : Address(Session.Told)) : Held receiving SessionsMsg = {
+    let address = Remote.counted(remote);
+    let now = Clock.monotonic();
+    let window = now - held.shell.starts.within;
+    let made =
+        List.filter(Optional.withDefault(Map.get(held.starts, address), []),
+                    fn(time) = time > window);
+    let fromAddress = Map.filter(held.startedFrom, fn(_, from) = from == address);
+    if Map.size(held.live) + Map.size(held.ending) < held.shell.mostAtOnce
+        && Map.size(fromAddress) < held.shell.perAddress
+        && List.size(made) < held.shell.starts.count then {
+        let config = held.shell;
+        let timeouts = held.timeouts;
+        let sessions = adapted(self(), SessionEnding);
+        let session =
+            spawnMonitored(fn() = Session.serve(config, timeouts, size, sessions), SessionEnded);
+        send(session, Session.Attach(shell));
+        Held(..held,
+             live = Map.put(held.live, cookie, session),
+             startedFrom = Map.put(held.startedFrom, Process.fromAddress(session), address),
+             starts = Map.put(pruned(held.starts, window), address, now :: made))
+    } else {
+        send(shell, Session.Unavailable);
+        held
+    }
+}
 
 // The starts within the window, every counted address's, and an address
 // with none dropped, so that the starts held are those that count.
@@ -168,32 +189,46 @@ fn ending(held : Held, process : Process) : Held =
             held
     }
 
-// A session that has ended dropped, live, ending or replaced; one replaced
-// was counted no more, so its end lowers nothing.
-fn ended(held : Held, process : Process) : Held =
+// A session that has ended dropped; where its end had begun, the attaches
+// that wait for it under its cookie are then taken in order, as any attach
+// is, so that the first may start a session in its place and those after it
+// join that one.
+fn ended(held : Held, process : Process) : Held receiving SessionsMsg =
+    match Map.get(held.ending, process) {
+        Some(cookie) ->
+            List.foldLeft(Optional.withDefault(Map.get(held.waiting, cookie), []),
+                          Held(..dropped(held, process),
+                               waiting = Map.remove(held.waiting, cookie)),
+                          fn(acc, Waiting(=remote, =size, =shell)) =
+                              attached(acc, cookie, remote, size, shell))
+      | None ->
+            dropped(held, process)
+    }
+
+// A session that has ended dropped, live or ending, and counted no more.
+fn dropped(held : Held, process : Process) : Held =
     Held(..held,
          live = without(held.live, process),
          ending = Map.remove(held.ending, process),
-         replaced = Set.remove(held.replaced, process),
          startedFrom = Map.remove(held.startedFrom, process))
 
 fn without(live : Map(String, Address(Session.SessionMsg)),
            process : Process) : Map(String, Address(Session.SessionMsg)) =
     Map.filter(live, fn(_, session) = Process.fromAddress(session) != process)
 
-// The wait for each session's end, live, ending or replaced, every attach
-// meanwhile told Unavailable.
+// The wait for each session's end, live or ending, every attach meanwhile
+// told Unavailable, none waiting.
 fn stopping(held : Held) : Unit receiving SessionsMsg =
-    if Map.isEmpty(held.live) && Map.isEmpty(held.ending) && Set.isEmpty(held.replaced) then
+    if Map.isEmpty(held.live) && Map.isEmpty(held.ending) then
         Unit
     else receive {
         SessionEnding(Session.Ending(=process, =reply)) -> {
-            let dropped = ending(held, process);
+            let counted = ending(held, process);
             answer(reply, Unit);
-            stopping(dropped)
+            stopping(counted)
         }
       | SessionEnded(down) ->
-            stopping(ended(held, down.process))
+            stopping(dropped(held, down.process))
       | Attach(=shell) -> {
             send(shell, Session.Unavailable);
             stopping(held)
@@ -218,8 +253,9 @@ fn stopped() : Unit receiving SessionsMsg =
 // Tests
 //
 
-// What a test's process takes: what a shell is told, by the shell's name.
-type Seen = Heard(shell : String, told : Session.Told)
+// What a test's process takes: what a shell is told, by the shell's name;
+// and whether a stop the test made in a process of its own was answered.
+type Seen = Heard(shell : String, told : Session.Told) | Stopped(Bool)
 
 // Sessions of `cat` with the caps given, the starts' window in
 // milliseconds.
@@ -246,17 +282,16 @@ fn startedWith(command : List(String),
                        =hangup),
           Config.Timeouts(head = 5000, idle = 60000, write = 5000, file = 5000))
 
-// The session the named shell is attached to with the cookie from the
-// remote address, or None where it is told otherwise.
+// The session the shell, which tells the test under the name, is attached
+// to with the cookie from the remote address, or None where it is told
+// otherwise.
 fn attachedTo(sessions : Sessions,
+              shell : Address(Session.Told),
               name : String,
               cookie : String,
               remote : String) : Optional(Address(Session.SessionMsg)) receiving Seen = {
     send(sessions.address,
-         Attach(=cookie,
-                =remote,
-                size = Terminal.Size(rows = 24, columns = 80),
-                shell = shell(name)));
+         Attach(=cookie, =remote, size = Terminal.Size(rows = 24, columns = 80), =shell));
     receive {
         Heard(shell = from, told = Session.Attached(=session)) when from == name -> Some(session)
       | Heard(shell = from) when from == name -> None
@@ -341,6 +376,8 @@ fn shown(told : Session.Told) : String =
             "Unavailable"
       | Session.Output(bytes) ->
             "Output(" <> Optional.withDefault(String.fromUtf8(bytes), "?") <> ")"
+      | Session.Resized ->
+            "Resized"
       | Session.Warning(seconds) ->
             "Warning(" <> Int.toString(seconds) <> ")"
       | Session.Ended(code) ->
@@ -359,11 +396,12 @@ fn stop(sessions : Sessions) : Bool =
 let startsWithinTheCap = Test.Case(name = "starts a session within the cap", run = fn() = {
     let sessions = started(2, 2, 10, 60000);
     let first = attach(sessions, "first", "a", "192.0.2.1");
+    let againShell = shell("again");
     send(sessions.address,
          Attach(cookie = "a",
                 remote = "192.0.2.1",
                 size = Terminal.Size(rows = 24, columns = 80),
-                shell = shell("again")));
+                shell = againShell));
     let again = receive {
         Heard(shell = "again", told = Session.Attached(=session)) -> Some(session)
       | after 5000 -> None
@@ -373,7 +411,7 @@ let startsWithinTheCap = Test.Case(name = "starts a session within the cap", run
     let third = attach(sessions, "third", "c", "192.0.2.2");
     let freed = match again {
         Some(session) -> {
-            send(session, Session.Stop);
+            send(session, Session.Stop(againShell));
             let stopped = next("again");
             let later = Test.until(fn() = match attach(sessions, "later", "c", "192.0.2.2") {
                                        "Attached(New)" -> Test.Passed
@@ -431,7 +469,8 @@ let capsStarts = Test.Case(name = "caps a remote address's starts within the win
 // refuses.
 let capsAnAddress = Test.Case(name = "caps the sessions an address started", run = fn() = {
     let sessions = started(10, 2, 10, 60000);
-    let one = attachedTo(sessions, "one", "a", "192.0.2.1");
+    let oneShell = shell("one");
+    let one = attachedTo(sessions, oneShell, "one", "a", "192.0.2.1");
     let two = attach(sessions, "two", "b", "192.0.2.1");
     let refused = attach(sessions, "three", "c", "192.0.2.1");
     let other = attach(sessions, "other", "d", "192.0.2.2");
@@ -440,7 +479,7 @@ let capsAnAddress = Test.Case(name = "caps the sessions an address started", run
     let third = attach(sessions, "third", "g", "2001:db8:0:1:0:0:0:3");
     let freed = match one {
         Some(session) -> {
-            send(session, Session.Stop);
+            send(session, Session.Stop(oneShell));
             let stopped = next("one");
             let later = Test.until(fn() = match attach(sessions, "later", "c", "192.0.2.1") {
                                        "Attached(New)" -> Test.Passed
@@ -504,71 +543,133 @@ let stopsEverySession = Test.Case(name = "ends every session at the stop", run =
                  true))
 })
 
-// design §12: a session whose end has begun is dropped by its cookie, so
-// that an attach under the cookie starts a new session while the old one
-// waits out its hangup, its program outliving the hangup of its terminal;
-// at `most-at-once` 1 the old one is counted among the live meanwhile, so
-// that another cookie is held off by the cap, until a session is started
-// under its cookie, which counts in its place: the restart, a Stop and an
-// attach under one cookie, does not meet the cap, while another cookie
-// still does, and the old session's end lowers nothing, another cookie
-// held off after it too. The stop waits for both. A regression test of the
-// end's count where it waits for the old session's end and the sessions'
-// empty mailbox; it cannot see the order in which the sessions take that
-// end and the attach after it.
-let startsAnew = Test.Case(name = "starts anew under a cookie whose session ends", run = fn() = {
-    let sessions =
-        startedWith(["sh", "-c", "trap '' HUP; echo ready; sleep 30"], 600, 1, 1, 10, 60000);
-    let result = match attachedTo(sessions, "old", "a", "192.0.2.1") {
-        Some(old) -> {
-            let ready = heard("old", "ready\r\n", "");
-            send(old, Session.Stop);
-            let stoppedOld = next("old");
-            let ending = attach(sessions, "ending", "b", "192.0.2.2");
-            let renewed = Test.until(fn() = match attachedTo(sessions, "new", "a", "192.0.2.1") {
-                                         Some(session) when Process.fromAddress(session)
-                                             != Process.fromAddress(old) -> Test.Passed
-                                       | _ -> Test.Failed("not attached to a new session")
-                                     },
-                                     5000);
-            let capped = attach(sessions, "other", "c", "192.0.2.3");
-            let oldLives = Process.status(Process.fromAddress(old)) != None;
-            let oldEnded = Test.until(fn() = match Process.status(Process.fromAddress(old)) {
-                                          None -> Test.Passed
-                                        | Some(_) -> Test.Failed("the old session lives")
-                                      },
-                                      5000);
-            let taken =
-                Test.until(fn() = match Process.status(Process.fromAddress(sessions.address)) {
-                               Some(Process.Status(queued = 0, activity = Process.Receiving)) ->
-                                   Test.Passed
-                             | _ ->
-                                   Test.Failed("the sessions have not taken the end")
-                           },
-                           5000);
-            let cappedAfter = attach(sessions, "after", "d", "192.0.2.4");
-            Right(#(ready,
-                    stoppedOld,
-                    ending,
-                    renewed,
-                    capped,
-                    oldLives,
-                    oldEnded,
-                    taken,
-                    cappedAfter))
-        }
-      | None ->
-            Left("not attached")
-    };
-    Test.equal(#(result, stop(sessions)),
-               #(Right(#("ready\r\n",
-                         "Ended(4004)",
-                         "Unavailable",
-                         Test.Passed,
-                         "Unavailable",
-                         true,
-                         Test.Passed,
-                         Test.Passed,
-                         "Unavailable")),
-                 true))
-})
+// A program that says its process number and outlives the hangup of its
+// terminal, ending at the termination the test sends it.
+let outlivesItsHangup : List(String) = ["sh", "-c", "trap '' HUP; echo $$; exec sleep 30"]
+
+// The program of the process number ended by the termination, through a
+// shell's `kill`: whether the kill ran.
+fn terminated(pid : String) : Bool =
+    Either.isRight(Os.run(Os.command("sh", ["-c", "kill \"$1\"", "sh", pid]), 5000))
+
+// The count of the sessions' processes that live, those the sessions
+// spawned for a cookie.
+fn sessionsLive() : Int =
+    List.size(List.filter(Process.live(), fn(process) = match Process.status(process) {
+        Some(status) -> String.startsWith(status.site, "Sessions.admitted:")
+      | None -> false
+    }))
+
+// Whether the sessions have taken what came: waiting with nothing in their
+// mailbox.
+fn taken(sessions : Sessions) : Test.Result =
+    match Process.status(Process.fromAddress(sessions.address)) {
+        Some(Process.Status(queued = 0, activity = Process.Receiving)) -> Test.Passed
+      | _ -> Test.Failed("the sessions have not taken what came")
+    }
+
+// What the named shell is told first, within 5000 milliseconds, and for an
+// Attached whether the process had ended by then.
+fn attachedOnceEnded(name : String, process : Process) : String receiving Seen =
+    receive {
+        Heard(shell = from, told = Session.Attached(attachment = Session.New)) when from == name ->
+            if Process.status(process) == None then
+                "Attached(New), the old session ended"
+            else
+                "Attached(New), the old session alive"
+      | Heard(shell = from, =told) when from == name ->
+            shown(told)
+      | after 5000 ->
+            "nothing"
+    }
+
+// design §12: a restart waits: under `most-at-once` 1, a session stopped,
+// its program outliving the hangup of its terminal, counts among the live
+// until it ends, an attach under its cookie waiting meanwhile, no session
+// started for it, and another cookie told Unavailable; once the test ends
+// the program, and with it the session, the attach that waits is told
+// Attached(New), the old session's process having ended by then, and the
+// new session counts in its place, another cookie told Unavailable after it
+// too. The other cookie's attach, which the sessions take after the one
+// that waits, shows they have taken that one before the count of sessions
+// is read.
+let startsAnew =
+    Test.Case(name = "starts anew under a cookie once its session has ended", run = fn() = {
+        let sessions = startedWith(outlivesItsHangup, 30000, 1, 1, 10, 60000);
+        let oldShell = shell("old");
+        let result = match attachedTo(sessions, oldShell, "old", "a", "192.0.2.1") {
+            Some(old) -> {
+                let oldPid = String.trim(heard("old", "\r\n", ""));
+                send(old, Session.Stop(oldShell));
+                let stoppedOld = next("old");
+                send(sessions.address,
+                     Attach(cookie = "a",
+                            remote = "192.0.2.1",
+                            size = Terminal.Size(rows = 24, columns = 80),
+                            shell = shell("new")));
+                let capped = attach(sessions, "other", "c", "192.0.2.3");
+                let running = sessionsLive();
+                let endedOld = terminated(oldPid);
+                let renewed = attachedOnceEnded("new", Process.fromAddress(old));
+                let cappedAfter = attach(sessions, "after", "d", "192.0.2.4");
+                let newPid = String.trim(heard("new", "\r\n", ""));
+                let endedNew = terminated(newPid);
+                Right(#(stoppedOld,
+                        capped,
+                        running,
+                        endedOld,
+                        renewed,
+                        cappedAfter,
+                        endedNew,
+                        next("new")))
+            }
+          | None ->
+                Left("not attached")
+        };
+        Test.equal(#(result, stop(sessions)),
+                   #(Right(#("Ended(4004)",
+                             "Unavailable",
+                             1,
+                             true,
+                             "Attached(New), the old session ended",
+                             "Unavailable",
+                             true,
+                             "Ended(4004)")),
+                     true))
+    })
+
+// design §12: the stop tells each attach waiting Unavailable: an attach
+// under the cookie of a session stopped, whose program outlives the hangup
+// of its terminal, waits, and a stop tells it Unavailable at once, while
+// the stop waits for the session's end, which comes once the test ends the
+// program; the stop is then answered.
+let stopsAWaitingAttach =
+    Test.Case(name = "tells an attach that waits Unavailable at the stop", run = fn() = {
+        let sessions = startedWith(outlivesItsHangup, 30000, 1, 1, 10, 60000);
+        let oneShell = shell("one");
+        let result = match attachedTo(sessions, oneShell, "one", "a", "192.0.2.1") {
+            Some(session) -> {
+                let pid = String.trim(heard("one", "\r\n", ""));
+                send(session, Session.Stop(oneShell));
+                let stoppedOne = next("one");
+                send(sessions.address,
+                     Attach(cookie = "a",
+                            remote = "192.0.2.1",
+                            size = Terminal.Size(rows = 24, columns = 80),
+                            shell = shell("waiting")));
+                let held = Test.until(fn() = taken(sessions), 5000);
+                let me = self();
+                let _ = spawn(fn() = send(me, Stopped(stop(sessions))));
+                let told = next("waiting");
+                let ended = terminated(pid);
+                let answered = receive {
+                    Stopped(answered) -> answered
+                  | after 5000 -> false
+                };
+                Right(#(stoppedOne, held, told, ended, answered))
+            }
+          | None ->
+                Left("not attached")
+        };
+        Test.equal(result, Right(#("Ended(4004)", Test.Passed, "Unavailable", true, true)))
+    })

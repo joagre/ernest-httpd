@@ -6,25 +6,23 @@ Read *Where we are* first, then the milestone under way, its steps by what each 
 
 ## Where we are
 
-Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.11 and builds against `ern 0.11.0+93a13b13`, the archive Ernest's MVP 4.4 readers read, installed on 2026-11-23; its commits stay unpushed until Ernest's 0.11.0 is released. Milestone 2 is under way: items 13 to 15, then item 5 on Ernest's release. Lines 35 to 37 of the language feedback wait on Ernest, line 35 its 270, planned after the launch, and lines 38 to 58 wait to be carried to it on the user's word; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/, from a build of `75faac8`, with Ernest's side built and walked against it, which waits only on the launch's switch.
+Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.11 and builds against `ern 0.11.0+93a13b13`, the archive Ernest's MVP 4.4 readers read, installed on 2026-11-23; its commits stay unpushed until Ernest's 0.11.0 is released. Milestone 2 is under way: items 14 and 15, then item 5 on Ernest's release. Lines 35 to 37 of the language feedback wait on Ernest, line 35 its 270, planned after the launch, and lines 38 to 58 wait to be carried to it on the user's word; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/, from a build of `75faac8`, with Ernest's side built and walked against it, which waits only on the launch's switch.
 
 ## Milestone 2: after the first release
 
 What the first release's readers found and the milestone's own items, each a step with its log entry when built.
 
-Done: items 1 to 4 and 6 to 12, item 5's rehearsal, the full review at `f6bf173` in its three legs, and the steps between them; the log has each.
+Done: items 1 to 4 and 6 to 13, item 5's rehearsal, the full review at `f6bf173` in its three legs, and the steps between them; the log has each.
 
 ### On Ernest's MVP 4.4 release
 
-**What the full review left.** Its four findings against the template's files stand in `docs/findings.md`, and with lines 38 to 58 of the language feedback wait until the user lifts the hold on messages to other repositories. The readers' lists there are the evidence for items 13 to 15, the shell's findings, built before item 5.
-
-**Item 13, the shell and its session.** A shell keeps one resize outstanding, the latest size held, and sends it at the session's `Resized`. The messages a shell sends its session carry the shell, and a session drops those of a shell not attached. An attach waits at most the idle deadline, and the connection closes with 1011 after it. A restart waits for the ending session under its cookie to end and starts in its place (findings L1, L6, L11, L12 and C9).
+**What the full review left.** Its four findings against the template's files stand in `docs/findings.md`, and with lines 38 to 58 of the language feedback wait until the user lifts the hold on messages to other repositories. The readers' lists there are the evidence for items 14 and 15, the shell's findings, built before item 5.
 
 **Item 14, the cookie**, `__Host-shell` with `Path=/`, the client's test in Chromium showing it kept on `localhost` (findings S4 and L8).
 
 **Item 15, the container.** The wrapper ends `podman run`, waits for it, and removes the container and its id in a session of its own. The unit removes every container `httpd` has left once the server has stopped, `ExecStopPost`. The command takes `--log-driver=none`, `--memory-swap 128m` and `--userns=nomap`, and its containers one slice of one core, `--cgroup-parent`. Step 7 checks the log driver and step 11 the caps from inside a session, and the switch's rehearsal shows each on the machine, where podman stands (findings L2, L5, L7, L9, S6, S7 and S8).
 
-**Item 5, the release and the switch.** Once items 13 to 15 are built and Ernest's release is tagged, the same week and after `ernest-template`'s release and `ernest-epx`'s, it is installed, and a release of this program is made by `docs/release.md`, its readers among it, which `make release` refuses before the tag. Its note names the `ern` it was built with whole, `ern 0.11.0` (finding D33), and the switch makes true the README's sentences on the deployed shell, which its check reads (D3).
+**Item 5, the release and the switch.** Once items 14 and 15 are built and Ernest's release is tagged, the same week and after `ernest-template`'s release and `ernest-epx`'s, it is installed, and a release of this program is made by `docs/release.md`, its readers among it, which `make release` refuses before the tag. Its note names the `ern` it was built with whole, `ern 0.11.0` (finding D33), and the switch makes true the README's sentences on the deployed shell, which its check reads (D3).
 
 That release, with item 11's client, is installed in one switch on the path the rehearsal walked: `deploy/config.json` takes the member `shell` that design §13 gives, and `deploy/README.md`'s step 7 builds the image and installs the wrapper (the log's *The wrapper and the smoke test's configuration*). The unit is installed again from the release, for its stop time of 130 seconds (the log's *The stop time at 85 seconds* and *The silent peer on 0.11*). The rehearsal's unit goes with it, with `/home/httpd/rehearsal/` and the shell's image of 0.9.0. Until then, design §11's messages stay as Ernest's site speaks them, and a change to them is told to Ernest's session before it is built.
 
