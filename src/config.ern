@@ -11,7 +11,7 @@
 /// top, `listeners[0].port`, with the value it refused. `reason` writes it
 /// for the operator, to stand after the file's path.
 ///
-/// A host is read from an authority, `host`, and compared in any case: a
+/// A host is read from an authority, `host`, and compared in ASCII case: a
 /// redirect host so compared with the canonical host is refused, and a
 /// request's host is so compared with both (design §9).
 ///
@@ -272,7 +272,7 @@ fn headers(top : Map(String, Json.Value)) : Either(Error, List(Http.Header)) =
             Right(Unit)
         else
             Left(invalid(field, "be a token", Json.Text(name)));
-        let _ <- if List.contains(written, String.toLower(name)) then
+        let _ <- if List.contains(written, String.toAsciiLower(name)) then
             Left(invalid(field, writtenRule, Json.Text(name)))
         else
             Right(Unit);
@@ -526,14 +526,14 @@ fn nonEmptyString(field : String, value : Json.Value) : Either(Error, String) = 
 }
 
 // A redirect host: a string, not empty, a host, and not the canonical
-// host, whose host is given, the two hosts compared in any case, as design
+// host, whose host is given, the two hosts compared in ASCII case, as design
 // §9 compares them.
 fn redirectHost(field : String,
                 value : Json.Value,
                 canonicalName : String) : Either(Error, String) = {
     let text <- nonEmptyString(field, value);
     let name <- configuredHost(field, text);
-    if String.toLower(name) == String.toLower(canonicalName) then
+    if String.toAsciiLower(name) == String.toAsciiLower(canonicalName) then
         Left(invalid(field, "not be the canonical host", value))
     else
         Right(text)
@@ -789,9 +789,9 @@ let refusesTypes =
 // design §4: the rules on values: a kind, a port, a count, an empty string
 // and an empty array, an empty redirect host, a host that names userinfo,
 // an empty host or a port that is not digits, a redirect host that is the
-// canonical host, its port dropped and in any case, a control character,
+// canonical host, its port dropped and in ASCII case, a control character,
 // a content type's dot, a header's token and a header the server writes
-// itself, in any case, a framing header's, a response's own and an
+// itself, in ASCII case, a framing header's, a response's own and an
 // upgrade's, the shell's path, the client's path, which begins with / and
 // is not the shell's, and is required, the warning, and the hangup, a
 // value and one that is absent. The cases of a host that is none are a

@@ -81,11 +81,12 @@ export fn host(request : Http.Request) : Optional(String) =
 
 // What the request's host is: a redirect host, the canonical host, which a
 // request that names none is, or neither, each host read by Config.host
-// and compared in any case.
+// and compared in ASCII case.
 fn named(config : Config.Config, request : Http.Request) : Named = {
     let isHost =
-        fn(name, configured) = Optional.map(Config.host(configured), String.toLower) == Some(name);
-    match Optional.map(host(request), String.toLower) {
+        fn(name, configured) =
+            Optional.map(Config.host(configured), String.toAsciiLower) == Some(name);
+    match Optional.map(host(request), String.toAsciiLower) {
         None ->
             CanonicalHost
       | Some(name) ->
@@ -374,9 +375,9 @@ let readsTheHost =
                               None]))
 
 // design §9: a host is compared with the canonical host and the redirect
-// hosts in any case, its port dropped, an IPv6 address's too.
-let comparesInAnyCase =
-    Test.Case(name = "compares a host in any case",
+// hosts in ASCII case, its port dropped, an IPv6 address's too.
+let comparesInAsciiCase =
+    Test.Case(name = "compares a host in ASCII case",
               run = fn() =
                   decided([elsewhere("/a.txt", "ernest-lang.org", BySite),
                            elsewhere("/a.txt", "ERNEST-LANG.ORG:443", BySite),
@@ -398,7 +399,7 @@ let unnamed : Http.Request =
     Http.Request(..request("GET", "/a.txt", []), version = Http.Version(major = 1, minor = 0))
 
 // design §9: the configuration's hosts are compared with their ports
-// dropped too, in any case: a canonical host written with a port serves
+// dropped too, in ASCII case: a canonical host written with a port serves
 // its host with any port or none, a redirect host so written answers 301,
 // and the 301's Location keeps the canonical host as written, its port
 // among it.

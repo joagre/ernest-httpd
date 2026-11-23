@@ -333,12 +333,11 @@ fn closes(request : Http.Request) : Bool =
     else
         !lists(request, "keep-alive")
 
-// Whether the request's Connection headers list the token, their values
-// parted at commas, trimmed and compared in any case.
+// Whether the request's Connection headers list the token, written in
+// lower case, their elements compared in ASCII case.
 fn lists(request : Http.Request, token : String) : Bool =
-    List.any(List.flatMap(Http.headers(request.headers, "Connection"),
-                          fn(value) = String.split(value, ",")),
-             fn(part) = String.toLower(String.trim(part)) == token)
+    List.any(Http.elements(request.headers, "Connection"),
+             fn(element) = String.toAsciiLower(element) == token)
 
 // The request line as the client wrote it: the method, the target and the
 // version, parted by spaces.
@@ -727,8 +726,8 @@ fn written(idle : Int,
 
 // design §6: a 1.0 request closes the connection, and one that lists
 // keep-alive keeps it, its response saying so with `Connection:
-// keep-alive`; a 1.1 request whose Connection header lists close, in any
-// case among other tokens, closes it.
+// keep-alive`; a 1.1 request whose Connection header lists close, in
+// ASCII case among other tokens, closes it.
 let keepsOrCloses = Test.Case(name = "keeps or closes by the version and Connection", run = fn() = {
     let fileClosed = file([closing, header("Content-Length", "5")]);
     let fileKept = file([header("Connection", "keep-alive"), header("Content-Length", "5")]);
@@ -752,6 +751,44 @@ let keepsOrCloses = Test.Case(name = "keeps or closes by the version and Connect
                          ["127.0.0.1 GET /a.txt HTTP/1.0 200 5",
                           "127.0.0.1 GET /a.txt HTTP/1.1 200 5"]))))
 })
+
+// design §6: the Connection headers' elements, Http.elements, compared in
+// ASCII case: a 1.0 request whose element is Keep-Alive among empty ones,
+// spaces and tabs keeps the connection, a 1.1 request whose element is
+// close with U+00A0 before it and U+2003 after it keeps it too, a 1.1
+// request whose element is CLOSE between empty ones closes it, and a 1.0
+// request whose element is keep-alive with U+212A, KELVIN SIGN, in place
+// of its k closes it, though Unicode's lower case of it is keep-alive.
+let readsConnectionElements =
+    Test.Case(name = "reads the Connection headers' elements in ASCII case", run = fn() = {
+        let fileClosed = file([closing, header("Content-Length", "5")]);
+        let fileKept = file([header("Connection", "keep-alive"), header("Content-Length", "5")]);
+        let kept = {
+            let client <- connected(5000, 5000);
+            let answers <-
+                exchanged(client,
+                          [request("GET",
+                                   "/a.txt",
+                                   0,
+                                   [header("Connection", "upgrade,\t, Keep-Alive\t ,")]),
+                           request("GET",
+                                   "/a.txt",
+                                   1,
+                                   [host, header("Connection", "x,\u{A0}close\u{2003}")]),
+                           request("GET", "/a.txt", 1, [host, header("Connection", ", CLOSE ,")])]);
+            let #(entries, _) = told(3);
+            Right(#(answers, next(client), entries))
+        };
+        let kelvin =
+            once([request("GET", "/a.txt", 0, [header("Connection", "\u{212A}eep-alive")])]);
+        Test.equal(#(kept, kelvin),
+                   #(Right(#([fileKept, file([header("Content-Length", "5")]), fileClosed],
+                             "closed",
+                             ["127.0.0.1 GET /a.txt HTTP/1.0 200 5",
+                              "127.0.0.1 GET /a.txt HTTP/1.1 200 5",
+                              "127.0.0.1 GET /a.txt HTTP/1.1 200 5"])),
+                     Right(#([fileClosed], "closed", ["127.0.0.1 GET /a.txt HTTP/1.0 200 5"]))))
+    })
 
 // design §6: the requests refused, in the paragraph's order, each closing
 // the connection: a version other than 1.0 and 1.1 with 505, though the

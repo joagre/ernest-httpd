@@ -159,11 +159,10 @@ export fn handshake(shell : Config.Shell, request : Http.Request) : Either(Refus
     }
 }
 
-// Whether the headers of the name list the token, their values parted at
-// commas, trimmed and compared in any case.
+// Whether the headers of the name list the token, written in lower case,
+// their elements compared in ASCII case.
 fn lists(headers : List(Http.Header), name : String, token : String) : Bool =
-    List.any(List.flatMap(Http.headers(headers, name), fn(value) = String.split(value, ",")),
-             fn(part) = String.toLower(String.trim(part)) == String.toLower(token))
+    List.any(Http.elements(headers, name), fn(element) = String.toAsciiLower(element) == token)
 
 // The request's one Origin; None where it has none or more than one.
 fn origin(headers : List(Http.Header)) : Optional(String) =
@@ -636,7 +635,8 @@ fn without(request : Http.Request, name : String, added : List(Http.Header)) : H
     Http.Request(..request,
                  headers = List.filter(request.headers,
                                        fn(header) =
-                                           String.toLower(header.name) != String.toLower(name))
+                                           String.toAsciiLower(header.name)
+                                               != String.toAsciiLower(name))
                      <> added)
 
 // The handshake's refusal as a test compares it: its status and headers, or
@@ -702,9 +702,45 @@ let refusesUpgrades = Test.Case(name = "refuses an upgrade it does not take", ru
                 "400 []"])
 })
 
+// design §11: the Upgrade and Connection headers' elements, Http.elements,
+// compared in ASCII case: an Upgrade whose element is websocket with
+// U+212A, KELVIN SIGN, in place of its k is refused 426, though Unicode's
+// lower case of it is websocket, and so is a Connection whose element is
+// upgrade with U+00A0 before it and U+2003 after it; an Upgrade of
+// WebSocket, one whose element is websocket among empty ones, spaces and
+// tabs in a second Upgrade header, and a Connection whose element is
+// UPGRADE between empty ones are accepted.
+let readsUpgradeElements =
+    Test.Case(name = "reads the Upgrade and Connection headers' elements in ASCII case",
+              run = fn() = {
+                  let good = upgrade(sampleKey, []);
+                  let upgradeHeaders =
+                      Io.show([header("Upgrade", "websocket"),
+                               header("Sec-WebSocket-Version", "13")]);
+                  Test.equal([refused(without(good,
+                                              "Upgrade",
+                                              [header("Upgrade", "websoc\u{212A}et")])),
+                              refused(without(good,
+                                              "Connection",
+                                              [header("Connection", "x,\u{A0}upgrade\u{2003}")])),
+                              refused(without(good, "Upgrade", [header("Upgrade", "WebSocket")])),
+                              refused(without(good,
+                                              "Upgrade",
+                                              [header("Upgrade", "h2c"),
+                                               header("Upgrade", ",\t, websocket\t ,")])),
+                              refused(without(good,
+                                              "Connection",
+                                              [header("Connection", ", UPGRADE ,")]))],
+                             ["426 " <> upgradeHeaders,
+                              "426 " <> upgradeHeaders,
+                              "accepted",
+                              "accepted",
+                              "accepted"])
+              })
+
 // design §11: an upgrade taken: the 101 with Upgrade, Connection and
 // Sec-WebSocket-Accept, RFC 6455's key's, its Upgrade and Connection read
-// in any case among other tokens; where the request carried no cookie of
+// in ASCII case among other tokens; where the request carried no cookie of
 // the shell's, one carried of another form among them, a cookie of 32
 // lower-case hexadecimal digits drawn and set for the shell's path alone,
 // and where it carried one, that cookie and no Set-Cookie: the first of

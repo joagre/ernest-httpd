@@ -2,25 +2,9 @@
 
 What writing Ernest felt against the principles, a line each, a queue: Ernest's session reads this file and never writes it, this session says by a message when it adds lines, by their numbers and a sentence each, and Ernest's verdict comes by a message from that session, as Ernest's clean room procedure says; the log here cites Ernest's number, and the line then goes; a line not answered, or not agreed with, stays with the verdict and the reason beneath it. The file goes when it is empty.
 
-The lines are numbered on from the thirty-two of the rounds before, all answered; line 33 was found on 2026-11-17 against `ern 0.10.0`, while the unit's stop time was measured.
+The lines are numbered on from the thirty-four of the rounds before, all answered.
 
-Line 34 was found on 2026-11-19 against `ern 0.10.0`, on Ernest's news that `Http` compares a transfer coding in ASCII case; line 35 was found on 2026-11-21 against the same, while Ernest's close that waits for its bytes was read against the program's closes; lines 36 and 37 were found on 2026-11-23 against `ern 0.11.0+93a13b13`, while the floor's rise timed the program's closes.
-
-33. **A node whose program ends while output waits for a silent peer does not end until the peer runs again, and a termination does not end it.** Report §8.6 has an `Os.exit` end the program, and "a termination once the end has begun, whoever began it, end the program at once"; §12.6 has "a peer lost while another is waited for has ended with its loss, and is not asked".
-
-    A probe on `ern 0.10.0`: two nodes on the loopback, the peer's three processes stopped with SIGSTOP, and the node sending the peer 64 KB messages until a send waits, after 4 to 5 MB. Where the program then calls `Os.exit(0)`, or its `main` returns, before the peer's loss or after it, the node did not end within 240 seconds, in six runs of six, and ended within 25 ms of the peer's SIGCONT, with the status 0. A SIGTERM sent 240 seconds into that wait did not end the node within 30 seconds, in three runs of three, and the node wrote nothing.
-
-    With nothing waiting for the peer, the node ended 7 ms after its `Os.exit`. A node ended by a termination alone ended at the peer's loss, which came 85 seconds after the peer's last traffic where output waited for it and 75 where none did.
-
-    ernest-httpd exits with the status 1 by `Os.exit` where a listener ends early (its design §2), so that systemd starts it again. With an operator's shell stopped and output waiting for it, the node would stay, serving nothing, and systemd's stop would end it only by the kill at the unit's stop time. Ernest's session says that its item 98 gives the sockets between nodes a linger of no time; this line asks that the fix be held against the termination too.
-
-    Principle 1: a reader predicts that a program that has exited is gone, and that a termination ends what an exit did not. Ask: a node's end, begun by its program or by a termination, is not held by output to a peer that is silent or lost; and where the host must hold it, the report says for how long.
-
-34. **G.11 gives no reading of a list header's elements, and a program that writes one with the library's text functions reads what HTTP does not.** G.11 has `Http.headers` answer every value under a name. RFC 9110 §5.6.1 has such a value a list: parted at commas, each element without the spaces and tabs around it, empty elements dropped, and a token compared in ASCII case. E.5 has `String.trim` remove Unicode's white space and `String.toLower` use Unicode's case mapping, and gives no trim of spaces and tabs alone.
-
-    ernest-httpd reads `Connection` and `Upgrade` so at two sites, a private `lists` in `Connection` and one in `Shell`: `String.split(value, ",")`, then `String.toLower(String.trim(part)) == token`. A probe on `ern 0.10.0` reads a request by `Http.parseRequest` and its header by that `lists`. `Connection: x,` U+00A0 `close` U+2003 lists `close`, `Connection: ` U+212A `eep-alive` lists `keep-alive`, and `Upgrade: websoc` U+212A `et` lists `websocket`. Nobody gains by it: the server takes a token that RFC 9110 has it not know.
-
-    Ernest's session says that its checkout narrows `Http`'s own reading of `Transfer-Encoding` to that rule, and that the library gains `String.toAsciiLower`. Principle 1: a reader predicts that the plain writing over `Http.headers` reads a list as HTTP has it. Ask: G.11 gives the elements of a list header, every value under the name parted at commas, trimmed of spaces and tabs, empty elements dropped, and says how a token is compared with one; or E.5 gives a trim of spaces and tabs.
+Line 35 was found on 2026-11-21 against `ern 0.10.0`, while Ernest's close that waits for its bytes was read against the program's closes; lines 36 and 37 were found on 2026-11-23 against `ern 0.11.0+93a13b13`, while the floor's rise timed the program's closes.
 
 35. **Nothing ends a socket and drops what its host holds: after a close or a kill the bytes go on to a far end the program has given up.** E.18 has the bytes a socket has taken sent "while the far end takes them", however the socket ends, and dropped 5 seconds after the far end's last take or 3 minutes after the end. `Tcp` has no function that ends a socket without them.
 
