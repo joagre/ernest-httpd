@@ -108,7 +108,8 @@ type Asked = Resize(Terminal.Size) | Extend | Stop
 /// The rest is taken: the 101 with `Upgrade`, `Connection` and
 /// `Sec-WebSocket-Accept`, and, where the request carried no cookie of the
 /// shell's, `Set-Cookie` of the one drawn, 16 bytes of `Crypto.randomBytes`
-/// in lower-case hexadecimal, for the shell's path alone.
+/// in lower-case hexadecimal, as `__Host-shell` with `Path=/`, `Secure`,
+/// `HttpOnly` and `SameSite=Strict`.
 ///
 /// ### Examples
 ///
@@ -144,7 +145,7 @@ export fn handshake(shell : Config.Shell, request : Http.Request) : Either(Refus
     else match origin(headers) {
         Some(origin) when List.contains(shell.origins, origin) ->
             match key(headers) {
-                Some(key) -> Right(accepted(shell, headers, key))
+                Some(key) -> Right(accepted(headers, key))
               | None -> Left(Refusal(status = 400, headers = []))
             }
       | _ ->
@@ -154,7 +155,7 @@ export fn handshake(shell : Config.Shell, request : Http.Request) : Either(Refus
 
 // The 101 of an upgrade with the key, and the request's cookie or a new one,
 // set where it carried none.
-fn accepted(shell : Config.Shell, headers : List(Http.Header), key : String) : Accepted = {
+fn accepted(headers : List(Http.Header), key : String) : Accepted = {
     let #(cookie, set) = match carried(headers) {
         Some(cookie) ->
             #(cookie, [])
@@ -162,11 +163,7 @@ fn accepted(shell : Config.Shell, headers : List(Http.Header), key : String) : A
             let cookie = Bytes.toHex(Crypto.randomBytes(16));
             #(cookie,
               [header("Set-Cookie",
-                      "shell="
-                          <> cookie
-                          <> "; Path="
-                          <> shell.path
-                          <> "; Secure; HttpOnly; SameSite=Strict")])
+                      "__Host-shell=" <> cookie <> "; Path=/; Secure; HttpOnly; SameSite=Strict")])
         }
     };
     let response =
@@ -203,12 +200,12 @@ fn key(headers : List(Http.Header)) : Optional(String) =
             None
     }
 
-// The request's cookie: the value of the first cookie `shell` of its Cookie
-// headers, as `Http.cookies` parts them, that is 32 lower-case hexadecimal
-// digits.
+// The request's cookie: the value of the first cookie `__Host-shell` of its
+// Cookie headers, as `Http.cookies` parts them, that is 32 lower-case
+// hexadecimal digits.
 fn carried(headers : List(Http.Header)) : Optional(String) =
     Optional.map(List.find(Http.cookies(headers),
-                           fn(#(name, value)) = name == "shell" && isCookie(value)),
+                           fn(#(name, value)) = name == "__Host-shell" && isCookie(value)),
                  fn(#(_, value)) = value)
 
 fn isCookie(value : String) : Bool =
@@ -838,30 +835,33 @@ let readsUpgradeElements =
 // design §11: an upgrade taken: the 101 with Upgrade, Connection and
 // Sec-WebSocket-Accept, RFC 6455's key's, its Upgrade and Connection read
 // in ASCII case among other tokens; where the request carried no cookie of
-// the shell's, one carried of another form among them, a cookie of 32
-// lower-case hexadecimal digits drawn and set for the shell's path alone,
-// and where it carried one, that cookie and no Set-Cookie: the first of
-// the shell's form among the cookies of its Cookie headers, as
-// Http.cookies parts them. That case is a regression test's, written after
-// the code: it does not cover a quoted value, which Http.cookies keeps
-// with its quotes and the shell's form refuses.
+// the shell's, a __Host-shell of another form and a cookie named shell of
+// the shell's form among them, a cookie of 32 lower-case hexadecimal
+// digits drawn and set as __Host-shell with Path=/, and where it carried
+// one, that cookie and no Set-Cookie: the first __Host-shell of the
+// shell's form among the cookies of its Cookie headers, as Http.cookies
+// parts them, a cookie named shell of that form and a __Host-shell of
+// another before it passed over. That case is a regression test's, written
+// after the code: it does not cover a quoted value, which Http.cookies
+// keeps with its quotes and the shell's form refuses.
 let acceptsUpgrades = Test.Case(name = "accepts an upgrade and sets its cookie", run = fn() = {
     let shell = configured(1, 60000, 30000, 1024);
     let accepted = fn(request) = match handshake(shell, request) {
         Right(Accepted(=response, =cookie)) -> Some(#(response, cookie))
       | Left(_) -> None
     };
+    let withoutCookie = header("Cookie", "theme=dark; __Host-shell=ABCDEF; shell=" <> cookie);
+    let withCookie =
+        [header("Cookie", "theme=dark;shell=" <> String.repeat("e", 32) <> ";__Host-shell=ABCDEF"),
+         header("Cookie",
+                " __Host-shell = " <> cookie <> "; __Host-shell=" <> String.repeat("f", 32))];
     let drawn =
-        accepted(without(without(upgrade(sampleKey, [header("Cookie", "theme=dark; shell=ABCDEF")]),
+        accepted(without(without(upgrade(sampleKey, [withoutCookie]),
                                  "Upgrade",
                                  [header("Upgrade", "WebSocket")]),
                          "Connection",
                          [header("Connection", "keep-alive, upgrade")]));
-    let kept =
-        accepted(upgrade(sampleKey,
-                         [header("Cookie", "theme=dark;shell=ABCDEF"),
-                          header("Cookie",
-                                 " shell = " <> cookie <> "; shell=" <> String.repeat("f", 32))]));
+    let kept = accepted(upgrade(sampleKey, withCookie));
     let first =
         [header("Upgrade", "websocket"),
          header("Connection", "Upgrade"),
@@ -873,9 +873,9 @@ let acceptsUpgrades = Test.Case(name = "accepts an upgrade and sets its cookie",
                            response.headers
                                == first
                                    <> [header("Set-Cookie",
-                                              "shell="
+                                              "__Host-shell="
                                                   <> drawnCookie
-                                                  <> "; Path=/shell; Secure; HttpOnly; SameSite=Strict")],
+                                                  <> "; Path=/; Secure; HttpOnly; SameSite=Strict")],
                            isCookie(drawnCookie)));
     Test.equal(#(drawnSeen, kept),
                #(Some(#(101, true, true)),
@@ -1126,7 +1126,7 @@ let closesIdle = Test.Case(name = "closes an unattached shell at the idle deadli
 // closes with 4003, no text written.
 let carriesASession = Test.Case(name = "carries a session through the sessions", run = fn() = {
     let sessions = Sessions.start(configured(1, 60000, 30000, 1024), deadlines(60000));
-    let carried = [header("Cookie", "shell=" <> cookie)];
+    let carried = [header("Cookie", "__Host-shell=" <> cookie)];
     let result = {
         let first <-
             opened(sessions,

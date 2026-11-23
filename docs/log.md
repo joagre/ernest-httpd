@@ -970,3 +970,10 @@ A restart's attach waits, held by the sessions, for the session ending under its
 The tests. Each new one failed against a break of its fix. The restart's holds the ending session by its program, which outlives its hangup until the test ends it by its process number, so that no deadline races its steps. Keys after a detach are dropped now, so the test of the output held for the next shell has its program write at a signal the test sends once the session has taken the detach.
 
 L's probes, run again on the loopback with the deployed shell's numbers: N resizes and a stop were answered in 0.02, 0.03, 0.06, 0.11 and 0.25 seconds for N of 5,000 to 80,000, and in 0.75 for 320,000, where they took 0.15 to 21.4; 142 MiB of resizes in 14 seconds held the server at 110 to 114 MiB, where 128 MiB grew it from 101 to 973; and a termination with that session live ended the server in 9 milliseconds.
+
+
+## Milestone 2, item 14: the cookie
+
+*2026-11-23.* The shell's cookie is `__Host-shell` with `Path=/`, as *The sort at f6bf173* has it (findings S4 and L8): the 101 sets it `Secure`, `HttpOnly` and `SameSite=Strict`, and the handshake reads no other, so that a cookie planted from plain HTTP or with a `Domain` names no session. A `shell` cookie a browser still holds from before is passed over, and its visitor starts a new session once. Probes settled the item before it was built: Chromium 156 keeps the cookie set on a 101 from `ws://client.localhost` and carries it on the next upgrade, and drops it under another path, as the prefix asks; Firefox 153 ESR keeps it from `localhost`, so the example's reload still joins its session.
+
+The tests. Each changed test failed against the code before: the handshake's took a `shell` cookie, the shell's second client met the cap where it should have taken the session over, and the connection's upgrade was written a `Set-Cookie`. The client's test shows the cookie kept in Chromium on `client.localhost`, its second start joining the first; with `Path=/shell/session` under the same name for one run, Chromium refused the cookie and the test stopped at `first warning 2000`, where `first ended takenOver` was expected.

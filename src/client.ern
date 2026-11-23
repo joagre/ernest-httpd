@@ -455,8 +455,9 @@ type Heard = Reported(line : String, reply : Reply(Unit)) | BrowserEnded(String)
 // design §14: the client run in Chromium against a server the test
 // launches on the scenario's configuration, the page importing the client
 // and reporting each thing it told, the lines compared with the scenario's
-// as they come, and the server ended at the unavailable start's line; a
-// machine without chromium fails with a line naming the package.
+// as they come, the second start joining under the cookie Chromium kept
+// from the first's 101, and the server ended at the unavailable start's
+// line; a machine without chromium fails with a line naming the package.
 let runsInABrowser = Test.Case(name = "runs a session in a browser", run = fn() = match walked() {
     Right(lines) -> Test.equal(lines, scenario)
   | Left(failure) -> Test.Failed(failure)

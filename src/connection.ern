@@ -1312,7 +1312,7 @@ let upgrades = Test.Case(name = "upgrades a request on the shell's path", run = 
                      header("Sec-WebSocket-Version", "13"),
                      origin,
                      header("Sec-WebSocket-Key", key),
-                     header("Cookie", "shell=0123456789abcdef0123456789abcdef")]);
+                     header("Cookie", "__Host-shell=0123456789abcdef0123456789abcdef")]);
         let bytes =
             Http.renderRequest(upgrade, <<>>)
                 <> Smoke.masked(WebSocket.Ping(String.toUtf8("carried")));
