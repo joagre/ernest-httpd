@@ -918,6 +918,8 @@ fn shown(message : WebSocket.Message) : String =
             "Pong(" <> Optional.withDefault(String.fromUtf8(bytes), "?") <> ")"
       | WebSocket.Close(code = Some(code)) ->
             "Close(" <> Int.toString(code) <> ")"
+      | WebSocket.Close(code = None) ->
+            "Close()"
       | other ->
             Io.show(other)
     }
@@ -967,8 +969,8 @@ fn attachedText(word : String) : String =
 // design §11: the reader decodes the bytes after the head first: a ping
 // carried with the upgrade is answered with its pong, and a ping read after
 // it too; a pong is dropped; and the client's close is answered with a
-// close of its code, after which the connection closes and the shell
-// returns.
+// close of its code, 1000, 4000 or none, after which the connection closes
+// and the shell returns.
 let answersPingsAndCloses = Test.Case(name = "answers a ping and a close", run = fn() = {
     let sessions = Sessions.start(configured(1, 60000, 30000, 1024), deadlines(60000));
     let result = {
@@ -982,8 +984,16 @@ let answersPingsAndCloses = Test.Case(name = "answers a ping and a close", run =
         let _ = sent(client, WebSocket.Close(code = Some(1000), reason = "done"));
         Right(#(messages(client, 4), ended()))
     };
-    Test.equal(#(result, stopped(sessions)),
+    let closing = fn(code) = {
+        let client <- opened(sessions, deadlines(60000), [], <<>>);
+        let _ = sent(client, WebSocket.Close(=code, reason = "done"));
+        Right(#(messages(client, 2), ended()))
+    };
+    let others = [closing(Some(4000)), closing(None)];
+    Test.equal(#(result, others, stopped(sessions)),
                #(Right(#(["Pong(carried)", "Pong(read)", "Close(1000)", "closed"], "Returned")),
+                 [Right(#(["Close(4000)", "closed"], "Returned")),
+                  Right(#(["Close()", "closed"], "Returned"))],
                  true))
 })
 

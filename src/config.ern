@@ -117,7 +117,7 @@ export fn read(path : Path, ms : Int) : Either(Error, Config) = {
 /// or the first error.
 export fn parse(text : String) : Either(Error, Config) = {
     let value <- Either.mapLeft(Json.parse(text), NotJson);
-    let top <- object("the configuration", value);
+    let top <- objectValue("the configuration", value);
     let _ <- members(top, "", "the configuration", fields);
     let listeners <- elements(top, "", "listeners", listener);
     let _ <- notEmptyArray("listeners", listeners);
@@ -221,7 +221,7 @@ let fields : List(String) =
      "shell"]
 
 fn listener(field : String, value : Json.Value) : Either(Error, Listener) = {
-    let object <- object(field, value);
+    let object <- objectValue(field, value);
     let kindName <- string(object, field, "kind");
     let #(name, own) <- match kindName {
         "plain" ->
@@ -253,8 +253,10 @@ fn listener(field : String, value : Json.Value) : Either(Error, Listener) = {
             let acmeChallenge <- path(object, field, "acme-challenge");
             Right(Redirect(=acmeChallenge))
         }
-      | _ ->
+      | "plain" ->
             Right(Plain)
+      | _ ->
+            fault("the kind was read as plain, tls or redirect above")
     };
     Right(Listener(=kind, =address, =port))
 }
@@ -348,7 +350,7 @@ fn shell(top : Map(String, Json.Value)) : Either(Error, Optional(Shell)) =
         None ->
             Right(None)
       | Some(value) -> {
-            let object <- object("shell", value);
+            let object <- objectValue("shell", value);
             let _ <-
                 members(object,
                         "shell",
@@ -596,7 +598,7 @@ fn required(object : Map(String, Json.Value),
 // name holds a control character answered before any other rule of the
 // object, under the object's field, so that no field holds one (design
 // §4).
-fn object(field : String, value : Json.Value) : Either(Error, Map(String, Json.Value)) =
+fn objectValue(field : String, value : Json.Value) : Either(Error, Map(String, Json.Value)) =
     match value {
         Json.Object(members) ->
             match List.find(List.sort(Map.keys(members)),
@@ -612,7 +614,7 @@ fn objectField(object : Map(String, Json.Value),
                prefix : String,
                name : String) : Either(Error, Map(String, Json.Value)) = {
     let value <- required(object, prefix, name);
-    Config.object(member(prefix, name), value)
+    objectValue(member(prefix, name), value)
 }
 
 // A string of the file, which holds no control character.
@@ -727,7 +729,7 @@ fn elements(object : Map(String, Json.Value),
 }
 
 // An object of strings at the top, its members read by `step` in the order
-// of their names' code points, after `object` has checked every name's
+// of their names' code points, after `objectValue` has checked every name's
 // control characters; `step` checks the name's rule, then the value's.
 fn strings(top : Map(String, Json.Value),
            name : String,

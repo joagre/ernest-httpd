@@ -502,16 +502,20 @@ fn ioError(error : Http.SocketError) : Io.Error =
 /// files to it by `ulimit -n` and runs the launcher in its place, so that
 /// the server runs under it (report §12). It answers the
 /// running program, for `terminate`, and the port each listener says it
-/// listens on, in the configuration's order. A line that is not
-/// `listening on 127.0.0.1:` and a port answers `Other` naming it, and a
-/// program that exits first `Other` with its status and what it said.
+/// listens on, in the configuration's order, exactly the count of them. A
+/// line that is not `listening on 127.0.0.1:` and a port answers `Other`
+/// naming it, lines past the count `Other` naming the ports, and a program
+/// that exits first `Other` with its status and what it said.
 export fn launch(path : String,
                  count : Int,
                  limit : Optional(Int)) : Either(Io.Error, #(Address(Os.ProgramMsg), List(Int))) = {
     let program <- Os.start(launcher(path, limit));
     let out <- said(program, "", count);
     let ports <- List.tryMap(String.lines(out), portSaid);
-    Right(#(program, ports))
+    if List.size(ports) == count then
+        Right(#(program, ports))
+    else
+        Left(Io.Other("said the ports " <> Io.show(ports)))
 }
 
 // The launcher's command on the configuration at the path, under the limit
@@ -550,7 +554,7 @@ fn said(program : Address(Os.ProgramMsg), acc : String, count : Int) : Either(Io
 // launcher says it and nothing else.
 fn portSaid(line : String) : Either(Io.Error, Int) = {
     let prefix = "listening on 127.0.0.1:";
-    match String.toInt(String.replace(line, prefix, "")) {
+    match Optional.andThen(String.stripPrefix(line, prefix), String.toInt) {
         Some(port) when prefix <> Int.toString(port) == line -> Right(port)
       | _ -> Left(Io.Other("said " <> Io.show(line)))
     }
@@ -585,8 +589,9 @@ let scratch : String = "build/scratch/smoke"
 // The scratch site's configuration: a plain and a redirect listener on the
 // loopback, ports the host picks, the host localhost and its redirect host
 // www.localhost, and a shell on the site's path from http://localhost,
-// whose command answers the first line typed with `3 : Int` and then
-// copies the terminal, as a stand-in for `ern shell`.
+// whose command answers the first line typed with `3 : Int`, its type
+// dimmed as `ern shell` writes it at a terminal, and then copies the
+// terminal, as a stand-in for `ern shell`.
 let configuration : String =
     "{\"listeners\": [{\"kind\": \"plain\", \"address\": \"127.0.0.1\", \"port\": 0},\n"
         <> "  {\"kind\": \"redirect\", \"address\": \"127.0.0.1\", \"port\": 0, \"acme-challenge\": \""
@@ -603,7 +608,8 @@ let configuration : String =
         <> "/access.log\",\n"
         <> " \"shell\": {\"path\": \"/shell/session\", \"client\": \"/shell/client.js\",\n"
         <> "           \"origins\": [\"http://localhost\"],\n"
-        <> "           \"command\": [\"sh\", \"-c\", \"read line && echo '3 : Int' && exec cat\"],\n"
+        <> "           \"command\": [\"sh\", \"-c\",\n"
+        <> "                       \"read line && printf '3\\\\033[2m : Int\\\\033[22m\\\\n' && exec cat\"],\n"
         <> "           \"most-at-once\": 2, \"per-address\": 2, \"starts\": {\"count\": 10, \"within\": 60000},\n"
         <> "           \"lifetime\": 60000, \"warning\": 30000,\n"
         <> "           \"message-limit\": 1024, \"hangup\": 1000}}\n"
@@ -639,7 +645,7 @@ let checksASite = Test.Case(name = "checks a site and says what came", run = fn(
         let #(program, ports) <- launch(path, 2, None);
         let #(plainPort, redirectPort) = match ports {
             [one, two] -> #(one, two)
-          | _ -> #(0, 0)
+          | _ -> fault("launch answers a port for each of the count")
         };
         let shell = Some(#("/shell/session", "/shell/client.js"));
         let redirectHost = "www.localhost";
@@ -734,6 +740,20 @@ let checksASite = Test.Case(name = "checks a site and says what came", run = fn(
       | Left(error) ->
             Test.Failed(Io.show(error))
     }
+})
+
+// design §13: the shell's answer is held where the output holds `3 : Int`
+// with its type dimmed, as `ern shell` writes it at a terminal, or plain,
+// as it writes it where NO_COLOR is set, and not where the output holds
+// another type, or the type in another style.
+let holdsEitherAnswer = Test.Case(name = "holds the answer dimmed or plain", run = fn() = {
+    let held =
+        List.map(["1 + 2\r\n3\u{1b}[2m : Int\u{1b}[22m\r\n",
+                  "1 + 2\r\n3 : Int\r\n",
+                  "1 + 2\r\n3\u{1b}[2m : String\u{1b}[22m\r\n",
+                  "1 + 2\r\n3\u{1b}[1m : Int\u{1b}[22m\r\n"],
+                 fn(text) = holdsTheAnswer(String.toUtf8(text)));
+    Test.equal(held, [true, true, false, false])
 })
 
 // design §13: the end of a program that exited before it was told, its
@@ -884,8 +904,8 @@ fn lacked(path : String, wanted : List(String)) : List(String) = {
 // The seconds of the unit's TimeoutStopSec, where it has one.
 fn stopSeconds(unit : String) : Optional(Int) =
     List.map(String.lines(unit), String.trim)
-        |> List.filter(fn(line) = String.startsWith(line, "TimeoutStopSec="))
-        |> List.filterMap(fn(line) = String.toInt(String.replace(line, "TimeoutStopSec=", "")))
+        |> List.filterMap(fn(line) = String.stripPrefix(line, "TimeoutStopSec="))
+        |> List.filterMap(String.toInt)
         |> List.get(0)
 
 // What the deployed configuration holds against design §13, each field

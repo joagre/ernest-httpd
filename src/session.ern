@@ -134,11 +134,9 @@ export fn serve(shell : Config.Shell,
                 timeouts : Config.Timeouts,
                 size : Terminal.Size,
                 sessions : Address(Ending)) : Unit receiving SessionMsg = {
-    // an empty command, which design §4 refuses, is the program "", which
-    // the host does not find
     let #(name, arguments) = match shell.command {
         first :: rest -> #(first, rest)
-      | [] -> #("", [])
+      | [] -> fault("design §4 refuses an empty command")
     };
     match Os.startTerminal(Os.command(name, arguments), size) {
         Right(program) -> {
@@ -279,10 +277,10 @@ fn serving(started : Started, state : Serving) : Unit receiving SessionMsg =
             writerEnded();
             stopped(started, 4004, true)
         }
-      | Answered(Right(Os.Stdout(bytes))) or Answered(Right(Os.Stderr(bytes))) ->
-            // a terminal merges the two, so its read answers Stdout alone
-            // (report Appendix E.23)
+      | Answered(Right(Os.Stdout(bytes))) ->
             serving(started, output(state, bytes))
+      | Answered(Right(Os.Stderr(_))) ->
+            fault("a terminal's read answers Stdout alone (report Appendix E.23)")
       | Answered(Left(_)) ->
             serving(started, readNext(started, Serving(..state, reading = false)))
       | ReaderEnded(_) -> {
@@ -1023,11 +1021,11 @@ let endsWhileAWriteWaits = Test.Case(name = "ends at once while a write waits", 
     let ready = heard("shell", "ready\r\n", "");
     send(session, keys(lines("a")));
     let waiting = Test.until(writerWaits, 5000);
-    let start = Clock.monotonic();
+    let since = Clock.monotonic();
     send(session, End(1001));
     let end = next("shell");
     let ended = sessionEnded();
-    let took = Clock.monotonic() - start;
+    let took = Clock.monotonic() - since;
     Test.equal(#(attached, ready, waiting, end, ended, took < 2000),
                #("Attached(New)", "ready\r\n", Test.Passed, "Ended(1001)", "Returned", true))
 })
@@ -1138,12 +1136,12 @@ let callsItsEnd = Test.Case(name = "tells an attach passed as its end begins", r
     fn gonePast(sessions : Address(Ending),
                 hangup : Int) : #(String, String, Int) receiving Seen = {
         let session = startedUnder(configured(["true"], 60000, 30000, hangup), sessions);
-        let start = Clock.monotonic();
+        let since = Clock.monotonic();
         send(session, Attach(shell("past")));
         let attached = next("past");
         let end = next("past");
         let ended = endOf();
-        #(attached <> " " <> end, ended, Clock.monotonic() - start)
+        #(attached <> " " <> end, ended, Clock.monotonic() - since)
     };
     let #(failedTold, failedEnd, failedTook) = gonePast(spawn(gone), 5000);
     let #(unansweredTold, unansweredEnd, unansweredTook) = gonePast(calling, 300);
@@ -1182,13 +1180,13 @@ let keepsTheDeadline = Test.Case(name = "warns and ends at its deadline", run = 
     send(extended, Attach(shell("extended")));
     let attached = #(next("still"), next("moved"), next("extended"));
     let warned = #(next("moved"), next("extended"));
-    let key = Clock.monotonic();
+    let since = Clock.monotonic();
     send(moved, keys("k"));
     send(extended, Extend);
     let movedTold = messages("moved");
-    let afterKey = Clock.monotonic() - key;
+    let afterKey = Clock.monotonic() - since;
     let extendedTold = messages("extended");
-    let afterExtend = Clock.monotonic() - key;
+    let afterExtend = Clock.monotonic() - since;
     let stillTold = messages("still");
     Test.equal(#(attached,
                  warned,
@@ -1231,11 +1229,11 @@ let killsAtTheHangup = Test.Case(name = "kills a program that outlives the hangu
     send(session, Attach(shell("shell")));
     let attached = next("shell");
     let ready = heard("shell", "ready\r\n", "");
-    let start = Clock.monotonic();
+    let since = Clock.monotonic();
     send(session, End(1000));
     let end = next("shell");
     let ended = sessionEnded();
-    let took = Clock.monotonic() - start;
+    let took = Clock.monotonic() - since;
     Test.equal(#(attached, ready, end, ended, took >= 300 && took < 5000),
                #("Attached(New)", "ready\r\n", "Ended(1000)", "Returned", true))
 })

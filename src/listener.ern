@@ -57,7 +57,7 @@ type Doing = AwaitingRequest | ServingRequest | ServingShell(Address(Shell.Shell
 // Whether the listener has asked its acceptor for a connection: asked and
 // not yet answered, an alarm set to ask again after a failed accept, or
 // neither, at the cap, until a connection ends.
-type Asking = Asked | Retrying | Waiting
+type Asking = Asked | Retrying | AtCap
 
 //
 // Accepting
@@ -126,7 +126,7 @@ fn waiting(listening : Listening,
       | ConnectionEnded(down) -> {
             let open = Map.remove(connections, down.process);
             match asking {
-                Waiting -> asked(listening, open)
+                AtCap -> asked(listening, open)
               | Asked or Retrying -> waiting(listening, open, asking)
             }
         }
@@ -143,7 +143,7 @@ fn asked(listening : Listening, connections : Map(Process, Open)) : Unit receivi
         send(listening.acceptor, Accept);
         waiting(listening, connections, Asked)
     } else
-        waiting(listening, connections, Waiting)
+        waiting(listening, connections, AtCap)
 
 // The socket given to a connection process spawned and monitored for it,
 // or closed at once where the host cannot tell its remote address or its
@@ -379,10 +379,10 @@ fn next(socket : Address(Tcp.SocketMsg)) : String =
 // The listener told to stop: its end, and the milliseconds the stop took,
 // within 5000 milliseconds.
 fn stopped(listener : Address(ListenerMsg)) : #(String, Int) receiving Seen = {
-    let start = Clock.monotonic();
+    let since = Clock.monotonic();
     send(listener, Stop);
     receive {
-        Ended(down) -> #(Io.show(down.reason), Clock.monotonic() - start)
+        Ended(down) -> #(Io.show(down.reason), Clock.monotonic() - since)
       | after 5000 -> #("no end", 5000)
     }
 }
@@ -617,17 +617,17 @@ let retriesAtTheLimit =
         let result = {
             let path <- Either.mapLeft(configured(idle, 2 * limit, 2 * limit), Io.show);
             let #(program, ports) <- Either.mapLeft(Smoke.launch(path, 1, Some(limit)), Io.show);
-            let port <- match ports {
-                [one] -> Right(one)
-              | _ -> Left("ports " <> Io.show(ports))
+            let port = match ports {
+                [one] -> one
+              | _ -> fault("Smoke.launch answers a port for each of the count")
             };
-            let start = Clock.monotonic();
+            let since = Clock.monotonic();
             let held <- List.tryMap(List.repeat(port, limit), client);
             let line <- Either.mapLeft(errorLine(program, ""), Io.show);
             let waiting <- client(port);
             List.forEach(held, Tcp.close);
             let answer = got(waiting, "/a.txt", [close], idle + 5000);
-            let waited = Clock.monotonic() - start >= idle;
+            let waited = Clock.monotonic() - since >= idle;
             let status <- Either.mapLeft(Smoke.terminate(program), Io.show);
             Right(#(line, answer, waited, status))
         };

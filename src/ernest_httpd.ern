@@ -533,15 +533,15 @@ let servesAndEnds = Test.Case(name = "serves the site and ends in order", run = 
         let #(program, ports) <- Smoke.launch(path, 3, None);
         let #(plainPort, tlsPort, redirectPort) = match ports {
             [one, two, three] -> #(one, two, three)
-          | _ -> #(0, 0, 0)
+          | _ -> fault("Smoke.launch answers a port for each of the count")
         };
         let #(answers, sockets) <- answered(plainPort, tlsPort, redirectPort);
         let #(upgradeStatus, cookieSet, attached, typed, shellSocket, decoder) <-
             shellClient(plainPort);
         let #(_, _, unattached) <- upgraded(plainPort, "/shell", "http://localhost");
-        let start = Clock.monotonic();
+        let since = Clock.monotonic();
         let status <- Smoke.terminate(program);
-        let took = Clock.monotonic() - start;
+        let took = Clock.monotonic() - since;
         let shellEnd = closing(shellSocket, decoder);
         let unattachedEnd = closing(unattached, WebSocket.decoder(WebSocket.FromServer, 65536));
         let kept = List.map(sockets, next);
@@ -645,7 +645,7 @@ let servesTheExample = Test.Case(name = "serves the example site", run = fn() = 
         let #(program, ports) <- Smoke.launch(path, 2, None);
         let #(plainPort, redirectPort) = match ports {
             [one, two] -> #(one, two)
-          | _ -> #(0, 0)
+          | _ -> fault("Smoke.launch answers a port for each of the count")
         };
         let site <- Tcp.connect("127.0.0.1", plainPort, 5000);
         let served <-

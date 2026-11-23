@@ -30,21 +30,21 @@ What the readers found of Ernest's is lines 38 to 57 of `language_feedback.md`, 
 - **C2.** The template's: `tools/docs.ern` checks no backticked path after the design's line 94, whose double-backtick span holds a backtick. Held for the template.
 - **C3.** A control character in a configuration member's name reaches standard error raw, in `is no field of` and in a field's name (§4). Done in the third leg.
 - **C4.** A member named twice is taken silently, the last winning (§4 is silent; K8). Done in the third leg: §4's rule as it stands, the last kept; the refusal waits on line 38.
-- **C5.** A Close echoed as 1000 whatever its code passes every test (§11). Fix in the third leg.
-- **C6.** The browser test cannot tell the warning's seconds from a constant (§14). Fix in the third leg.
-- **C7.** No test reaches the smoke test's dimmed answer (§13). Fix in the third leg.
+- **C5.** A Close echoed as 1000 whatever its code passes every test (§11). Done in the third leg.
+- **C6.** The browser test cannot tell the warning's seconds from a constant (§14). Done in the third leg.
+- **C7.** No test reaches the smoke test's dimmed answer (§13). Done in the third leg.
 - **C8.** A warning that is no whole number of seconds tells the page the wrong milliseconds, 1500 as 1000 and 500 as 0 (§4, §14). Done in the third leg: `shell.warning` must `be a multiple of 1000`.
 - **C9.** A shell attaching has no deadline and watches nothing, so an end of the sessions process leaves it waiting in its place (§11, §12). Planned: item 13, the attach bounded by the idle deadline.
 - **C10.** The connection writes by `Tcp.write` over `Http.renderResponse`, against E.0's shape rule 11, as §6 says. Done in the third leg: §6 names `Http.writeResponse`, and the code calls it.
 - **C11.** §6's "a 101 carries its own `Connection: Upgrade` and none of these" reads two ways (D22). Done in the third leg.
 - **C12.** `deploy/shell-start.sh` reads foo's output with `2>&1` where §13 says its standard error. Done in the third leg: §13 says both streams.
-- **C13.** Eight cases that cannot come answer a value where the style guide has them fault. Fix in the third leg: each faults.
-- **C14.** Three tests that launch the server take port 0 where the count of ports is wrong, and two others answer `Left`. Fix in the third leg.
+- **C13.** Eight cases that cannot come answer a value where the style guide has them fault. Done in the third leg: each faults.
+- **C14.** Three tests that launch the server take port 0 where the count of ports is wrong, and two others answer `Left`. Done in the third leg.
 - **C15.** Forms written more than once: `header` four times, `headed`, `isControl`, the test's certificate, and `next` three times and twice. Dropped: `header`, the certificate and `next` wait on lines 49 and 50, and sharing the rest would export a private helper.
 - **C16.** `src/hosts.ern` builds the site and reads every configured host on each request, where once would do. Done in the third leg for the site, which `decide` now takes from the server; the hosts' parse dropped, a few short texts, which held parsed would add a type to §6 and §9 (principle 5).
-- **C17.** Prefixes cut by hand where `String.stripPrefix` would do. Fix in the third leg.
+- **C17.** Prefixes cut by hand where `String.stripPrefix` would do. Done in the third leg.
 - **C18.** `src/shell.ern` line 130 takes `""` for no `Origin` or two. Done in the third leg.
-- **C19.** Names: `Waiting` for a cap reached, locals `object` that hide `Config.object`, and a wait's beginning named `start` and `key` where the guide has `since`. Fix in the third leg, each word searched first.
+- **C19.** Names: `Waiting` for a cap reached, locals `object` that hide `Config.object`, and a wait's beginning named `start` and `key` where the guide has `since`. Done in the third leg, each word searched first.
 - **C20.** `responded` compares `version.minor == 0` where the module compares whole versions. Done in the third leg.
 
 ### K, the cold reader

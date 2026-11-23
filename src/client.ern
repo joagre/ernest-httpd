@@ -302,8 +302,9 @@ let scratch : String = "build/client"
 
 // The configuration the client's test launches the server on: a plain
 // listener, the page's directory, the host client.localhost, no headers,
-// and a shell whose command is sh, a session living 2000 milliseconds from
-// its last key and warned 1000 before, two starts within a minute.
+// and a shell whose command is sh, a session living 4000 milliseconds from
+// its last key and warned 2000 before, so that the warning's seconds are
+// not one, two starts within a minute.
 let configuration : String =
     "{\"listeners\": [{\"kind\": \"plain\", \"address\": \"127.0.0.1\", \"port\": 0}],\n"
         <> " \"root\": \""
@@ -318,7 +319,7 @@ let configuration : String =
         <> " \"shell\": {\"path\": \"/shell/session\", \"client\": \"/shell/client.js\",\n"
         <> "           \"origins\": [\"http://client.localhost\"], \"command\": [\"sh\"],\n"
         <> "           \"most-at-once\": 4, \"per-address\": 4, \"starts\": {\"count\": 2, \"within\": 60000},\n"
-        <> "           \"lifetime\": 2000, \"warning\": 1000,\n"
+        <> "           \"lifetime\": 4000, \"warning\": 2000,\n"
         <> "           \"message-limit\": 65536, \"hangup\": 1000}}\n"
 
 // The page the browser loads: it imports the client, walks the scenario,
@@ -428,7 +429,7 @@ let unavailable : String = "fourth ended unavailable"
 
 // The lines the page reports, in order, the scenario of design §14.
 let scenario : List(String) =
-    ["limits {\"lifetime\":2000,\"mostAtOnce\":4,\"starts\":{\"count\":2,\"within\":60000},\"warning\":1000}",
+    ["limits {\"lifetime\":4000,\"mostAtOnce\":4,\"starts\":{\"count\":2,\"within\":60000},\"warning\":2000}",
      "start faults RangeError TypeError",
      "first attached false",
      "first ended takenOver",
@@ -436,8 +437,8 @@ let scenario : List(String) =
      "second faults RangeError TypeError",
      "second output 42",
      "second output 30 100",
-     "second warning 1000",
-     "second warning 1000",
+     "second warning 2000",
+     "second warning 2000",
      "second ended expired",
      "third attached false",
      "third ended stopped",
@@ -469,7 +470,11 @@ fn walked() : Either(String, List(String)) receiving Heard = {
     let path <-
         Either.mapLeft(written(), fn(error) = "cannot write " <> scratch <> ": " <> Io.show(error));
     let #(server, ports) <- Either.mapLeft(Smoke.launch(path, 1, None), Io.show);
-    let outcome = servedOn(server, ports);
+    let port = match ports {
+        [one] -> one
+      | _ -> fault("Smoke.launch answers a port for each of the count")
+    };
+    let outcome = servedOn(server, port);
     match outcome {
         Right(#(_, true)) -> Unit
       | _ -> terminated(server)
@@ -498,11 +503,7 @@ fn terminated(server : Address(Os.ProgramMsg)) : Unit = {
 // test's port closed. It answers the lines and whether the server was
 // ended at the scenario's line.
 fn servedOn(server : Address(Os.ProgramMsg),
-            ports : List(Int)) : Either(String, #(List(String), Bool)) receiving Heard = {
-    let port <- match ports {
-        [port] -> Right(port)
-      | _ -> Left("the server listens on " <> Io.show(ports))
-    };
+            port : Int) : Either(String, #(List(String), Bool)) receiving Heard = {
     let listening <- Either.mapLeft(Tcp.listen("127.0.0.1", 0), Io.show);
     let me = self();
     let acceptor = spawn(fn() = accepting(listening, me));
@@ -601,7 +602,7 @@ fn answering(socket : Address(Tcp.SocketMsg), test : Address(Heard)) : Unit = {
                 Http.Response(version = Http.http11,
                               status = 204,
                               headers = [Http.Header(name = "Connection", value = "close")]);
-            let _ = Tcp.write(socket, Http.renderResponse(noContent, <<>>), 5000);
+            let _ = Http.writeResponse(socket, noContent, <<>>, 5000);
             Unit
         }
       | Left(_) ->
