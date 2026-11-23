@@ -105,6 +105,9 @@ let changes : String = "CHANGES.md"
 
 let measure : Int = 150
 
+// The bytes of a paragraph's beginning shown, its last character whole.
+let shownBytes : Int = 60
+
 let notice : String =
     "paragraphs past 150 words, which no reader takes in whole; split each at its turn:"
 
@@ -301,7 +304,11 @@ fn counted(file : String, reading : Reading, line : String) : Reading = {
     let begun = if reading.words == 0 then
         Reading(..reading, start = reading.line, first = line, =indent, skip = isUnmeasured(line))
     else if reading.item && indent <= reading.indent then
-        Reading(..ended(file, reading), start = reading.line, first = line, =indent, skip = false)
+        Reading(..ended(file, reading),
+                start = reading.line,
+                first = line,
+                =indent,
+                skip = isUnmeasured(line))
     else
         reading;
     Reading(..begun, words = begun.words + List.size(String.words(line)))
@@ -313,29 +320,44 @@ fn ended(file : String, reading : Reading) : Reading = {
         Paragraph(=file,
                   line = reading.start,
                   words = reading.words,
-                  first = String.slice(reading.first, 0, 60))
+                  first = beginning(reading.first))
             :: reading.found
     else
         reading.found;
     Reading(..reading, words = 0, item = false, =found)
 }
 
+// A heading, a table row and an HTML line, which are no prose.
 fn isUnmeasured(line : String) : Bool =
     String.startsWith(line, "#") || String.startsWith(line, "|") || String.startsWith(line, "<")
 
-// A list item: "- ", "* ", or a number and a dot.
+// A list item: "- ", "* ", or a number, a small letter or none, a dot and a
+// space, "1. " or "1a. ".
 fn isItem(line : String) : Bool = {
-    let trimmed = String.trimStart(line);
-    String.startsWith(trimmed, "- ") || String.startsWith(trimmed, "* ") || isNumbered(trimmed)
+    let chars = String.toList(String.trimStart(line));
+    isBullet(chars)
+        || match afterNumber(chars) {
+            Some('.' :: ' ' :: _) -> true
+          | Some(letter :: '.' :: ' ' :: _) -> letter >= 'a' && letter <= 'z'
+          | _ -> false
+        }
 }
 
-fn isNumbered(trimmed : String) : Bool =
-    match String.words(trimmed) {
-        word :: _ :: _ -> Optional.isSome(numbered(word))
+fn isBullet(chars : List(Char)) : Bool =
+    match chars {
+        '-' :: ' ' :: _ -> true
+      | '*' :: ' ' :: _ -> true
       | _ -> false
     }
 
-// The number of a word "n.", a numbered item's or a section's.
+// The characters after the digits the characters begin with, or `None`
+// where they begin with none.
+fn afterNumber(chars : List(Char)) : Optional(List(Char)) = {
+    let #(digits, rest) = List.span(chars, Char.isAsciiDigit);
+    if List.isEmpty(digits) then None else Some(rest)
+}
+
+// The number of a word "n.", a section's.
 fn numbered(word : String) : Optional(Int) =
     if String.endsWith(word, ".") then
         String.toInt(String.slice(word, 0, String.size(word) - 1))
@@ -344,6 +366,13 @@ fn numbered(word : String) : Optional(Int) =
 
 fn indentation(line : String) : Int =
     String.size(line) - String.size(String.trimStart(line))
+
+// The line's first bytes as a finding shows them, a character they cut short
+// left out.
+fn beginning(line : String) : String = {
+    let #(text, _) = String.fromUtf8Piece(Bytes.slice(String.toUtf8(line), 0, shownBytes));
+    text
+}
 
 fn shown(paragraph : Paragraph) : String =
     placeOf(paragraph.file, paragraph.line)
@@ -852,7 +881,9 @@ let listsThePastMeasure = Test.Case(name = "lists a paragraph past the measure",
                [#(5, 151)])
 })
 
-/// A heading, a table row, a tag and fenced code are not measured.
+/// A heading, a table row, a tag and fenced code are not measured, and nor
+/// is a heading, a table row or a tag that ends a list item by its
+/// indentation.
 let leavesUnmeasured =
     Test.Case(name = "leaves a heading, a table, a tag and a fence unmeasured", run = fn() = {
         let text =
@@ -864,17 +895,39 @@ let leavesUnmeasured =
                 <> pastMeasure
                 <> "\n\n```\n"
                 <> pastMeasure
-                <> "\n```\n";
+                <> "\n```\n\n- item\n# "
+                <> pastMeasure
+                <> "\n\n- item\n| "
+                <> pastMeasure
+                <> "\n\n- item\n<"
+                <> pastMeasure
+                <> "\n";
         Test.equal(paragraphsOf("f.md", text), [])
     })
 
 /// A list item is a paragraph of its own, which ends at the next item and
-/// where its lines stop being indented past it.
+/// where its lines stop being indented past it; a numbered item may carry a
+/// letter.
 let readsItems = Test.Case(name = "reads a list item as a paragraph", run = fn() = {
-    let text = "- " <> pastMeasure <> "\n- short\n  " <> pastMeasure <> "\nplain after\n";
+    let text =
+        "- "
+            <> pastMeasure
+            <> "\n- short\n  "
+            <> pastMeasure
+            <> "\nplain after\n1a. "
+            <> pastMeasure
+            <> "\n";
     Test.equal(List.map(paragraphsOf("f.md", text),
                         fn(paragraph) = #(paragraph.file, paragraph.line)),
-               [#("f.md", 1), #("f.md", 2)])
+               [#("f.md", 1), #("f.md", 2), #("f.md", 5)])
+})
+
+/// A paragraph is shown by its first 60 bytes, a character they cut short
+/// left out.
+let showsTheBeginning = Test.Case(name = "shows a paragraph's first bytes", run = fn() = {
+    let line = String.repeat("a", 59) <> "§ " <> pastMeasure;
+    Test.equal(List.map(paragraphsOf("f.md", line), shown),
+               ["f.md:1: 152 words  " <> String.repeat("a", 59)])
 })
 
 /// A backticked path under a top is found outside fenced code; one with a

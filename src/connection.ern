@@ -18,7 +18,7 @@
 ///
 /// On a socket a TLS listener accepted, the first read runs the handshake,
 /// within the idle deadline, and a handshake that fails closes the
-/// connection as a read that fails does, without a response.
+/// connection as a read that fails does, without a response (design §2).
 ///
 /// Each response written is told to the access log as an entry, and the
 /// listener is told when a head is read and when its response is written,
@@ -78,10 +78,10 @@ type Next =
 /// told, until the connection closes; then it returns.
 ///
 /// The connection closes without a response where the client sends nothing
-/// within the idle deadline or closes, and after a response that refuses a
-/// head or a request, after a 1.1 request that asks it to close, and after
-/// a 1.0 request that does not ask it to keep alive; after a 101 it closes
-/// when its shell does.
+/// within the idle deadline, closes or a read fails, and after a response
+/// that refuses a head or a request, after a 1.1 request that asks it to
+/// close, and after a 1.0 request that does not ask it to keep alive; after
+/// a 101 it closes when its shell does.
 export fn serve(socket : Address(Tcp.SocketMsg),
                 server : Server,
                 listener : Address(Told)) : Unit receiving Shell.ShellMsg =
@@ -93,7 +93,9 @@ export fn serve(socket : Address(Tcp.SocketMsg),
     }
 
 // The next request: its first bytes waited for within the idle deadline
-// where none were carried, and then its head.
+// where none were carried, and then its head. The connection closes where
+// none come, the client closes or the read fails, as a failed TLS
+// handshake's does (design §2).
 fn nextRequest(connection : Connection, carried : Bytes) : Unit receiving Shell.ShellMsg =
     if Bytes.isEmpty(carried) then
         match Tcp.read(connection.socket, connection.server.config.timeouts.idle) {
@@ -104,7 +106,8 @@ fn nextRequest(connection : Connection, carried : Bytes) : Unit receiving Shell.
         head(connection, carried)
 
 // The head read within the head deadline and the request answered, or the
-// head refused, or the connection closed where the client went away.
+// head refused, or the connection closed where the client went away or
+// the read fails.
 fn head(connection : Connection, carried : Bytes) : Unit receiving Shell.ShellMsg = {
     let config = connection.server.config;
     let limits = Http.Limits(line = config.limits.requestLine, headers = config.limits.headers);
@@ -357,14 +360,16 @@ fn header(name : String, value : String) : Http.Header =
 
 // What a test's process takes: the entries its connection tells the log,
 // what it tells its listener, the word of the connection's process that its
-// serve has returned, its end, and a client's socket a process of its own
-// connected.
+// serve has returned, its end, a client's socket a process of its own
+// connected, and the end of the connection's socket, where a test waits on
+// it.
 type Seen =
     Logged(AccessLog.LogMsg)
   | Heard(Told)
   | Finished(Process)
   | Ended(Down)
   | Connected(Either(Io.Error, Address(Tcp.SocketMsg)))
+  | SocketEnded(Down)
 
 // The scratch directory the tests serve their site from.
 let scratch : String = "build/scratch/connection"
@@ -412,6 +417,13 @@ fn connected(idle : Int, head : Int) : Either(String, Address(Tcp.SocketMsg)) re
 // A client's socket to a connection of the server served in a process of
 // its own.
 fn connectedTo(server : Server) : Either(String, Address(Tcp.SocketMsg)) receiving Seen =
+    Either.map(sockets(server), fn(#(client, _)) = client)
+
+// A client's socket to a connection of the server served in a process of
+// its own, and the connection's socket.
+fn sockets(server : Server) : Either(String,
+                                     #(Address(Tcp.SocketMsg),
+                                       Address(Tcp.SocketMsg))) receiving Seen =
     Either.mapLeft({
                        let listening <- Tcp.listen("127.0.0.1", 0);
                        let port <- Tcp.port(listening);
@@ -419,7 +431,7 @@ fn connectedTo(server : Server) : Either(String, Address(Tcp.SocketMsg)) receivi
                        let socket <- Tcp.accept(listening, 5000);
                        Tcp.closeListener(listening);
                        serving(socket, server);
-                       Right(client)
+                       Right(#(client, socket))
                    },
                    Io.show)
 
@@ -650,7 +662,7 @@ fn shownEntry(message : AccessLog.LogMsg) : String =
                 <> " "
                 <> Int.toString(size)
       | AccessLog.Flush(_) ->
-            "Flush"
+            fault("a connection tells its log entries alone, and never a Flush")
     }
 
 // design §6: GET and HEAD of a file and of a missing one over one
@@ -828,45 +840,50 @@ let endless : Bytes =
                       <> String.repeat("X-Trickle: " <> String.repeat("t", 47) <> "\r\n", 4))
 
 // The bytes written to the client's socket one at a time, from the index,
-// each once the one before has been given 10 milliseconds, until the log is
-// told an entry, which the connection tells before it closes: the entry, as
-// `told` shows it, or a Left where the bytes run out first. A write's answer
-// is not read: one after the connection's close may fail, and the entry is
-// then told already.
-fn trickled(client : Address(Tcp.SocketMsg),
-            bytes : Bytes,
-            index : Int) : Either(String, String) receiving Seen =
+// each once a read of 10 milliseconds has taken nothing after the one
+// before, until a read takes the first bytes of the response, which the
+// connection writes before it closes: those bytes, or a Left where the
+// head's bytes run out first. The client reads before it writes again,
+// since a write that fails after the connection's close loses what had
+// arrived and no read had taken (Appendix E.18).
+fn trickled(client : Address(Tcp.SocketMsg), bytes : Bytes, index : Int) : Either(String, Bytes) =
     if index == Bytes.size(bytes) then
         Left("the head's " <> Int.toString(index) <> " bytes ran out before an answer")
     else {
-        let _ = Tcp.write(client, Bytes.slice(bytes, index, index + 1), 5000);
-        receive {
-            Logged(entry) -> Right(shownEntry(entry))
-          | after 10 -> trickled(client, bytes, index + 1)
+        let _ <-
+            Either.mapLeft(Tcp.write(client, Bytes.slice(bytes, index, index + 1), 5000), Io.show);
+        match Tcp.read(client, 10) {
+            Right(read) -> Right(read)
+          | Left(Io.Timeout) -> trickled(client, bytes, index + 1)
+          | Left(error) -> Left(Io.show(error))
         }
     }
 
 // design §6: a head that does not end in time answers 408, the head
 // deadline bounding the whole head and not each read: a head that comes a
-// byte at a time, 10 milliseconds or a little more apart, and never ends is
-// answered 408 at the head deadline, 200 milliseconds, before its bytes run
-// out, told to the log with no request and to the listener as
-// ResponseWritten alone, and the connection returns; a deadline begun again
-// by each read would see the bytes run out first. A regression test,
-// written after the code: it does not cover the response's bytes, which
-// answersSlowHeads holds for a head that stops, since a byte the client
-// writes after the connection's close resets the connection, and a write
-// after the reset loses what the client's socket holds of the response.
+// byte at a time, each once a read of 10 milliseconds has taken nothing,
+// and never ends is answered 408 at the head deadline, 200 milliseconds,
+// before its bytes run out; the client reads the 408 whole and then the
+// close, the response is told to the log with no request and to the
+// listener as ResponseWritten alone, and the connection returns; a
+// deadline begun again by each read would see the bytes run out first. A
+// regression test, written after the code.
 let answersTricklingHeads =
     Test.Case(name = "answers a head that trickles past its deadline with 408", run = fn() = {
         let result = {
             let client <- connected(5000, 200);
-            let entry <- trickled(client, endless, 0);
-            let #(_, heard) = told(1);
-            Right(#(entry, heard, ended()))
+            let first <- trickled(client, endless, 0);
+            let #(response, _) <- received(client, first, "GET");
+            let end = next(client);
+            let #(entries, heard) = told(1);
+            Right(#(response, end, entries, heard, ended()))
         };
         Test.equal(result,
-                   Right(#("127.0.0.1 - 408 20", ["ResponseWritten"], "Returned, told nothing")))
+                   Right(#(refused(408),
+                           "closed",
+                           ["127.0.0.1 - 408 20"],
+                           ["ResponseWritten"],
+                           "Returned, told nothing")))
     })
 
 // A connection's end: whether it told anything the test has not taken,
@@ -928,8 +945,10 @@ let largeEntry : String = "127.0.0.1 GET /large.bin HTTP/1.1 200 " <> Int.toStri
 // A client's socket to a connection whose write deadline is the one given,
 // the scratch site's large file written first, and the client's requests
 // for the file, enough that their responses pass `mostUnread`, written in
-// one write.
-fn pipelined(write : Int) : Either(String, Address(Tcp.SocketMsg)) receiving Seen = {
+// one write: the client's socket and the connection's.
+fn pipelined(write : Int) : Either(String,
+                                   #(Address(Tcp.SocketMsg),
+                                     Address(Tcp.SocketMsg))) receiving Seen = {
     let server <- served(5000, 5000);
     let _ <-
         Either.mapLeft(Fs.write(Path(scratch <> "/site/large.bin"),
@@ -937,12 +956,13 @@ fn pipelined(write : Int) : Either(String, Address(Tcp.SocketMsg)) receiving See
                                 5000),
                        Io.show);
     let timeouts = Config.Timeouts(..server.config.timeouts, =write);
-    let client <- connectedTo(Server(..server, config = Config.Config(..server.config, =timeouts)));
+    let #(client, socket) <-
+        sockets(Server(..server, config = Config.Config(..server.config, =timeouts)));
     let requests =
         Bytes.repeat(Http.renderRequest(request("GET", "/large.bin", 1, [host]), <<>>),
                      mostUnread / largeSize + 1);
     let _ <- Either.mapLeft(Tcp.write(client, requests, 5000), Io.show);
-    Right(client)
+    Right(#(client, socket))
 }
 
 // What the connection told until its serve returned, as `told` shows it,
@@ -987,24 +1007,53 @@ fn cutShort(heard : List(String)) : String = {
         Io.show(heard)
 }
 
-// The count of responses read from the client's socket, from the bytes
-// carried first, each the large file's 200 read whole; a Left for anything
-// else.
-fn largeReceived(client : Address(Tcp.SocketMsg),
-                 carried : Bytes,
-                 count : Int) : Either(String, Unit) =
-    if count == 0 then
-        Right(Unit)
-    else {
+// The responses read from the client's socket until the connection
+// closes, from the bytes carried first, each the large file's 200 read
+// whole: their count, or a Left for anything else, a response the close
+// cut short among them.
+fn largeToTheClose(client : Address(Tcp.SocketMsg),
+                   carried : Bytes,
+                   count : Int) : Either(String, Int) =
+    if Bytes.isEmpty(carried) then match Tcp.read(client, 5000) {
+        Right(bytes) -> largeToTheClose(client, bytes, count)
+      | Left(Io.Closed) -> Right(count)
+      | Left(error) -> Left(Io.show(error))
+    } else {
         let #(response, rest) <-
             Either.mapLeft(Http.readResponse(client, carried, Http.defaultLimits, 5000), Io.show);
         let #(body, beyond) <-
             Either.mapLeft(Http.readResponseBody(client, rest, response, largeSize, 5000), Io.show);
         if response.status == 200 && Bytes.size(body) == largeSize then
-            largeReceived(client, beyond, count - 1)
+            largeToTheClose(client, beyond, count + 1)
         else
             Left("answered " <> Int.toString(response.status))
     }
+
+// What a client read to the close, as a test compares it: `the responses
+// told, and the close` where it read each response told written whole, and
+// the one cut short whole or not at all, since a write past its deadline
+// may still be sent (Appendix E.18), and then the close; and otherwise what
+// it read.
+fn toTheClose(read : Either(String, Int), written : Int) : String =
+    match read {
+        Right(count) when count == written || count == written + 1 ->
+            "the responses told, and the close"
+      | Right(count) ->
+            Int.toString(count) <> " of " <> Int.toString(written) <> " told, and the close"
+      | Left(text) ->
+            text
+    }
+
+// The connection's socket waited on until it ends, which it does as its
+// close begins (Appendix E.18), within 5000 milliseconds.
+fn socketEnded(socket : Address(Tcp.SocketMsg)) : Either(String, Unit) receiving Seen = {
+    let process = Process.fromAddress(socket);
+    monitor(process, SocketEnded);
+    receive {
+        SocketEnded(down) when down.process == process -> Right(Unit)
+      | after 5000 -> Left("the connection's socket did not end")
+    }
+}
 
 // design §6: a write that fails closes the connection, and is told neither
 // to the log nor to the listener: a client writes its requests for the
@@ -1019,7 +1068,7 @@ fn largeReceived(client : Address(Tcp.SocketMsg),
 // it, since the host takes that write whole and the connection tells it.
 let closesWhereAWriteFails = Test.Case(name = "closes where a write fails", run = fn() = {
     let result = {
-        let client <- pipelined(60000);
+        let #(client, _) <- pipelined(60000);
         Tcp.close(client);
         let #(heard, end) = toldToTheEnd([]);
         Right(#(cutShort(heard), end))
@@ -1027,38 +1076,60 @@ let closesWhereAWriteFails = Test.Case(name = "closes where a write fails", run 
     Test.equal(result, Right(#("cut short", "Returned")))
 })
 
-// design §6: a write that does not end within the write deadline, 200
+// design §2, §6: a write that does not end within the write deadline, 200
 // milliseconds here, closes the connection, and is told neither to the log
 // nor to the listener: a client writes its requests for the large file in
 // one write and reads nothing, the connection's responses are taken and
 // told until the host holds what the kernel will not, and the next write
-// is held past its deadline; the connection returns no sooner than the
-// deadline after the client began to connect, and the client then reads each
-// response told, whole. A regression test, written after the code: it does
-// not cover a deadline that passes while the host takes a write, which it
-// takes whole, nor what the client reads after the responses told, the one
-// cut short, whose bytes may still be sent, and the close, which the host
-// makes once it has sent what it held, at a time Appendix E.18 does not
-// state.
+// is held past its deadline; the connection then closes its socket, whose
+// process ends as the close begins (Appendix E.18), no sooner than the
+// deadline after the client began to connect. The client reads only after
+// that end, so that its reading frees no write before the deadline: each
+// response told, whole, the one cut short whole or not at all, and then
+// the close, which over TCP follows the last byte; once what the socket
+// held is with the kernel the close answers, and the connection returns. A
+// regression test, written after the code: it does not cover a deadline
+// that passes while the host takes a write, which it takes whole, nor a
+// client that never reads, whose bytes the close drops 5 seconds after its
+// last take.
 let closesWhereAWriteWaits =
     Test.Case(name = "closes where a write does not end in time", run = fn() = {
         let result = {
             let start = Clock.monotonic();
-            let client <- pipelined(200);
-            let #(heard, end) = toldToTheEnd([]);
+            let #(client, socket) <- pipelined(200);
+            let _ <- socketEnded(socket);
             let waited = if Clock.monotonic() - start >= 200 then
                 "past the deadline"
             else
                 "before the deadline";
-            Right(#(cutShort(heard), end, waited, largeReceived(client, <<>>, writtenOf(heard))))
+            let read = largeToTheClose(client, <<>>, 0);
+            let #(heard, end) = toldToTheEnd([]);
+            Right(#(cutShort(heard), end, waited, toTheClose(read, writtenOf(heard))))
         };
-        Test.equal(result, Right(#("cut short", "Returned", "past the deadline", Right(Unit))))
+        Test.equal(result,
+                   Right(#("cut short",
+                           "Returned",
+                           "past the deadline",
+                           "the responses told, and the close")))
     })
 
-// design §6: on a TLS listener the first read runs the handshake: a TLS
-// client is served over a connection kept alive, and a client that writes
-// its request in plain text fails the handshake, which closes the
-// connection without a response and without a line, and it returns.
+// What a client of a TLS listener that wrote plain text reads first: `no
+// response` where it is a TLS alert, a record of type 21, or the close, and
+// otherwise what came.
+fn unanswered(client : Address(Tcp.SocketMsg)) : String =
+    match Tcp.read(client, 5000) {
+        Right(bytes) when Bytes.startsWith(bytes, <<21>>) -> "no response"
+      | Left(Io.Closed) -> "no response"
+      | other -> Io.show(other)
+    }
+
+// design §2, §6: on a TLS listener the first read runs the handshake: a
+// TLS client is served over a connection kept alive, and a client that
+// writes its request in plain text fails the handshake, which closes the
+// connection as a read that fails does, without a response and without a
+// line. The client reads what the server sends, the alert or the close,
+// and then closes, so that the server's close, which waits while the
+// client holds the connection, answers, and the connection returns.
 let servesOverTls = Test.Case(name = "serves a connection over TLS", run = fn() = {
     let overTls = {
         let client <- tlsConnected(TlsClient);
@@ -1077,7 +1148,9 @@ let servesOverTls = Test.Case(name = "serves a connection over TLS", run = fn() 
                                              <<>>,
                                              5000),
                            Io.show);
-        Right(ended())
+        let answered = unanswered(client);
+        Tcp.close(client);
+        Right(#(answered, ended()))
     };
     Test.equal(#(overTls, plainText),
                #(Right(#([file([header("Content-Length", "5")]),
@@ -1086,7 +1159,7 @@ let servesOverTls = Test.Case(name = "serves a connection over TLS", run = fn() 
                          ["127.0.0.1 GET /a.txt HTTP/1.1 200 5",
                           "127.0.0.1 GET /a.txt HTTP/1.1 200 5"],
                          "Returned, told nothing")),
-                 Right("Returned, told nothing")))
+                 Right(#("no response", "Returned, told nothing"))))
 })
 
 // design §6, §9: a request the connection does not refuse is answered as

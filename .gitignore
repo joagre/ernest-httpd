@@ -2,7 +2,7 @@
 build/
 *.erc
 
-# What make lib fills: each dependency unpacked, each Erlang application linked
+# The packages package.conf names, each archive and what ern unpack made of it
 lib/
 
 # What make xterm fills: the example site's terminal, fetched

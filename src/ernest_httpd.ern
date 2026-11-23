@@ -619,13 +619,16 @@ fn described(socket : Address(Tcp.SocketMsg),
 // else changed, so that a rule the configuration breaks fails the test: on
 // the plain listener its pages, stylesheet and image with their types, the
 // guide's directory answered 301 with its slash and then served as its
-// index, a path that leads nowhere answered with the root's 404.html, and a
-// host that is neither answered 421; on the redirect listener the
-// challenge's file and a page redirected to the canonical host; the shell's
-// handshake from the configured origin answered 101, its shell closed with
-// 1001 at the end; and the smoke test's checks, run over plain HTTP against
-// its two ports, for its first redirect host, at its client's path and at
-// its shell's path from its shell's origin, each passed, `ern shell` the
+// index, a path that leads nowhere answered with the root's 404.html, a
+// target that holds `[` and `]`, which Http.target reads encoded, read as
+// any other, the root with such a query served as its index and such a
+// path, which leads nowhere, answered with the 404.html, and a host that
+// is neither answered 421; on the redirect listener the challenge's file
+// and a page redirected to the canonical host; the shell's handshake from
+// the configured origin answered 101, its shell closed with 1001 at the
+// end; and the smoke test's checks, run over plain HTTP against its two
+// ports, for its first redirect host, at its client's path and at its
+// shell's path from its shell's origin, each passed, `ern shell` the
 // program its shell's check types `1 + 2` to.
 let servesTheExample = Test.Case(name = "serves the example site", run = fn() = {
     let challengeTarget = "/.well-known/acme-challenge/LoqXcYV8q5ONbJQxbmR7SCTNo3tiAXDfowyjxAjEuX0";
@@ -647,11 +650,13 @@ let servesTheExample = Test.Case(name = "serves the example site", run = fn() = 
         let site <- Tcp.connect("127.0.0.1", plainPort, 5000);
         let served <-
             List.tryMap([#("/", "localhost"),
+                         #("/?a[]=1", "localhost"),
                          #("/style.css", "localhost"),
                          #("/images/processes.svg", "localhost"),
                          #("/guide", "localhost"),
                          #("/guide/", "localhost"),
                          #("/nothing", "localhost"),
+                         #("/a[b]", "localhost"),
                          #("/", "elsewhere")],
                         fn(#(target, host)) = described(site, target, host));
         let redirect <- Tcp.connect("127.0.0.1", redirectPort, 5000);
@@ -682,10 +687,12 @@ let servesTheExample = Test.Case(name = "serves the example site", run = fn() = 
         let html = "text/html; charset=utf-8";
         Right(#(#(served <> redirected, response.status, shellEnd, status, failed),
                 #([#(200, html, index),
+                   #(200, html, index),
                    #(200, "text/css; charset=utf-8", style),
                    #(200, "image/svg+xml", image),
                    #(301, "/guide/", <<>>),
                    #(200, html, guide),
+                   #(404, html, notFound),
                    #(404, html, notFound),
                    #(421, "text/plain; charset=utf-8", String.toUtf8("421 Misdirected Request\n")),
                    #(200, "application/octet-stream", challenge),

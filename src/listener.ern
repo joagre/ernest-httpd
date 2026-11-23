@@ -258,8 +258,10 @@ fn ended(connections : Map(Process, Open), message : ListenerMsg) : Map(Process,
             Tcp.close(socket);
             connections
         }
-      | Accepted(Left(_)) or AcceptorEnded(_) or Retry(_) or Stop ->
+      | Accepted(Left(_)) or Retry(_) or Stop ->
             connections
+      | AcceptorEnded(_) ->
+            fault("the acceptor ends once, and acceptorEnded takes its end itself")
     }
 
 //

@@ -393,7 +393,10 @@ export fn upgrade(socket : Address(Tcp.SocketMsg),
 /// The message as a client sends it: one frame masked with a key of its
 /// own, `Crypto.randomBytes(4)`.
 export fn masked(message : WebSocket.Message) : Bytes =
-    Optional.withDefault(WebSocket.encodeMasked(message, Crypto.randomBytes(4)), <<>>)
+    match WebSocket.encodeMasked(message, Crypto.randomBytes(4)) {
+        Some(frame) -> frame
+      | None -> fault("Crypto.randomBytes(4) is four bytes, the key encodeMasked takes")
+    }
 
 /// A shell's attach and its output, the messages the socket carries after
 /// a resize that attaches it, the bytes carried first, decoded with the

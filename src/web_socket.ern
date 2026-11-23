@@ -35,7 +35,7 @@
 ///
 /// ```ernest
 /// Bytes.toHex(WebSocket.encode(WebSocket.Text("Hello")))
-/// // => "810548656C6C6F"
+/// // => "810548656c6c6f"
 /// ```
 
 //
@@ -56,7 +56,7 @@
 ///
 /// ```ernest
 /// Bytes.toHex(WebSocket.encode(WebSocket.Close(code = Some(1000), reason = "done")))
-/// // => "880603E8646F6E65"
+/// // => "880603e8646f6e65"
 /// ```
 export type Message =
     Text(String)
@@ -448,7 +448,7 @@ export fn closeCode(error : Error) : Int =
 ///
 /// ```ernest
 /// Bytes.toHex(WebSocket.encode(WebSocket.Ping(String.toUtf8("Hello"))))
-/// // => "890548656C6C6F"
+/// // => "890548656c6c6f"
 /// ```
 ///
 /// The header of the RFC's binary message of 256 bytes, its length in 16
@@ -460,7 +460,7 @@ export fn closeCode(error : Error) : Int =
 ///     Bytes.toHex(Bytes.slice(frame, 0, Bytes.size(frame) - count))
 /// };
 /// [header(256), header(65536)]
-/// // => ["827E0100", "827F0000000000010000"]
+/// // => ["827e0100", "827f0000000000010000"]
 /// ```
 export fn encode(message : Message) : Bytes = {
     let #(opcode, payload) = opcodeAndPayload(message);
@@ -486,7 +486,7 @@ export fn encode(message : Message) : Bytes = {
 /// let key = <<0x37, 0xfa, 0x21, 0x3d>>;
 /// [Optional.map(WebSocket.encodeMasked(WebSocket.Text("Hello"), key), Bytes.toHex),
 ///  Optional.map(WebSocket.encodeMasked(WebSocket.Text("Hello"), <<1, 2, 3>>), Bytes.toHex)]
-/// // => [Some("818537FA213D7F9F4D5158"), None]
+/// // => [Some("818537fa213d7f9f4d5158"), None]
 /// ```
 export fn encodeMasked(message : Message, key : Bytes) : Optional(Bytes) =
     match key {

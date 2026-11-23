@@ -114,9 +114,10 @@ fn named(config : Config.Config, request : Http.Request) : Named = {
 /// host's request answers 301, and the canonical host's is `Served`.
 ///
 /// A 301's `Location` is `https://`, the canonical host and the target's
-/// path and query as written, and it has no body; where the target is in
-/// neither origin nor absolute form, it answers 400 instead. A `HEAD`'s
-/// response has its body dropped, as `Static.withoutBody` drops it.
+/// path and query, as `Static.pathAndQuery` reads them, and it has no body;
+/// where the target is in neither origin nor absolute form, it answers 400
+/// instead. A `HEAD`'s response has its body dropped, as
+/// `Static.withoutBody` drops it.
 export fn decide(config : Config.Config,
                  challenge : Optional(Static.Site),
                  request : Http.Request,
@@ -167,7 +168,8 @@ fn challengeResponse(challengeSite : Static.Site,
 }
 
 // The 301 to the canonical host over HTTPS, the target's path and query as
-// written, with no body; 400 for a target of another form.
+// Static.pathAndQuery reads them, with no body; 400 for a target of another
+// form.
 fn redirected(config : Config.Config, request : Http.Request, ms : Int) : #(Http.Response, Bytes) =
     match Static.pathAndQuery(request) {
         Some(written) -> {
@@ -537,15 +539,19 @@ let servesTheChallenge =
                                       plainError(400))]))
 
 // design §9: a 301's Location is https://, the canonical host as the
-// configuration writes it, and the target's path and query as written, `/`
-// for an absolute-form target's empty path; a target of another form
-// answers 400 where a 301 is due.
+// configuration writes it, and the target's path and query as
+// Static.pathAndQuery reads them, each character G.11 names percent-encoded
+// and an encoding kept, `/` for an absolute-form target's empty path; a
+// target of another form answers 400 where a 301 is due.
 let writesTheRedirect =
     Test.Case(name = "writes a redirect's location",
               run = fn() =
                   decided([onRedirect("/a%20b.txt?q=%2F&r",
                                       "ernest-lang.org",
                                       moved("https://Ernest-Lang.org/a%20b.txt?q=%2F&r")),
+                           onRedirect("/a[b]?q={1}",
+                                      "ernest-lang.org",
+                                      moved("https://Ernest-Lang.org/a%5Bb%5D?q=%7B1%7D")),
                            onRedirect("http://www.ernest-lang.org",
                                       "example.com",
                                       moved("https://Ernest-Lang.org/")),
@@ -576,7 +582,7 @@ let dropsHeadBodies = Test.Case(name = "drops a body for a HEAD", run = fn() = {
                           headers = headers <> [header("Content-Length", size)],
                           body = Some(""))
           | BySite ->
-                BySite
+                fault("sized is given the answers Hosts writes alone, and never BySite")
         };
     decided([head(None, "/a.txt", "example.com", sized(plainError(421), "24")),
              head(None,

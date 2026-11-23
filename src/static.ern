@@ -160,9 +160,9 @@ fn get(site : Site, request : Http.Request, ms : Int) : #(Http.Response, Bytes) 
         }
     }
 
-// The path of a directory asked for without its `/`: the path as the target
-// wrote it with `/` appended, its leading `/`s made one, since two would
-// begin a host's name.
+// The path of a directory asked for without its `/`: the path as
+// Http.target writes it with `/` appended, its leading `/`s made one, since
+// two would begin a host's name.
 fn location(written : String) : String = {
     let #(_, rest) = List.span(String.toList(written), fn(char) = char == '/');
     "/" <> String.fromList(rest) <> "/"
@@ -217,8 +217,9 @@ fn refused(path : Path, cause : Io.Error) : #(Http.Response, Bytes) = {
 // The target
 //
 
-// What a target asks for: its path as written; the segments it names under
-// the root; and whether it asks for a directory.
+// What a target asks for: its path as Http.target writes it, the characters
+// G.11 names percent-encoded; the segments it names under the root; and
+// whether it asks for a directory.
 type Asked = Asked(written : String, segments : List(String), asksDirectory : Bool)
 
 // The target read, its path split into segments and each decoded, or the
@@ -244,9 +245,11 @@ fn beginsWithDot(part : String) : Bool =
       | _ -> false
     }
 
-/// The target's path and, where it has a query, `?` and the query, as the
-/// client wrote them, `/` standing for an absolute-form target's empty
-/// path; `None` for a target of another form, which `serve` answers 400.
+/// The target's path and, where it has a query, `?` and the query, as
+/// `Http.target` reads them, which percent-encodes a character RFC 3986
+/// does not write and a `%` that begins no encoding, `/` standing for an
+/// absolute-form target's empty path; `None` for a target of another form,
+/// which `serve` answers 400.
 ///
 /// The target is read by `Http.target`, in origin form, a path that
 /// begins with `/`, or in absolute form, a scheme and an authority that
@@ -258,9 +261,10 @@ fn beginsWithDot(part : String) : Bool =
 /// let get =
 ///     fn(target) = Http.Request(method = "GET", =target, version = Http.http11, headers = []);
 /// #(Static.pathAndQuery(get("/docs?page=2")),
+///   Static.pathAndQuery(get("/?a[]=1")),
 ///   Static.pathAndQuery(get("http://ernest-lang.org?q=1")),
 ///   Static.pathAndQuery(get("*")))
-/// // => #(Some("/docs?page=2"), Some("/?q=1"), None)
+/// // => #(Some("/docs?page=2"), Some("/?a%5B%5D=1"), Some("/?q=1"), None)
 /// ```
 export fn pathAndQuery(request : Http.Request) : Optional(String) =
     Optional.map(form(request),
@@ -376,6 +380,13 @@ fn prepared() : Either(Io.Error, Unit) = {
     let _ <- written("site/a.txt", "alpha");
     let _ <- written("site/a b.txt", "space");
     let _ <- written("site/\u{e9}.txt", "e acute");
+    let _ <- written("site/a|b.txt", "bar");
+    let _ <- written("site/a[b]", "brackets");
+    let _ <- written("site/%zz", "percent zz");
+    let _ <- written("site/a.txt%4", "percent 4");
+    let _ <- written("site/a.txt%", "percent");
+    let _ <- Fs.makeDir(Path(scratch <> "/site/[docs]"), 5000);
+    let _ <- written("site/[docs]/index.html", "bracketed docs");
     let _ <- written("site/data.bin", "bin");
     let _ <- written("site/.hidden", "hidden");
     let _ <- written("site/docs/index.html", "docs");
@@ -576,14 +587,13 @@ let answersUnmodified = Test.Case(name = "answers a file not modified since", ru
 })
 
 // design §5: the path's rules that answer 400: a target Http.target reads
-// as none, one holding a character RFC 3986 does not write among them, a
+// as none, one holding a character outside the visible ASCII among them, a
 // reference of another form, absolute form without an authority or naming
-// userinfo among them, an encoded `/`, a bad `%`, bytes that are not
-// UTF-8, a control character, and `..`, written or encoded. The cases of
-// characters RFC 3986 does not write, of userinfo, of a scheme without an
-// authority and of a fragment are a regression test's, written after the
-// code: they do not cover every character Uri.parse refuses, which G.12
-// owns.
+// userinfo among them, an encoded `/`, bytes that are not UTF-8, a control
+// character, and `..`, written or encoded. The cases of a character
+// outside the visible ASCII, of userinfo, of a scheme without an authority
+// and of a fragment are a regression test's, written after the code: they
+// do not cover every character Uri.parse refuses, which G.12 owns.
 let refusesPaths =
     Test.Case(name = "refuses a bad path with 400",
               run = fn() =
@@ -595,15 +605,10 @@ let refusesPaths =
                                    "http:/ernest-lang.org/a.txt",
                                    "http:a.txt",
                                    "http://user@ernest-lang.org/a.txt",
-                                   "/a|b.txt",
                                    "/\u{301}/a.txt",
-                                   "/a.txt?a[]=1",
                                    "/a.txt#top",
                                    "/docs%2Findex.html",
                                    "/docs%2findex.html",
-                                   "/%zz",
-                                   "/a.txt%4",
-                                   "/a.txt%",
                                    "/%FF.txt",
                                    "/a%00.txt",
                                    "/a%7F.txt",
@@ -612,6 +617,25 @@ let refusesPaths =
                                    "/docs/../a.txt",
                                    "/%2E%2E/a.txt"],
                                   fn(target) = getting(withPage, target, plainError(400)))))
+
+// design §5: the path and the query are as Http.target reads them, each
+// character G.11 names and each `%` not before two hexadecimal digits
+// percent-encoded: a segment that holds one is decoded to the name as the
+// client wrote it, a query that holds one is ignored, and a directory's 301
+// has the path so encoded as its Location, which names the directory.
+let readsEncodedTargets =
+    Test.Case(name = "reads a target with characters Http.target encodes", run = fn() = {
+        let untyped = fn(body) = fileAnswer("application/octet-stream", body);
+        served([getting(withPage, "/a|b.txt", textFile("bar")),
+                getting(withPage, "/a[b]", untyped("brackets")),
+                getting(withPage, "/%zz", untyped("percent zz")),
+                getting(withPage, "/a.txt%4", untyped("percent 4")),
+                getting(withPage, "/a.txt%", untyped("percent")),
+                getting(withPage, "/a.txt?a[]=1", textFile("alpha")),
+                getting(withPage, "/?a[]=1", htmlFile("home")),
+                getting(withPage, "/[docs]", redirect("/%5Bdocs%5D/")),
+                getting(withPage, "/%5Bdocs%5D/", htmlFile("bracketed docs"))])
+    })
 
 // design §5: a segment that begins with a dot is not found, though the
 // file is there, and `..` is answered 400 before it.
@@ -649,18 +673,20 @@ let readsAbsoluteForm =
                           getting(withPage, "web+x.1-2://ernest-lang.org/a.txt", textFile("alpha")),
                           getting(withPage, "http://ernest-lang.org/docs", redirect("/docs/"))]))
 
-// design §5: pathAndQuery answers the target's path and query: an
-// origin-form target whole, an absolute-form one after its scheme and its
-// authority, `/` for its empty path, before a query or not; and None for a
-// target of another form, an OPTIONS's `*` and an authority that names
-// userinfo among them. Those two are a regression test's cases, written
-// after the code.
+// design §5: pathAndQuery answers the target's path and query as
+// Http.target reads them, each character G.11 names and each `%` not before
+// two hexadecimal digits percent-encoded: an origin-form target whole, an
+// absolute-form one after its scheme and its authority, `/` for its empty
+// path, before a query or not; and None for a target of another form, an
+// OPTIONS's `*` and an authority that names userinfo among them. Those two
+// are a regression test's cases, written after the code.
 let readsPathAndQuery =
     Test.Case(name = "reads a target's path and query",
               run = fn() =
                   Test.equal(List.map(["/",
                                        "/docs?page=2",
                                        "//docs/../a.txt?x=/y",
+                                       "/a[b]%zz?q={1}|%25",
                                        "http://ernest-lang.org/docs?page=2",
                                        "http://ernest-lang.org",
                                        "http://ernest-lang.org?q=/a.txt",
@@ -676,6 +702,7 @@ let readsPathAndQuery =
                              [Some("/"),
                               Some("/docs?page=2"),
                               Some("//docs/../a.txt?x=/y"),
+                              Some("/a%5Bb%5D%25zz?q=%7B1%7D%7C%25"),
                               Some("/docs?page=2"),
                               Some("/"),
                               Some("/?q=/a.txt"),

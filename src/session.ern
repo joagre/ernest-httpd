@@ -751,14 +751,28 @@ fn lines(char : String) : String =
     String.repeat(String.repeat(char, 79) <> "\n", 400)
 
 // The live processes a session spawned in serve, its reader and its writer,
-// doing the activity.
-fn spawnedInServe(activity : Process.Activity) : List(Process) =
+// whose activity `keep` keeps.
+fn spawnedInServe(keep : (Process.Activity) -> Bool) : List(Process) =
     List.filter(Process.live(), fn(process) = match Process.status(process) {
-        Some(Process.Status(=site, activity = doing)) ->
-            String.startsWith(site, "Session.serve:") && doing == activity
+        Some(Process.Status(=site, =activity)) ->
+            String.startsWith(site, "Session.serve:") && keep(activity)
       | None ->
             false
     })
+
+// Whether the activity is a wait for a call's answer, a read's or a write's.
+fn isCalling(activity : Process.Activity) : Bool =
+    match activity {
+        Process.Calling() -> true
+      | _ -> false
+    }
+
+// Whether the activity is a wait in a receive.
+fn isReceiving(activity : Process.Activity) : Bool =
+    match activity {
+        Process.Receiving -> true
+      | _ -> false
+    }
 
 // Whether the session has taken what came and its reader waits for its
 // next Read: the session, its reader and its writer each waiting with
@@ -768,7 +782,7 @@ fn readerWaits(session : Address(SessionMsg)) : Test.Result = {
         Some(Process.Status(queued = 0, activity = Process.Receiving)) -> true
       | _ -> false
     };
-    let helpers = spawnedInServe(Process.Receiving);
+    let helpers = spawnedInServe(isReceiving);
     if idle(Process.fromAddress(session)) && List.size(helpers) == 2 && List.all(helpers, idle) then
         Test.Passed
     else
@@ -778,7 +792,7 @@ fn readerWaits(session : Address(SessionMsg)) : Test.Result = {
 // Whether the session's reader waits in its read and its writer in its
 // write: both of them calling.
 fn writerWaits() : Test.Result =
-    if List.size(spawnedInServe(Process.Calling)) == 2 then
+    if List.size(spawnedInServe(isCalling)) == 2 then
         Test.Passed
     else
         Test.Failed("the writer does not wait in its write")
@@ -1230,22 +1244,22 @@ let killsAtTheHangup = Test.Case(name = "kills a program that outlives the hangu
 // the reader waits in its read and the writer for its next write.
 let endsWithItsHelpers =
     Test.Case(name = "ends with 1011 when its reader or its writer ends", run = fn() = {
-        fn ending(activity : Process.Activity) : #(String, String, String) receiving Seen = {
+        fn ending(keep : (Process.Activity) -> Bool) : #(String, String, String) receiving Seen = {
             let session = cat();
             send(session, Attach(shell("shell")));
             let attached = next("shell");
             let settled =
                 Test.until(fn() =
-                               if List.size(spawnedInServe(Process.Calling)) == 1
-                                   && List.size(spawnedInServe(Process.Receiving)) == 1 then
+                               if List.size(spawnedInServe(isCalling)) == 1
+                                   && List.size(spawnedInServe(isReceiving)) == 1 then
                                    Test.Passed
                                else
                                    Test.Failed("the reader does not wait in its read"),
                            5000);
-            List.forEach(spawnedInServe(activity), kill);
+            List.forEach(spawnedInServe(keep), kill);
             #(attached <> " " <> Io.show(settled), next("shell"), sessionEnded())
         };
-        Test.equal([ending(Process.Calling), ending(Process.Receiving)],
+        Test.equal([ending(isCalling), ending(isReceiving)],
                    [#("Attached(New) Test.Passed", "Ended(1011)", "Returned"),
                     #("Attached(New) Test.Passed", "Ended(1011)", "Returned")])
     })
@@ -1270,7 +1284,7 @@ let endsItsReaderAndWriterWithIt =
         let session =
             startedUnder(configured(["cat"], 60000, 30000, 5000), adapted(self(), EndingCalled));
         let waiting = Test.until(fn() = readerWaits(session), 5000);
-        let helpers = spawnedInServe(Process.Receiving);
+        let helpers = spawnedInServe(isReceiving);
         List.forEach(helpers, fn(helper) = monitor(helper, HelperEnded));
         kill(Process.fromAddress(session));
         let ended = endOf();

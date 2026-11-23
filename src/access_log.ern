@@ -173,7 +173,7 @@ fn escapedChar(char : Char) : String =
             Char.toString(char)
       | _ ->
             String.join(List.map(Bytes.toList(String.toUtf8(Char.toString(char))),
-                                 fn(byte) = "\\x" <> Bytes.toHex(<<byte>>)),
+                                 fn(byte) = "\\x" <> String.toAsciiUpper(Bytes.toHex(<<byte>>))),
                         "")
     }
 
