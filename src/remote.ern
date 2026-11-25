@@ -134,10 +134,7 @@ fn group(text : String) : Optional(Int) = {
 
 // A group in lower-case hexadecimal without leading zeros.
 fn hex(group : Int) : String =
-    match Int.toStringBase(group, 16) {
-        Some(digits) -> String.toAsciiLower(digits)
-      | None -> fault("16 is a base Int.toStringBase writes in, 2 to 36")
-    }
+    String.toAsciiLower(Int.toStringBase(group, 16))
 
 //
 // Tests

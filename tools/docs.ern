@@ -353,7 +353,7 @@ fn isBullet(chars : List(Char)) : Bool =
 // The characters after the digits the characters begin with, or `None`
 // where they begin with none.
 fn afterNumber(chars : List(Char)) : Optional(List(Char)) = {
-    let #(digits, rest) = List.span(chars, Char.isAsciiDigit);
+    let #(digits, rest) = List.splitWhile(chars, Char.isAsciiDigit);
     if List.isEmpty(digits) then None else Some(rest)
 }
 
@@ -452,7 +452,7 @@ fn isErnest(fence : String) : Bool =
 // at least, after an optional sudo and words VAR=value.
 fn isCommand(trimmed : String) : Bool = {
     let #(_, words) =
-        List.span(String.words(trimmed), fn(word) = word == "sudo" || isAssignment(word));
+        List.splitWhile(String.words(trimmed), fn(word) = word == "sudo" || isAssignment(word));
     match words {
         program :: _ when program == "make" -> true
       | program :: _ :: _ -> program == "ern" || String.startsWith(program, "bin/")
@@ -644,7 +644,7 @@ fn commentWords(lines : List(String)) : List(Word) =
 fn wordsAt(index : Int, line : String) : List(Word) = {
     let trimmed = String.trimStart(line);
     if String.startsWith(trimmed, "//") then {
-        let #(_, comment) = List.span(String.toList(trimmed), fn(char) = char == '/');
+        let #(_, comment) = List.splitWhile(String.toList(trimmed), fn(char) = char == '/');
         List.map(String.words(String.fromList(comment)),
                  fn(word) = Word(line = index + 1, text = word))
     } else
@@ -685,7 +685,7 @@ fn listed(previous : Word, words : List(Word)) : List(Citation) =
 fn cited(text : String) : Optional(Int) =
     if String.startsWith(text, "§") then {
         let number = String.toList(String.slice(text, 1, String.size(text)));
-        let #(digits, _) = List.span(number, Char.isAsciiDigit);
+        let #(digits, _) = List.splitWhile(number, Char.isAsciiDigit);
         String.toInt(String.fromList(digits))
     } else
         None
@@ -754,7 +754,7 @@ fn untitled(line : String) : String =
 // left out.
 fn sectionsIn(lines : List(String)) : List(#(Int, String)) = {
     let isProse = fn(#(_, line) : #(Int, String)) = String.startsWith(line, "## ") == false;
-    let #(_, sections) = List.span(List.indexed(lines), isProse);
+    let #(_, sections) = List.splitWhile(List.indexed(lines), isProse);
     List.filter(sections, isProse)
 }
 
@@ -825,8 +825,8 @@ fn isReader(word : String, next : String) : Bool =
 // The word without the punctuation around it.
 fn bare(word : String) : String = {
     let isMark = fn(char : Char) = List.contains(['(', ')', ',', ';', ':', '.', '*', '`'], char);
-    let #(_, rest) = List.span(String.toList(word), isMark);
-    let #(_, kept) = List.span(List.reverse(rest), isMark);
+    let #(_, rest) = List.splitWhile(String.toList(word), isMark);
+    let #(_, kept) = List.splitWhile(List.reverse(rest), isMark);
     String.fromList(List.reverse(kept))
 }
 
@@ -837,8 +837,8 @@ fn isMilestone(word : String) : Bool =
 // and S-2 are.
 fn isFindingName(word : String) : Bool = {
     let #(capitals, rest) =
-        List.span(String.toList(word),
-                  fn(char) = Char.isUpper(char) && Char.toCodePoint(char) < 128);
+        List.splitWhile(String.toList(word),
+                        fn(char) = Char.isUpper(char) && Char.toCodePoint(char) < 128);
     let number = match rest {
         '-' :: digits -> digits
       | _ -> rest

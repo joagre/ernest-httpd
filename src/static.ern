@@ -165,7 +165,7 @@ fn get(site : Site, request : Http.Request, ms : Int) : #(Http.Response, Bytes) 
 // two would begin a host's name, then `?` and the query where the target
 // has one.
 fn location(written : String, query : Optional(String)) : String = {
-    let #(_, rest) = List.span(String.toList(written), fn(char) = char == '/');
+    let #(_, rest) = List.splitWhile(String.toList(written), fn(char) = char == '/');
     "/" <> String.fromList(rest) <> "/" <> queried(query)
 }
 

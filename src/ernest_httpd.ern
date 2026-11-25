@@ -84,7 +84,7 @@ fn serving(config : Config.Config) : Unit receiving MainMsg = {
                               =sessions);
         listening(listener, server)
     });
-    Os.termination(Terminated);
+    Os.subscribeTermination(Terminated);
     waiting(Started(=listeners, =log, =sessions))
 }
 
@@ -642,7 +642,7 @@ fn portsZeroed(text : String) : String =
 
 // The text after the digits it begins with.
 fn afterDigits(text : String) : String = {
-    let #(_, rest) = List.span(String.toList(text), Char.isDigit);
+    let #(_, rest) = List.splitWhile(String.toList(text), Char.isDigit);
     String.fromList(rest)
 }
 
