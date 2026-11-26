@@ -6,7 +6,7 @@ Read *Where we are* first, then the milestone under way, its steps by what each 
 
 ## Where we are
 
-Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.11 and builds against `ern 0.11.0+ab68ef61`, the archive of Ernest's answers to lines 35 to 60 of the language feedback, installed on 2026-11-26; its commits stay unpushed until Ernest's 0.11.0 is released. Milestone 2 is under way: items 18 and 19, on Ernest's answers, then item 5, on Ernest's release. Lines 35, 36, 37, 45, 50 and 57 of the language feedback wait on Ernest, each with its answer beneath it, line 59 on item 18, and line 61 on our turn; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/, from a build of `75faac8` with item 15's container, with Ernest's side built and walked against it, which waits only on the launch's switch.
+Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.11 and builds against `ern 0.11.0+ab68ef61`, the archive of Ernest's answers to lines 35 to 60 of the language feedback, installed on 2026-11-26; its commits stay unpushed until Ernest's 0.11.0 is released. Milestone 2 is under way: item 19, on Ernest's answers, and item 18 on this repository's turn with Ernest, then item 5, on Ernest's release. Lines 35, 36, 37, 45, 50 and 57 of the language feedback wait on Ernest, each with its answer beneath it, and lines 59 and 61 on this repository's turn; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/, from a build of `75faac8` with item 15's container, with Ernest's side built and walked against it, which waits only on the launch's switch.
 
 ## Milestone 2: after the first release
 
@@ -18,7 +18,7 @@ Done: items 1 to 4 and 6 to 17, item 5's rehearsal, the full review at `f6bf173`
 
 Each is an answer of `ern 0.11.0+ab68ef61` that lets the program give up code that filled a gap (the log's *Ernest's answers to lines 35 to 60*).
 
-**Item 18, the path.** `Static` places a target's path under the root by `Http.filePath`, design §5's own rules run over its segments. A named decision: a segment `.`, which `filePath` refuses and §5 drops, becomes §5's 400, or is an ask of Ernest's (line 59).
+**Item 18, the path.** `Static` places a target's path under the root by `Http.filePath`, design §5's own rules run over its segments. It waits for this repository's turn with Ernest, in which a segment `.`, which `filePath` refuses and §5 drops, is discussed with it (line 59).
 
 **Item 19, the session's environment.** A session starts its program with the variables it names alone, `Os.Only`, where the program inherits the server's whole environment (line 39's answer, the review's S3). A named decision: which variables it names.
 
