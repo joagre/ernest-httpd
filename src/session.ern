@@ -1000,9 +1000,12 @@ let writesAndResizes = Test.Case(name = "writes keys and resizes the terminal", 
 })
 
 // A program that reads nothing until its terminal is resized, and then
-// copies what it reads, its terminal echoing nothing.
+// copies what it reads, its terminal echoing nothing. Its sleep starts
+// before it says ready, so that a resize sent once ready is read finds the
+// sleep for the trap's kill; a resize before it would run kill with no
+// process, whose usage the terminal would carry ahead of the copy.
 let readsAtResize : String =
-    "stty -echo; trap 'kill $!; exec cat' WINCH; echo ready; sleep 30 & wait"
+    "stty -echo; trap 'kill $!; exec cat' WINCH; sleep 30 & echo ready; wait"
 
 // What the program writes, read until it holds the text, within 5000
 // milliseconds of each piece.
@@ -1045,8 +1048,8 @@ let waitsOutATimedOutWrite = Test.Case(name = "waits out a write past its deadli
             let beta = readUntil(program, "beta\r\n", "");
             kill(Process.fromAddress(writer));
             kill(Process.fromAddress(program));
-            Test.equal(#(ready, early, late, read == a, again, beta),
-                       #("ready\r\n", "nothing", "Wrote", true, "Wrote", "beta\r\n"))
+            Test.equal(#(ready, early, late, String.replace(read, a, "[a]"), again, beta),
+                       #("ready\r\n", "nothing", "Wrote", "[a]", "Wrote", "beta\r\n"))
         }
       | Left(error) ->
             Test.Failed(Io.show(error))
@@ -1083,13 +1086,13 @@ let dropsKeysPastTheLimit =
         Test.equal(#(attached,
                      ready,
                      waiting,
-                     typed == both <> "delta\r\n",
+                     String.replace(typed, both, "[a and b]"),
                      messages("shell"),
                      sessionEnded()),
                    #("Attached(New)",
                      "ready\r\n",
                      Test.Passed,
-                     true,
+                     "[a and b]delta\r\n",
                      ["Resized", "Ended(1000)"],
                      "Returned"))
     })
