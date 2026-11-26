@@ -6,19 +6,17 @@ Read *Where we are* first, then the milestone under way, its steps by what each 
 
 ## Where we are
 
-Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.11 and builds against `ern 0.11.0+ab68ef61`, the archive of Ernest's answers to lines 35 to 60 of the language feedback, installed on 2026-11-26; its commits stay unpushed until Ernest's 0.11.0 is released. Milestone 2 is under way: items 17 to 19, on Ernest's answers, then item 5, on Ernest's release. Lines 35, 36, 37, 45, 50 and 57 of the language feedback wait on Ernest, each with its answer beneath it, and line 59 on item 18; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/, from a build of `75faac8` with item 15's container, with Ernest's side built and walked against it, which waits only on the launch's switch.
+Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.11 and builds against `ern 0.11.0+ab68ef61`, the archive of Ernest's answers to lines 35 to 60 of the language feedback, installed on 2026-11-26; its commits stay unpushed until Ernest's 0.11.0 is released. Milestone 2 is under way: items 18 and 19, on Ernest's answers, then item 5, on Ernest's release. Lines 35, 36, 37, 45, 50 and 57 of the language feedback wait on Ernest, each with its answer beneath it, line 59 on item 18, and line 61 on our turn; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/, from a build of `75faac8` with item 15's container, with Ernest's side built and walked against it, which waits only on the launch's switch.
 
 ## Milestone 2: after the first release
 
 What the first release's readers found and the milestone's own items, each a step with its log entry when built.
 
-Done: items 1 to 4 and 6 to 16, item 5's rehearsal, the full review at `f6bf173` in its three legs, and the steps between them; the log has each.
+Done: items 1 to 4 and 6 to 17, item 5's rehearsal, the full review at `f6bf173` in its three legs, and the steps between them; the log has each.
 
 ### On Ernest's answers
 
 Each is an answer of `ern 0.11.0+ab68ef61` that lets the program give up code that filled a gap (the log's *Ernest's answers to lines 35 to 60*).
-
-**Item 17, the address.** `Remote` reads a visitor's address by `Tcp.address` and counts an IPv6 one by its first 64 bits in the bit syntax, where `Remote.counted` reads every form RFC 4291 writes itself (line 58's answer).
 
 **Item 18, the path.** `Static` places a target's path under the root by `Http.filePath`, design §5's own rules run over its segments. A named decision: a segment `.`, which `filePath` refuses and §5 drops, becomes §5's 400, or is an ask of Ernest's (line 59).
 
