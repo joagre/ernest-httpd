@@ -236,7 +236,7 @@ Hosts.decide : (Config.Config, Static.Site, Optional(Static.Site), Http.Request,
 
 ## 10. The WebSocket
 
-`WebSocket` is RFC 6455's framing and its handshake's accept value, written as a library of Ernest's is, E.0, over `Crypto.sha1`, `Base64.encode`, `String.fromUtf8` and the bit syntax, its doc examples the RFC's own vectors. It knows no socket: it takes bytes and answers messages, and takes a message and answers a frame.
+`WebSocket` is RFC 6455's framing and its handshake's accept value, written as a library of Ernest's is, E.0, over `Crypto.sha1`, `Crypto.bitXor`, `Base64.encode`, `String.fromUtf8` and the bit syntax, its doc examples the RFC's own vectors. It knows no socket: it takes bytes and answers messages, and takes a message and answers a frame.
 
 ```
 type Message = Text(String) | Binary(Bytes) | Ping(Bytes) | Pong(Bytes) | Close(code : Optional(Int), reason : String)

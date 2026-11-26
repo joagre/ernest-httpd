@@ -344,8 +344,8 @@ fn limited(decoder : Decoder, header : Header, frame : Frame) : Either(Error, Fr
 fn payload(header : Header, bytes : Bytes) : Optional(#(Bytes, Bytes)) = {
     let length = header.length;
     match #(header.isMasked, bytes) {
-        #(true, <<first, second, third, fourth, payload:size(length)-bytes, rest:bytes>>) ->
-            Some(#(masked(payload, first, second, third, fourth), rest))
+        #(true, <<key:size(4)-bytes, payload:size(length)-bytes, rest:bytes>>) ->
+            Some(#(masked(payload, key), rest))
       | #(false, <<payload:size(length)-bytes, rest:bytes>>) ->
             Some(#(payload, rest))
       | _ ->
@@ -489,16 +489,13 @@ export fn encode(message : Message) : Bytes = {
 /// // => [Some("818537fa213d7f9f4d5158"), None]
 /// ```
 export fn encodeMasked(message : Message, key : Bytes) : Optional(Bytes) =
-    match key {
-        <<first, second, third, fourth>> -> {
-            let #(opcode, payload) = opcodeAndPayload(message);
-            Some(<<(frameHead(opcode, 1, Bytes.size(payload))):bytes,
-                   key:bytes,
-                   (masked(payload, first, second, third, fourth)):bytes>>)
-        }
-      | _ ->
-            None
-    }
+    if Bytes.size(key) == 4 then {
+        let #(opcode, payload) = opcodeAndPayload(message);
+        Some(<<(frameHead(opcode, 1, Bytes.size(payload))):bytes,
+               key:bytes,
+               (masked(payload, key)):bytes>>)
+    } else
+        None
 
 // A message's opcode and its payload, a close's its code and reason where
 // it has a code.
@@ -527,25 +524,15 @@ fn frameHead(opcode : Int, mask : Int, length : Int) : Bytes =
 // Masking
 //
 
-// The bytes masked with the four-byte key, given by its bytes in order,
-// each byte XORed with the key's byte at its index modulo 4, RFC 6455's
-// §5.3, which unmasks them too: one byte at a time, the key's bytes passed
-// on turned, the next one first.
-fn masked(bytes : Bytes, first : Int, second : Int, third : Int, fourth : Int) : Bytes =
-    maskedFrom(bytes, first, second, third, fourth, <<>>)
-
-fn maskedFrom(bytes : Bytes,
-              first : Int,
-              second : Int,
-              third : Int,
-              fourth : Int,
-              acc : Bytes) : Bytes =
-    match bytes {
-        <<byte, rest:bytes>> ->
-            maskedFrom(rest, second, third, fourth, first, <<acc:bytes, Int.bitXor(byte, first)>>)
-      | _ ->
-            acc // the end of the bytes
-    }
+// The bytes masked with the four-byte key, each byte XORed with the key's
+// byte at its index modulo 4, RFC 6455's §5.3, which unmasks them too. The
+// key repeated count / 4 + 1 times passes the bytes' size and is cut to it,
+// so that Crypto.bitXor, which faults on two sizes, is given one; each
+// caller gives four bytes, the decoder's pattern and encodeMasked's check.
+fn masked(bytes : Bytes, key : Bytes) : Bytes = {
+    let count = Bytes.size(bytes);
+    Crypto.bitXor(bytes, Bytes.slice(Bytes.repeat(key, count / 4 + 1), 0, count))
+}
 
 //
 // Tests
@@ -574,6 +561,12 @@ let hello : Bytes = String.toUtf8("Hello")
 let bytes256 : Bytes = Bytes.repeat(<<0x5a>>, 256)
 
 let bytes64k : Bytes = Bytes.repeat(<<0xa5>>, 65536)
+
+// A payload of seven bytes, and the same masked with the RFC's key by hand,
+// each byte XORed with the key's byte at its index modulo 4.
+let sevenBytes : Bytes = <<0xff, 0x0f, 0xf0, 0x00, 0x55, 0xaa, 0x01>>
+
+let sevenBytesMasked : Bytes = <<0xc8, 0xf5, 0xd1, 0x3d, 0x62, 0x50, 0x20>>
 
 // The limit of the tests' decoders where a test names none.
 let testLimit : Int = 1048576
@@ -612,7 +605,7 @@ fn maskedFrame(first : Int, payload : Bytes) : Bytes =
       1:size(1),
       (Bytes.size(payload)):size(7),
       rfcKey:bytes,
-      (masked(payload, 0x37, 0xfa, 0x21, 0x3d)):bytes>>
+      (masked(payload, rfcKey)):bytes>>
 
 // design §10: accept is the SHA-1 of the key and
 // 258EAFA5-E914-47DA-95CA-C5AB0DC85B11 in base64: RFC 6455's key of
@@ -980,6 +973,45 @@ let roundTrips = Test.Case(name = "decodes what it encodes", run = fn() = {
                  Right(messages),
                  [None, None, None]))
 })
+
+// design §10: encodeMasked masks a payload with the key, each byte XORed
+// with the key's byte at its index modulo 4 (RFC 6455's §5.3), and a
+// FromClient decoder unmasks it to its message: a payload of each size from
+// 0 to 7, the first bytes of the seven whose masked bytes are written out by
+// hand.
+let masksEachShortSize =
+    Test.Case(name = "masks and unmasks a payload of each size to 7 bytes", run = fn() = {
+        let counts = List.range(0, 7);
+        let message = fn(count) = Binary(Bytes.slice(sevenBytes, 0, count));
+        let frame =
+            fn(count) =
+                <<0x82,
+                  (0x80 + count),
+                  rfcKey:bytes,
+                  (Bytes.slice(sevenBytesMasked, 0, count)):bytes>>;
+        Test.equal(#(List.map(counts, fn(count) = encodeMasked(message(count), rfcKey)),
+                     List.map(counts, fn(count) = decoded(FromClient, frame(count)))),
+                   #(List.map(counts, fn(count) = Some(frame(count))),
+                     List.map(counts, fn(count) = Right([message(count)]))))
+    })
+
+// design §10: encodeMasked masks a payload past 65535 bytes, its length in
+// 64 bits, each byte XORed with the key's byte at its index modulo 4, and a
+// FromClient decoder unmasks it to its message: the hand vector's first four
+// bytes repeated to 65536, and one byte more.
+let masksALongPayload =
+    Test.Case(name = "masks and unmasks a payload past 65535 bytes", run = fn() = {
+        let repeated = Bytes.repeat(Bytes.slice(sevenBytes, 0, 4), 16384);
+        let repeatedMasked = Bytes.repeat(Bytes.slice(sevenBytesMasked, 0, 4), 16384);
+        let payloads = [repeated, repeated <> <<0xff>>];
+        let frames =
+            [<<0x82, 0xFF, 0, 0, 0, 0, 0, 1, 0, 0, rfcKey:bytes, repeatedMasked:bytes>>,
+             <<0x82, 0xFF, 0, 0, 0, 0, 0, 1, 0, 1, rfcKey:bytes, repeatedMasked:bytes, 0xc8>>];
+        Test.equal(#(List.map(payloads, fn(payload) = encodeMasked(Binary(payload), rfcKey)),
+                     List.map(frames, fn(frame) = decoded(FromClient, frame))),
+                   #(List.map(frames, Some),
+                     List.map(payloads, fn(payload) = Right([Binary(payload)]))))
+    })
 
 // design §10: a close with no code is written with no payload, its reason
 // dropped, and read from an empty payload as no code and ""; one with a
