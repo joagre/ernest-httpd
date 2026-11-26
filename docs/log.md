@@ -1025,3 +1025,8 @@ A member named twice in the configuration is refused, `names the member "port" t
 ## The launch on 0.11.1
 
 *2026-11-26.* Ernest's session says its plan's order: 0.11.0 is tagged unannounced, so that the applications have a floor; then `ernest-template`'s release and `ernest-epx`'s; then its MVP 4.18, whose 0.11.1 is the launch and takes what this repository's full review found of Ernest's security. This program's release is that milestone's item 3, once 0.11.1 is out, and the switch its item 4, on a day the user sets when it opens, moved there from MVP 4.4's item 6 on 2026-11-23. So item 5 waits on 0.11.1, its note naming `ern 0.11.1`, and before the switch a node of 0.11's form starts on the rehearsal, its `ernest.conf` cleaned first on the user's word. The floor stays 0.11.
+
+
+## Ernest's 0.11.0
+
+*2026-11-26.* Ernest tagged 0.11.0 at `8dedd59f`, its archive's digest the one beside it, `0c1d94bb…`, and `ern 0.11.0` is installed under the prefix in place of `ab68ef61`. Of its release note one thing reached the program, `Tcp.address` named `Tcp.ipAddress` before it was published, which design §7 and `Remote` follow; the rest it had followed on the archives before. `Http.parseDate` answers `None` for a year with a sign, a probe showed, where it faulted. What the release answers of the language feedback and the known issues is read on the user's word, in lock step.

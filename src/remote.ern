@@ -5,7 +5,7 @@
 /// An IPv4 address is counted as written. An IPv6 address is counted by
 /// its first 64 bits, a prefix one host may hold whole, so that a host
 /// counts once whichever of its addresses it uses. The host is read by
-/// `Tcp.address`, an IPv6 address in any form RFC 4291 writes one: in full
+/// `Tcp.ipAddress`, an IPv6 address in any form RFC 4291 writes one: in full
 /// or compressed by `::`, in either case, with leading zeros or without,
 /// and with a dotted IPv4 tail. Any other text faults, an address with a
 /// zone among them, since `Tcp.remote` writes none.
@@ -22,11 +22,11 @@
 //
 
 /// The address the remote address `host`, as `Tcp.remote` writes it, is
-/// counted under, the host read by `Tcp.address`: an IPv4 address as
+/// counted under, the host read by `Tcp.ipAddress`: an IPv4 address as
 /// written, and an IPv6 address its first four groups in lower-case
 /// hexadecimal without leading zeros, then `::/64`. Any other text faults.
 export fn counted(host : String) : String =
-    match Tcp.address(host) {
+    match Tcp.ipAddress(host) {
         Some(<<_:size(4)-bytes>>) ->
             host
       | Some(<<first:size(16),
@@ -36,7 +36,7 @@ export fn counted(host : String) : String =
                _:size(8)-bytes>>) ->
             String.join(List.map([first, second, third, fourth], hex), ":") <> "::/64"
       | Some(_) ->
-            fault("Tcp.address answers 4 bytes or 16 (report Appendix E.18)")
+            fault("Tcp.ipAddress answers 4 bytes or 16 (report Appendix E.18)")
       | None ->
             fault("Tcp.remote writes an IPv4 or an IPv6 address, not " <> Io.show(host))
     }
