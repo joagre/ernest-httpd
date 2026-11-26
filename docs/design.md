@@ -322,7 +322,7 @@ A session is spawned, monitored, with `Session.serve` of the size, and told `Att
 
 **The stop.** `Stop` tells each attach waiting `Unavailable` and each session `End` with 1001, waits for each to end, and answers the reply.
 
-**The program.** The session starts `shell.command` under a terminal of the size, `Os.startTerminal`, the first word the program and the rest its arguments, and spawns the reader and the writer, monitored. A start that fails is said on standard error as a line of `cannot start `, the program, `: ` and the error as `Io.show` writes it, and the session ends with 4003 at its attach.
+**The program.** The session starts `shell.command` under a terminal of the size, `Os.startTerminal`, the first word the program and the rest its arguments, its environment the server's `PATH` and `HOME` and no other variable, `Os.Only`, either left out where the server has none, and spawns the reader and the writer, monitored. A start that fails is said on standard error as a line of `cannot start `, the program, `: ` and the error as `Io.show` writes it, and the session ends with 4003 at its attach.
 
 The reader reads the terminal once for each `Read` the session sends, `Os.read` within `timeouts.idle`, and tells the session what it answered, `Answered`. The session sends `Read` when a shell attaches, and again once the attached shell has written every piece it was sent, a `Written` for each, or at once after an answer that gave the shell nothing, so that neither a detached session nor one whose page takes its output slowly reads further, its program waiting on its output as on a full terminal; the output of a read answered while none was attached is held, one piece, and written to the next shell attached.
 

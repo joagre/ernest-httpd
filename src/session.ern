@@ -3,7 +3,8 @@
 /// close code (design §12).
 ///
 /// `serve` is the session's whole life, in a process the sessions spawn. It
-/// starts the shell's command under a terminal of the page's size, reads
+/// starts the shell's command under a terminal of the page's size, with the
+/// server's `PATH` and `HOME` and no other variable, reads
 /// the terminal through a reader of its own, which alone calls `Os.read`,
 /// and writes the visitor's keys to it through a writer of its own, which
 /// alone calls `Os.write`. The reader reads once for each `Read` the
@@ -133,11 +134,11 @@ type Serving =
 //
 
 /// The session's life: the shell's command started under a terminal of the
-/// size, the first word the program and the rest its arguments, served to
-/// the shells that attach until its end with a close code, at whose
-/// beginning it calls `sessions`; then it returns. A command that cannot
-/// start is said on standard error, and the session ends with 4003 at its
-/// attach.
+/// size, the first word the program and the rest its arguments, its
+/// environment the server's `PATH` and `HOME` alone, served to the shells
+/// that attach until its end with a close code, at whose beginning it calls
+/// `sessions`; then it returns. A command that cannot start is said on
+/// standard error, and the session ends with 4003 at its attach.
 export fn serve(shell : Config.Shell,
                 timeouts : Config.Timeouts,
                 size : Terminal.Size,
@@ -146,7 +147,8 @@ export fn serve(shell : Config.Shell,
         first :: rest -> #(first, rest)
       | [] -> fault("design §4 refuses an empty command")
     };
-    match Os.startTerminal(Os.command(name, arguments), size) {
+    let command = Os.Command(..Os.command(name, arguments), environment = Os.Only(environment()));
+    match Os.startTerminal(command, size) {
         Right(program) -> {
             let me = self();
             let idle = timeouts.idle;
@@ -173,6 +175,13 @@ export fn serve(shell : Config.Shell,
         }
     }
 }
+
+// The program's environment: the server's PATH and HOME, each left out
+// where the server has none, and no other variable (design §12).
+fn environment() : List(#(String, String)) =
+    List.filterMap(["PATH", "HOME"],
+                   fn(variable) =
+                       Optional.map(Os.environment(variable), fn(value) = #(variable, value)))
 
 // The reader's start: the session monitored, since a process the program
 // spawns ends with no other (report §6.9), and the first Read waited for.
@@ -1382,6 +1391,45 @@ let warnsWithItsSecondsAgain =
         let left = Clock.monotonic() - since;
         Test.equal(#(attached, first, second, end, left >= 1800, sessionEnded()),
                    #("Attached(New)", "Warning(2)", "Warning(2)", "Ended(4001)", true, "Returned"))
+    })
+
+// The output the named shell is told before its Ended, which comes after
+// every piece the session told it (report §6.4), as text, and the Ended;
+// within 5000 milliseconds of each.
+fn outputBeforeEnd(name : String, acc : Bytes) : #(String, String) receiving Seen =
+    receive {
+        Heard(shell = from, told = Output(bytes)) when from == name ->
+            outputBeforeEnd(name, acc <> bytes)
+      | Heard(shell = from, told = Ended(code)) when from == name ->
+            #(Optional.withDefault(String.fromUtf8(acc), "?"), shown(Ended(code)))
+      | after 5000 ->
+            #(Optional.withDefault(String.fromUtf8(acc), "?"), "nothing")
+    }
+
+// design §12: the program's environment is the server's PATH and HOME and
+// no other variable: `env`, found by that PATH, writes each variable it
+// starts with and adds none, and here writes those two alone, sorted since
+// no order is given them, where `env` started by the test with the
+// environment inherited, the server's being the test's own, writes a
+// variable beside them, which a program that inherited the server's
+// environment would write too.
+let startsWithPathAndHomeAlone =
+    Test.Case(name = "starts its program with the server's PATH and HOME alone", run = fn() = {
+        let wanted =
+            List.filterMap(["PATH", "HOME"],
+                           fn(variable) =
+                               Optional.map(Os.environment(variable),
+                                            fn(value) = variable <> "=" <> value));
+        let another = Either.map(Os.run(Os.command("env", []), 5000), fn(finished) = {
+            let text = Optional.withDefault(String.fromUtf8(finished.stdout), "");
+            List.any(String.lines(text), fn(line) = !List.contains(wanted, line))
+        });
+        let session = started(["env"], 60000, 30000, 5000);
+        send(session, Attach(shell("shell")));
+        let attached = next("shell");
+        let #(output, end) = outputBeforeEnd("shell", <<>>);
+        Test.equal(#(another, attached, List.sort(String.lines(output)), end, sessionEnded()),
+                   #(Right(true), "Attached(New)", List.sort(wanted), "Ended(4004)", "Returned"))
     })
 
 // design §12: a command that cannot start is said on standard error with
