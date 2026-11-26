@@ -91,9 +91,10 @@ export type Shell =
 export type Starts = Starts(count : Int, within : Int)
 
 /// Why there is no configuration: the file cannot be read, its text is not
-/// JSON, or a field breaks a rule, the field named from the file's top, the
-/// rule as design §4's table writes it, and the value refused as JSON
-/// writes it, None for a field absent or of no field, which no value breaks.
+/// JSON or names a member twice in one object, or a field breaks a rule,
+/// the field named from the file's top, the rule as design §4's table
+/// writes it, and the value refused as JSON writes it, None for a field
+/// absent or of no field, which no value breaks.
 export type Error =
     Unreadable(Io.Error)
   | NotJson(Json.Error)
@@ -150,27 +151,30 @@ export fn parse(text : String) : Either(Error, Config) = {
 
 /// The error in prose, after which the operator reads the file's path:
 /// `cannot read the file: ` and the error, `is not JSON: ` and the error in
-/// words, where it stands and what was not expected or cannot be read, the
-/// field, ` must `, the rule, `: ` and the value refused, or, where there
-/// is no value, the field, a space and the rule.
+/// words, where it stands and what was not expected or cannot be read,
+/// `names the member `, the name and ` twice`, the field, ` must `, the
+/// rule, `: ` and the value refused, or, where there is no value, the
+/// field, a space and the rule.
 export fn reason(error : Error) : String =
     match error {
         Unreadable(cause) -> "cannot read the file: " <> Io.show(cause)
-      | NotJson(cause) -> "is not JSON: " <> notJson(cause)
+      | NotJson(cause) -> notJson(cause)
       | Invalid(=field, =rule, value = Some(value)) -> field <> " must " <> rule <> ": " <> value
       | Invalid(=field, =rule, value = None) -> field <> " " <> rule
     }
 
-// Why a text is not JSON, in words: its end, or the line and the column
-// and what stands there (design §4).
+// Why a text is refused, in words: its end, or the line and the column
+// and what stands there; or the member an object names twice (design §4).
 fn notJson(error : Json.Error) : String =
     match error {
         Json.UnexpectedEnd ->
-            "the text ends before its value does"
+            "is not JSON: the text ends before its value does"
       | Json.UnexpectedByte(=byte, =at) ->
-            position(at) <> byteText(byte) <> " was not expected"
+            "is not JSON: " <> position(at) <> byteText(byte) <> " was not expected"
       | Json.UnexpectedSequence(=text, =at) ->
-            position(at) <> shown(Json.Text(text)) <> " cannot be read"
+            "is not JSON: " <> position(at) <> shown(Json.Text(text)) <> " cannot be read"
+      | Json.RepeatedMember(=name) ->
+            "names the member " <> shown(Json.Text(name)) <> " twice"
     }
 
 fn position(at : Json.Position) : String =
@@ -1090,20 +1094,27 @@ let refusesControlNames =
                                      "hold no control character",
                                      Some("\".w\\tasm\"")))]))
 
-// design §4: a member named twice in one object is read at its last, the
-// configuration's and a listener's.
-let readsTheLastOfAName =
-    Test.Case(name = "reads a member named twice at its last",
+// design §4: a text that names a member twice in one object is refused,
+// `NotJson`, a listener's and the configuration's, and its reason names the
+// member as Json.encode writes it, U+007F as `\u007f`.
+let refusesRepeatedMembers =
+    Test.Case(name = "refuses a member named twice",
               run = fn() =
-                  Test.equal(Either.map(parse(edited("\"port\": 8080",
-                                                     "\"port\": -1, \"port\": 8081")
-                                                  |> String.replace("\"root\": \"/home/httpd/ernest-httpd/site\"",
-                                                                    "\"root\": 1, \"root\": \"/srv/site\"")),
-                                        fn(config) =
-                                            #(config.root,
-                                              List.map(config.listeners,
-                                                       fn(listener) = listener.port))),
-                             Right(#(Path("/srv/site"), [443, 80, 8081]))))
+                  Test.equal(List.map([edited("\"port\": 8080", "\"port\": -1, \"port\": 8081"),
+                                       edited("\"root\": ",
+                                              "\"x\\\"y\": 1, \"x\\\"y\": 2, \"root\": "),
+                                       edited("\"root\": ",
+                                              "\"d\u{7f}\": 1, \"d\u{7f}\": 2, \"root\": ")],
+                                      fn(text) = match parse(text) {
+                                          Left(error) -> Some(#(error, reason(error)))
+                                        | Right(_) -> None
+                                      }),
+                             [Some(#(NotJson(Json.RepeatedMember(name = "port")),
+                                     "names the member \"port\" twice")),
+                              Some(#(NotJson(Json.RepeatedMember(name = "x\"y")),
+                                     "names the member \"x\\\"y\" twice")),
+                              Some(#(NotJson(Json.RepeatedMember(name = "d\u{7f}")),
+                                     "names the member \"d\\u007f\" twice"))]))
 
 // design §4: `shell.warning` is a multiple of 1000, after each `be above 0`
 // of its row and before `be at most half the lifetime`, which takes half

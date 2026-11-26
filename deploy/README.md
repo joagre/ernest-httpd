@@ -249,7 +249,7 @@ That is 128 MiB of memory, no swap and 128 processes, and the container's root i
 
 ## 12. Looking in
 
-The operator's shell attaches to the server's node from the operator's directory, as the deployment guide of the installation, `share/doc/ernest/guide/deployment.md`, shows in its section 6, with an `ern` of the same archive as the server's. The operator installs that `ern` under a prefix of the operator's own, `~/opt/local`, as step 4 does under the server's, since the operator may not read the server's home, on the OTP step 3 installed for both; the superuser gives the archive, and the prefix's `bin` goes first on `PATH`:
+The operator's shell attaches to the server's node from the operator's directory, as the deployment guide of the installation, `share/doc/ernest/guide/deployment.md`, shows in its section 5, with an `ern` of the same archive as the server's. The operator installs that `ern` under a prefix of the operator's own, `~/opt/local`, as step 4 does under the server's, since the operator may not read the server's home, on the OTP step 3 installed for both; the superuser gives the archive, and the prefix's `bin` goes first on `PATH`:
 
 ```console
 $ cd && export PATH=$HOME/opt/local/bin:$PATH

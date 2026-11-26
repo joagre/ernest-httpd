@@ -379,7 +379,9 @@ let launchesThroughItsPath = Test.Case(name = "launches through its own path", r
     let link = links <> "/bin/ernest_httpd";
     let linkToLink = links <> "/again/ernest_httpd";
     let notExecutable = scratch <> "/not-executable";
-    let withErn = fn(ern) = Os.Command(..launcher(["config.json"]), environment = [#("ERN", ern)]);
+    let withErn =
+        fn(ern) =
+            Os.Command(..launcher(["config.json"]), environment = Os.Inherited([#("ERN", ern)]));
     let result = {
         let _ <- Fs.makeDir(Path(links <> "/bin"), 5000);
         let _ <- Fs.makeDir(Path(links <> "/again"), 5000);

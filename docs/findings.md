@@ -2,7 +2,7 @@
 
 The full review's findings, read at `f6bf173` on 2026-11-23 as `docs/full_review.md` has them, by the readers K, C, D, S and L, and the three the plan held for this file, P1 to P3. A line stands until a commit does it, drops it or plans it, which the commit messages say, and the file goes when the last line goes.
 
-Of the 96 lines, 76 are done, 6 dropped and 10 another's repeat (the log's *The third leg*, *Milestone 2, item 13: the shell and its session*, *Milestone 2, item 14: the cookie* and *Milestone 2, item 15: the container*). Four stand, held for the template until the user says they go to it. What the readers found of Ernest's is lines 38 to 58 of `language_feedback.md`, each naming its finding. The readers' lists stand whole below, each finding by its reader's letter.
+Of the 96 lines, 76 are done, 6 dropped and 10 another's repeat (the log's *The third leg*, *Milestone 2, item 13: the shell and its session*, *Milestone 2, item 14: the cookie* and *Milestone 2, item 15: the container*). Four stand, held for the template until the user says they go to it. What the readers found of Ernest's was lines 38 to 58 of `language_feedback.md`, which Ernest answered on 2026-11-26, and 45, 50 and 57 stand there. The readers' lists stand whole below, each finding by its reader's letter.
 
 ## The lines
 
