@@ -151,10 +151,10 @@ A `systemctl --user` without the export says `Failed to connect to user scope bu
 
 The image holds the two nodes' configuration directories under `/usr/local/share/ernest-shell/`, `a` and `foo`, and its command is the start, `/usr/local/bin/shell-start`, which copies both into the home, starts `foo` and, once it listens, runs the shell on `a`. A build whose `ernest.conf` did not take the limits stops at that `RUN` step, which exits with 1.
 
-The image answers lines of Ernest, here from standard input, and the shell's command, at a terminal of the operator's, runs it through the wrapper as a visitor's session does, where `1 + 2` answers `3 : Int`, `Peer.computeAt("foo", fn() = 3 + 4, 5000)` answers `Right(7)` from the second node, after `the peer foo connected`, `Fs.write(Path("x"), <<1>>, 1000)` answers `Right(Unit)` in the size-capped home, and `:quit` leaves; `podman ps` then lists no container, nor does it after a terminal closed before `:quit`, within a second:
+The image answers lines of Ernest, here from standard input, and the shell's command, at a terminal of the operator's, runs it through the wrapper as a visitor's session does, where `1 + 2` answers `3 : Int`, `Peer.compute("foo", fn() = 3 + 4, 5000)` answers `Right(7)` from the second node, after `the peer foo connected`, `Fs.write(Path("x"), <<1>>, 1000)` answers `Right(Unit)` in the size-capped home, and `:quit` leaves; `podman ps` then lists no container, nor does it after a terminal closed before `:quit`, within a second:
 
 ```console
-httpd$ printf '1 + 2\nPeer.computeAt("foo", fn() = 3 + 4, 5000)\n' | podman run -i --rm --network none ernest-shell
+httpd$ printf '1 + 2\nPeer.compute("foo", fn() = 3 + 4, 5000)\n' | podman run -i --rm --network none ernest-shell
 httpd$ ernest-httpd/shell.sh -it --rm --network none --read-only --cap-drop=ALL \
       --security-opt=no-new-privileges --userns=nomap --log-driver=none \
       --memory 128m --memory-swap 128m --pids-limit 128 --cgroup-parent=ernest-shell.slice \
