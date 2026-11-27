@@ -8,8 +8,8 @@ lib/
 # What make xterm fills: the example site's terminal, fetched
 examples/site/root/xterm/
 
-# A node's configuration directory holds a private key
-.ernest/
+# A node's private key, in its configuration directory
+private-key.pem
 
 # Editors
 *~

@@ -56,7 +56,7 @@ It serves the example site at http://localhost:8080, whose shell page runs your 
 
 ## Building
 
-It needs [Ernest](https://ernest-lang.org) on your `PATH`, the release `package.conf` names or a later one; an `ern` before 0.11 stops `make` at its first step, `ern: no job unpack`. `ERN=path/to/ern make` names another `ern`: its directory stands first on `PATH` for everything the build starts, so whatever names `ern` by its name, a test or the example's shell, runs that one too. A file not called `ern` is not reached this way. An Ernest installed under a prefix of your own, `make install PREFIX=<prefix>` in its unpacked archive, builds it with `ERN=<prefix>/bin/ern make`. `make test` needs Chromium too, `chromium` on `PATH`, Debian's package of that name, since the client's test runs the client in it.
+It needs [Ernest](https://ernest-lang.org) on your `PATH`, the release `package.conf` names or a later one; an `ern` before 0.11 stops `make` at its first step, `ern: no job unpack`. Before Ernest's 1.0 a later release may refuse the program, and the program is then brought to that release. `ERN=path/to/ern make` names another `ern`: its directory stands first on `PATH` for everything the build starts, so whatever names `ern` by its name, a test or the example's shell, runs that one too. A file not called `ern` is not reached this way. An Ernest installed under a prefix of your own, `make install PREFIX=<prefix>` in its unpacked archive, builds it with `ERN=<prefix>/bin/ern make`. `make test` needs Chromium too, `chromium` on `PATH`, Debian's package of that name, since the client's test runs the client in it.
 
 ```
 make            # builds the program
@@ -85,7 +85,7 @@ The launcher runs the server on a configuration, from the checkout and from an u
 bin/ernest_httpd [--config-dir dir] config.json
 ```
 
-Once `make install` has put it under a prefix, the installed `ernest_httpd` runs the same way. `--config-dir dir` makes the run a node, as *Running Ernest*, the deployment guide of the installation, says.
+Once `make install` has put it under a prefix, the installed `ernest_httpd` runs the same way, by its path or by a link to it. An installed program runs under the `ern` that built it, and once that `ern` changes, `make install` from the program's archive builds it again. `--config-dir dir` makes the run a node, as *Running Ernest*, the deployment guide of the installation, says.
 
 The configuration is one JSON file, whose relative paths name files under the working directory. Every field of it but `shell` is required, an empty one written empty, `"content-types": {}`; the design's §4, [`docs/design.md`](docs/design.md), installed with this README under the prefix's share/doc, is its reference, each member as the file spells it with its rule, and `examples/site/config.json` is one that `make run` serves, its access log's directory made first.
 
