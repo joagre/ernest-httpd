@@ -22,7 +22,7 @@ Each is an answer of `ern 0.11.0+ab68ef61` that lets the program give up code th
 
 ### On Ernest's 0.11.1, its MVP 4.18
 
-**What the full review left.** Its four findings against the template's files stand in `docs/findings.md`, held until the user says it is this repository's turn to send them.
+**What the full review left.** Two findings against the template's files, C2 and D32, are the template's issues 3 and 4, and stand in `docs/findings.md` until each closes.
 
 **Item 5, the release and the switch.** Ernest tags 0.11.0 unannounced, the floor, then `ernest-template` and `ernest-epx` release, and then Ernest's MVP 4.18, whose 0.11.1 is the launch and takes what the full review found of Ernest's security. Once 0.11.1 is tagged it is installed, and a release of this program, that milestone's item 3, is made by `docs/release.md`, its readers among it, which `make release` refuses before the tag. Its note names the `ern` it was built with whole, `ern 0.11.1` (finding D33), and the rules that refuse a `shell` written for 0.1.0, `shell.per-address` required and `shell.warning` at most half the lifetime, and the switch makes true the README's sentences on the deployed shell, which its check reads (D3).
 
