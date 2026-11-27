@@ -19,23 +19,23 @@
 ///
 /// ```ernest
 /// let shell =
-///     Config.Shell(path = "/shell/session",
-///                  client = "/shell/client.js",
-///                  origins = ["https://ernest-lang.org"],
-///                  command = ["sh"],
-///                  mostAtOnce = 6,
-///                  perAddress = 2,
-///                  starts = Config.Starts(count = 10, within = 3600000),
-///                  lifetime = 300000,
-///                  warning = 60000,
-///                  messageLimit = 65536,
-///                  hangup = 5000);
+///     ErnestHttpd.Config.Shell(path = "/shell/session",
+///                              client = "/shell/client.js",
+///                              origins = ["https://ernest-lang.org"],
+///                              command = ["sh"],
+///                              mostAtOnce = 6,
+///                              perAddress = 2,
+///                              starts = ErnestHttpd.Config.Starts(count = 10, within = 3600000),
+///                              lifetime = 300000,
+///                              warning = 60000,
+///                              messageLimit = 65536,
+///                              hangup = 5000);
 /// let request =
 ///     Http.Request(method = "GET",
 ///                  target = "/shell/client.js",
 ///                  version = Http.http11,
 ///                  headers = []);
-/// let #(response, _) = Client.serve(shell, request);
+/// let #(response, _) = ErnestHttpd.Client.serve(shell, request);
 /// #(response.status, response.headers)
 /// // => #(200, [Http.Header(name = "Content-Type", value = "text/javascript; charset=utf-8"), Http.Header(name = "Cache-Control", value = "no-store")])
 /// ```

@@ -13,7 +13,9 @@
 /// ## Examples
 ///
 /// ```ernest
-/// [Remote.counted("192.0.2.7"), Remote.counted("2001:DB8:0:1:0:0:0:5"), Remote.counted("fe80::1")]
+/// [ErnestHttpd.Remote.counted("192.0.2.7"),
+///  ErnestHttpd.Remote.counted("2001:DB8:0:1:0:0:0:5"),
+///  ErnestHttpd.Remote.counted("fe80::1")]
 /// // => ["192.0.2.7", "2001:db8:0:1::/64", "fe80:0:0:0::/64"]
 /// ```
 

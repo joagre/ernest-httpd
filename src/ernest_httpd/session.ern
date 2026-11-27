@@ -806,7 +806,7 @@ fn lines(char : String) : String =
 fn spawnedInServe(keep : (Process.Activity) -> Bool) : List(Process) =
     List.filter(Process.live(), fn(process) = match Process.status(process) {
         Some(Process.Status(=site, =activity)) ->
-            String.startsWith(site, "Session.serve:") && keep(activity)
+            String.startsWith(site, "ErnestHttpd.Session.serve:") && keep(activity)
       | None ->
             false
     })

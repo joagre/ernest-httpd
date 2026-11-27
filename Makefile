@@ -211,7 +211,7 @@ build/examples/site:
 # refused before the build.
 smoke: $(if $(HOST),all)
 	@test -n "$(HOST)" || { echo "HOST is required: make smoke HOST=ernest-lang.org"; exit 1; }
-	$(ERN) run $(RUN_LIBS) build/smoke.erc $(HOST) deploy/config.json
+	$(ERN) run $(RUN_LIBS) build/ernest_httpd/smoke.erc $(HOST) deploy/config.json
 
 # The module pages, a CommonMark document for each module under build/ and
 # their index, build/index.md, and then the manual pages, each in roff beside

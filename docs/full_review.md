@@ -38,7 +38,7 @@ A reader's letter names its findings: C12 is the code reader's twelfth.
 
 A copy of the template adds below these the readers its program alone needs, and changes nothing above them.
 
-- **L, the live shell reader.** Reads what a visitor's session stands on: the design's §10 to §14, `src/web_socket.ern`, `src/shell.ern`, `src/sessions.ern`, `src/session.ern` and `src/client.ern`, and of `deploy/` the image, the shell's start, the wrapper, the unit and step 7 of its `README.md`. It tries the session on localhost, and the container where podman stands, and nothing against the deployed site. What it could not run, it says. It reads the code.
+- **L, the live shell reader.** Reads what a visitor's session stands on: the design's §10 to §14, `src/ernest_httpd/web_socket.ern`, `src/ernest_httpd/shell.ern`, `src/ernest_httpd/sessions.ern`, `src/ernest_httpd/session.ern` and `src/ernest_httpd/client.ern`, and of `deploy/` the image, the shell's start, the wrapper, the unit and step 7 of its `README.md`. It tries the session on localhost, and the container where podman stands, and nothing against the deployed site. What it could not run, it says. It reads the code.
 
   "A visitor types what they like and the session's program runs it: that is the shell's work and no finding. Report each way a visitor gets past what the shell grants: out of the container, into another visitor's session by its cookie or its socket, past a cap or a deadline, or to something that outlives the session, a container, a process or memory. Give what shows it. A limit the design states and no flag or check holds counts." Real exposures stand apart from hardening.
 

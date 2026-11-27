@@ -57,7 +57,7 @@
 /// make smoke HOST=ernest-lang.org
 /// ```
 ///
-/// which runs `ern run build/smoke.erc ernest-lang.org deploy/config.json`.
+/// which runs `ern run build/ernest_httpd/smoke.erc ernest-lang.org deploy/config.json`.
 
 //
 // Types
@@ -968,7 +968,8 @@ fn ranSmoke(runs : List(List(String))) : List(Either(Io.Error,
                       send(me,
                            Ran(=index,
                                outcome = Os.run(Os.command("ern",
-                                                           ["run", "build/smoke.erc"] <> arguments),
+                                                           ["run", "build/ernest_httpd/smoke.erc"]
+                                                               <> arguments),
                                                 30000))));
         Unit
     });

@@ -25,16 +25,16 @@
 /// A client's text message decoded, RFC 6455's masked frame of §5.7:
 ///
 /// ```ernest
-/// let decoder = WebSocket.decoder(WebSocket.FromClient, 65536);
+/// let decoder = ErnestHttpd.WebSocket.decoder(ErnestHttpd.WebSocket.FromClient, 65536);
 /// let frame = <<0x81, 0x85, 0x37, 0xfa, 0x21, 0x3d, 0x7f, 0x9f, 0x4d, 0x51, 0x58>>;
-/// Either.map(WebSocket.decode(decoder, frame), fn(#(messages, _)) = messages)
-/// // => Right([WebSocket.Text("Hello")])
+/// Either.map(ErnestHttpd.WebSocket.decode(decoder, frame), fn(#(messages, _)) = messages)
+/// // => Right([ErnestHttpd.WebSocket.Text("Hello")])
 /// ```
 ///
 /// The server's text message encoded, the RFC's unmasked frame of §5.7:
 ///
 /// ```ernest
-/// Bytes.toHex(WebSocket.encode(WebSocket.Text("Hello")))
+/// Bytes.toHex(ErnestHttpd.WebSocket.encode(ErnestHttpd.WebSocket.Text("Hello")))
 /// // => "810548656c6c6f"
 /// ```
 
@@ -55,7 +55,8 @@
 /// ### Examples
 ///
 /// ```ernest
-/// Bytes.toHex(WebSocket.encode(WebSocket.Close(code = Some(1000), reason = "done")))
+/// Bytes.toHex(ErnestHttpd.WebSocket.encode(ErnestHttpd.WebSocket.Close(code = Some(1000),
+///                                                                      reason = "done")))
 /// // => "880603e8646f6e65"
 /// ```
 export type Message =
@@ -73,10 +74,10 @@ export type Message =
 /// A decoder of a server's frames given a client's masked frame:
 ///
 /// ```ernest
-/// let decoder = WebSocket.decoder(WebSocket.FromServer, 65536);
+/// let decoder = ErnestHttpd.WebSocket.decoder(ErnestHttpd.WebSocket.FromServer, 65536);
 /// let frame = <<0x81, 0x85, 0x37, 0xfa, 0x21, 0x3d, 0x7f, 0x9f, 0x4d, 0x51, 0x58>>;
-/// Either.map(WebSocket.decode(decoder, frame), fn(#(messages, _)) = messages)
-/// // => Left(WebSocket.ProtocolError)
+/// Either.map(ErnestHttpd.WebSocket.decode(decoder, frame), fn(#(messages, _)) = messages)
+/// // => Left(ErnestHttpd.WebSocket.ProtocolError)
 /// ```
 export type Role = FromClient | FromServer
 
@@ -87,10 +88,10 @@ export type Role = FromClient | FromServer
 /// ### Examples
 ///
 /// ```ernest
-/// let decoder = WebSocket.decoder(WebSocket.FromServer, 4);
+/// let decoder = ErnestHttpd.WebSocket.decoder(ErnestHttpd.WebSocket.FromServer, 4);
 /// let frame = <<0x81, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f>>;
-/// Either.map(WebSocket.decode(decoder, frame), fn(#(messages, _)) = messages)
-/// // => Left(WebSocket.TooBig)
+/// Either.map(ErnestHttpd.WebSocket.decode(decoder, frame), fn(#(messages, _)) = messages)
+/// // => Left(ErnestHttpd.WebSocket.TooBig)
 /// ```
 export type Error = ProtocolError | TooBig | NotUtf8
 
@@ -104,13 +105,14 @@ export type Error = ProtocolError | TooBig | NotUtf8
 /// two reads:
 ///
 /// ```ernest
-/// let decoder = WebSocket.decoder(WebSocket.FromServer, 65536);
+/// let decoder = ErnestHttpd.WebSocket.decoder(ErnestHttpd.WebSocket.FromServer, 65536);
 /// {
-///     let #(first, decoder) <- WebSocket.decode(decoder, <<0x01, 0x03, 0x48, 0x65, 0x6c>>);
-///     let #(second, _) <- WebSocket.decode(decoder, <<0x80, 0x02, 0x6c, 0x6f>>);
+///     let #(first, decoder) <-
+///         ErnestHttpd.WebSocket.decode(decoder, <<0x01, 0x03, 0x48, 0x65, 0x6c>>);
+///     let #(second, _) <- ErnestHttpd.WebSocket.decode(decoder, <<0x80, 0x02, 0x6c, 0x6f>>);
 ///     Right(#(first, second))
 /// }
-/// // => Right(#([], [WebSocket.Text("Hello")]))
+/// // => Right(#([], [ErnestHttpd.WebSocket.Text("Hello")]))
 /// ```
 export abstract type Decoder =
     Decoder(role : Role, limit : Int, carried : Bytes, message : Optional(Fragments))
@@ -153,7 +155,7 @@ type Placed = Placed(answered : Optional(Message), message : Optional(Fragments)
 /// RFC 6455's key of §4.2.2:
 ///
 /// ```ernest
-/// WebSocket.accept("dGhlIHNhbXBsZSBub25jZQ==")
+/// ErnestHttpd.WebSocket.accept("dGhlIHNhbXBsZSBub25jZQ==")
 /// // => "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
 /// ```
 export fn accept(key : String) : String =
@@ -204,20 +206,20 @@ export fn decoder(role : Role, limit : Int) : Decoder =
 /// A ping between a text message's two fragments, answered in its place:
 ///
 /// ```ernest
-/// let decoder = WebSocket.decoder(WebSocket.FromServer, 65536);
+/// let decoder = ErnestHttpd.WebSocket.decoder(ErnestHttpd.WebSocket.FromServer, 65536);
 /// let frames = <<0x01, 0x03, 0x48, 0x65, 0x6c, 0x89, 0x00, 0x80, 0x02, 0x6c, 0x6f>>;
-/// Either.map(WebSocket.decode(decoder, frames), fn(#(messages, _)) = messages)
-/// // => Right([WebSocket.Ping(<<>>), WebSocket.Text("Hello")])
+/// Either.map(ErnestHttpd.WebSocket.decode(decoder, frames), fn(#(messages, _)) = messages)
+/// // => Right([ErnestHttpd.WebSocket.Ping(<<>>), ErnestHttpd.WebSocket.Text("Hello")])
 /// ```
 ///
 /// A frame whose header says it passes the limit, refused before its
 /// payload has come:
 ///
 /// ```ernest
-/// let decoder = WebSocket.decoder(WebSocket.FromServer, 65536);
+/// let decoder = ErnestHttpd.WebSocket.decoder(ErnestHttpd.WebSocket.FromServer, 65536);
 /// let header = <<0x82, 0x7F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01>>;
-/// Either.map(WebSocket.decode(decoder, header), fn(#(messages, _)) = messages)
-/// // => Left(WebSocket.TooBig)
+/// Either.map(ErnestHttpd.WebSocket.decode(decoder, header), fn(#(messages, _)) = messages)
+/// // => Left(ErnestHttpd.WebSocket.TooBig)
 /// ```
 export fn decode(decoder : Decoder, bytes : Bytes) : Either(Error, #(List(Message), Decoder)) =
     decodedFrom(Decoder(..decoder, carried = decoder.carried <> bytes), [])
@@ -413,7 +415,7 @@ fn completed(fragments : Fragments) : Either(Error, Message) =
 /// ### Examples
 ///
 /// ```ernest
-/// WebSocket.closeCode(WebSocket.TooBig)
+/// ErnestHttpd.WebSocket.closeCode(ErnestHttpd.WebSocket.TooBig)
 /// // => 1009
 /// ```
 export fn closeCode(error : Error) : Int =
@@ -447,7 +449,7 @@ export fn closeCode(error : Error) : Int =
 /// RFC 6455's unmasked ping of §5.7:
 ///
 /// ```ernest
-/// Bytes.toHex(WebSocket.encode(WebSocket.Ping(String.toUtf8("Hello"))))
+/// Bytes.toHex(ErnestHttpd.WebSocket.encode(ErnestHttpd.WebSocket.Ping(String.toUtf8("Hello"))))
 /// // => "890548656c6c6f"
 /// ```
 ///
@@ -456,7 +458,8 @@ export fn closeCode(error : Error) : Int =
 ///
 /// ```ernest
 /// let header = fn(count) = {
-///     let frame = WebSocket.encode(WebSocket.Binary(Bytes.repeat(<<0>>, count)));
+///     let frame =
+///         ErnestHttpd.WebSocket.encode(ErnestHttpd.WebSocket.Binary(Bytes.repeat(<<0>>, count)));
 ///     Bytes.toHex(Bytes.slice(frame, 0, Bytes.size(frame) - count))
 /// };
 /// [header(256), header(65536)]
@@ -484,8 +487,11 @@ export fn encode(message : Message) : Bytes = {
 ///
 /// ```ernest
 /// let key = <<0x37, 0xfa, 0x21, 0x3d>>;
-/// [Optional.map(WebSocket.encodeMasked(WebSocket.Text("Hello"), key), Bytes.toHex),
-///  Optional.map(WebSocket.encodeMasked(WebSocket.Text("Hello"), <<1, 2, 3>>), Bytes.toHex)]
+/// [Optional.map(ErnestHttpd.WebSocket.encodeMasked(ErnestHttpd.WebSocket.Text("Hello"), key),
+///               Bytes.toHex),
+///  Optional.map(ErnestHttpd.WebSocket.encodeMasked(ErnestHttpd.WebSocket.Text("Hello"),
+///                                                  <<1, 2, 3>>),
+///               Bytes.toHex)]
 /// // => [Some("818537fa213d7f9f4d5158"), None]
 /// ```
 export fn encodeMasked(message : Message, key : Bytes) : Optional(Bytes) =

@@ -30,24 +30,24 @@ type ErnestHttpd.MainMsg = Terminated(Reply(Unit)) | ListenerEnded(Down)
 
 ## 3. Modules
 
-Each module has one job, which its doc block states.
+Each module has one job, which its doc block states. The entry module stands at `src/ernest_httpd.ern`, and every other under `src/ernest_httpd/`, in the namespace `ErnestHttpd`, so that the archive can be a dependency (report §11.9); the design names a module as the program's code writes it, by its last segment.
 
 | Module | File | Owns |
 |---|---|---|
 | `ErnestHttpd` | `src/ernest_httpd.ern` | the entry point: the program's start and its end, §2 |
-| `Config` | `src/config.ern` | the configuration: the file read into the record of §4, and every rule of §4 checked; and the host an authority names, `Config.host`, by which §4, §6 and §9 read hosts |
-| `Static` | `src/static.ern` | a request for a file to its response, §5 |
-| `Connection` | `src/connection.ern` | a socket's life: each request read, checked, served and answered, and its line told to the log, §6 |
-| `Hosts` | `src/hosts.ern` | a request's host and what it decides before the site: the canonical host served, a redirect host and the redirect listener answered 301, a host that is neither 421, and the ACME challenge served, §9 |
-| `Remote` | `src/remote.ern` | the address a remote address is counted under, `Remote.counted`, by which §7 and §12 count |
-| `Listener` | `src/listener.ern` | the connections of one listening socket: accepted within the caps, each in a process of its own, and closed in order at the end, §7 |
-| `AccessLog` | `src/access_log.ern` | the access log: each response a line of Common Log Format, appended by the file's path in batches, §8 |
-| `WebSocket` | `src/web_socket.ern` | RFC 6455's frames and its accept value: messages decoded from bytes and encoded to frames, knowing no socket, §10 |
-| `Shell` | `src/shell.ern` | a shell's life: the upgrade's handshake, and after the 101 the socket read through its reader, the session attached at the page's first resize, and the terminal's bytes and the messages carried both ways, §11 |
-| `Sessions` | `src/sessions.ern` | the sessions by cookie: a shell's attach passed to its session or a session started within the caps, and every session ended at the stop, §12 |
-| `Session` | `src/session.ern` | one session: its program under a terminal, read through its reader while a shell is attached, its deadline, and its end with a close code, §12 |
-| `Smoke` | `src/smoke.ern` | the smoke test: the checks run against a deployed site, the shell's where its configuration has a `shell`, each said on standard output, and run by the end-to-end test against the example site, and what the checks and the end-to-end tests speak with, §13 |
-| `Client` | `src/client.ern` | the client: the module served at `shell.client`, the limits at its head, and its test in a browser, §14 |
+| `Config` | `src/ernest_httpd/config.ern` | the configuration: the file read into the record of §4, and every rule of §4 checked; and the host an authority names, `Config.host`, by which §4, §6 and §9 read hosts |
+| `Static` | `src/ernest_httpd/static.ern` | a request for a file to its response, §5 |
+| `Connection` | `src/ernest_httpd/connection.ern` | a socket's life: each request read, checked, served and answered, and its line told to the log, §6 |
+| `Hosts` | `src/ernest_httpd/hosts.ern` | a request's host and what it decides before the site: the canonical host served, a redirect host and the redirect listener answered 301, a host that is neither 421, and the ACME challenge served, §9 |
+| `Remote` | `src/ernest_httpd/remote.ern` | the address a remote address is counted under, `Remote.counted`, by which §7 and §12 count |
+| `Listener` | `src/ernest_httpd/listener.ern` | the connections of one listening socket: accepted within the caps, each in a process of its own, and closed in order at the end, §7 |
+| `AccessLog` | `src/ernest_httpd/access_log.ern` | the access log: each response a line of Common Log Format, appended by the file's path in batches, §8 |
+| `WebSocket` | `src/ernest_httpd/web_socket.ern` | RFC 6455's frames and its accept value: messages decoded from bytes and encoded to frames, knowing no socket, §10 |
+| `Shell` | `src/ernest_httpd/shell.ern` | a shell's life: the upgrade's handshake, and after the 101 the socket read through its reader, the session attached at the page's first resize, and the terminal's bytes and the messages carried both ways, §11 |
+| `Sessions` | `src/ernest_httpd/sessions.ern` | the sessions by cookie: a shell's attach passed to its session or a session started within the caps, and every session ended at the stop, §12 |
+| `Session` | `src/ernest_httpd/session.ern` | one session: its program under a terminal, read through its reader while a shell is attached, its deadline, and its end with a close code, §12 |
+| `Smoke` | `src/ernest_httpd/smoke.ern` | the smoke test: the checks run against a deployed site, the shell's where its configuration has a `shell`, each said on standard output, and run by the end-to-end test against the example site, and what the checks and the end-to-end tests speak with, §13 |
+| `Client` | `src/ernest_httpd/client.ern` | the client: the module served at `shell.client`, the limits at its head, and its test in a browser, §14 |
 
 ## 4. The configuration
 
@@ -382,7 +382,7 @@ At `HUP` and at `TERM` the wrapper ignores both from then on, and kills podman w
 
 **The shell's member.** Where the site's page has a shell, the configuration takes the member `shell`: `path` `/shell/session`, `client` `/shell/client.js`, the path the site imports the client from, §14, `origins` `["https://ernest-lang.org"]`, the command above, `most-at-once` 6, sized to the machine's 1.9 GB of memory, `per-address` 2, `starts` 10 within 3600000, `lifetime` 300000, `warning` 60000, `message-limit` 65536 and `hangup` 5000.
 
-**The smoke test**, `Smoke`, `make smoke HOST=` and the canonical host, `ern run` on the module's own `.erc`, `build/smoke.erc`, with the host and `deploy/config.json` as its arguments, since `--main` names a function of the file's own module alone: against the deployed site over TLS, verified against the host's bundle, `/etc/ssl/certs/ca-certificates.crt`, each check a line on standard output, the check's name and `ok`, or `failed: ` and what came; the program exits 0 where every check passed and 1 otherwise. `Smoke` exports what the checks speak with, a `GET`, an upgrade, a message masked as a browser masks it and the shell's output read, and the server's start by its launcher on a configuration, under a limit of open files where one is given, which `sh` sets by `ulimit -n` before it runs the launcher in its place, and its end by the termination signal, which the end-to-end tests run with.
+**The smoke test**, `Smoke`, `make smoke HOST=` and the canonical host, `ern run` on the module's own `.erc`, `build/ernest_httpd/smoke.erc`, with the host and `deploy/config.json` as its arguments, since `--main` names a function of the file's own module alone: against the deployed site over TLS, verified against the host's bundle, `/etc/ssl/certs/ca-certificates.crt`, each check a line on standard output, the check's name and `ok`, or `failed: ` and what came; the program exits 0 where every check passed and 1 otherwise. `Smoke` exports what the checks speak with, a `GET`, an upgrade, a message masked as a browser masks it and the shell's output read, and the server's start by its launcher on a configuration, under a limit of open files where one is given, which `sh` sets by `ulimit -n` before it runs the launcher in its place, and its end by the termination signal, which the end-to-end tests run with.
 
 `Smoke.main` takes the host, which it dials without a port it names, each check dialing its listener's, and the configuration's path, and refuses another count of arguments with `usage: smoke host config.json` on standard error and the status 2. It reads the file's text within 5000 milliseconds and checks it with `Config.parse`, every rule but the file system's, whose files are the machine's; a file it cannot read, as `Unreadable`, or a text `Config.parse` refuses is said on standard error as `smoke: `, the path, `: ` and `Config.reason`, with the status 2, and so is one whose `redirect-hosts` is empty, as the rule `not be empty`, since the checks need the first, and one without a `tls` listener or without a `redirect` listener, as `listeners must hold a tls listener and a redirect listener`, since the checks run on the port of the first of each.
 

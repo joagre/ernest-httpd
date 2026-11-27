@@ -115,21 +115,21 @@ type Asked = Resize(Terminal.Size) | Extend | Stop
 ///
 /// ```ernest
 /// let shell =
-///     Config.Shell(path = "/shell",
-///                  client = "/shell/client.js",
-///                  origins = ["https://ernest-lang.org"],
-///                  command = ["cat"],
-///                  mostAtOnce = 1,
-///                  perAddress = 1,
-///                  starts = Config.Starts(count = 1, within = 1000),
-///                  lifetime = 2000,
-///                  warning = 1000,
-///                  messageLimit = 1024,
-///                  hangup = 1000);
+///     ErnestHttpd.Config.Shell(path = "/shell",
+///                              client = "/shell/client.js",
+///                              origins = ["https://ernest-lang.org"],
+///                              command = ["cat"],
+///                              mostAtOnce = 1,
+///                              perAddress = 1,
+///                              starts = ErnestHttpd.Config.Starts(count = 1, within = 1000),
+///                              lifetime = 2000,
+///                              warning = 1000,
+///                              messageLimit = 1024,
+///                              hangup = 1000);
 /// let request =
 ///     Http.Request(method = "POST", target = "/shell", version = Http.http11, headers = []);
-/// Shell.handshake(shell, request)
-/// // => Left(Shell.Refusal(status = 405, headers = [Http.Header(name = "Allow", value = "GET")]))
+/// ErnestHttpd.Shell.handshake(shell, request)
+/// // => Left(ErnestHttpd.Shell.Refusal(status = 405, headers = [Http.Header(name = "Allow", value = "GET")]))
 /// ```
 export fn handshake(shell : Config.Shell, request : Http.Request) : Either(Refusal, Accepted) = {
     let headers = request.headers;
@@ -1464,7 +1464,7 @@ let dropsWhatFollowsAClose =
 // The live process whose spawn site is the shell's reader's, in `serve`.
 fn shellReader() : Optional(Process) =
     List.find(Process.live(), fn(process) = match Process.status(process) {
-        Some(status) -> String.startsWith(status.site, "Shell.serve:")
+        Some(status) -> String.startsWith(status.site, "ErnestHttpd.Shell.serve:")
       | None -> false
     })
 

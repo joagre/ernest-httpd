@@ -18,11 +18,11 @@
 /// The line of an entry, its time in UTC:
 ///
 /// ```ernest
-/// AccessLog.line(AccessLog.Entry(remote = "192.0.2.7",
-///                                time = 784111777000,
-///                                request = Some("GET /index.html HTTP/1.1"),
-///                                status = 200,
-///                                size = 2326))
+/// ErnestHttpd.AccessLog.line(ErnestHttpd.AccessLog.Entry(remote = "192.0.2.7",
+///                                                        time = 784111777000,
+///                                                        request = Some("GET /index.html HTTP/1.1"),
+///                                                        status = 200,
+///                                                        size = 2326))
 /// // => Some("192.0.2.7 - - [06/Nov/1994:08:49:37 +0000] \"GET /index.html HTTP/1.1\" 200 2326")
 /// ```
 
@@ -50,14 +50,14 @@ export type LogMsg =
 /// ### Examples
 ///
 /// ```ernest
-/// let log = AccessLog.start(Path("access.log"), 5000);
+/// let log = ErnestHttpd.AccessLog.start(Path("access.log"), 5000);
 /// send(log,
-///      AccessLog.Entry(remote = "192.0.2.7",
-///                      time = Clock.now(),
-///                      request = Some("GET / HTTP/1.1"),
-///                      status = 200,
-///                      size = 4));
-/// Address.callForever(log, AccessLog.Flush)
+///      ErnestHttpd.AccessLog.Entry(remote = "192.0.2.7",
+///                                  time = Clock.now(),
+///                                  request = Some("GET / HTTP/1.1"),
+///                                  status = 200,
+///                                  size = 4));
+/// Address.callForever(log, ErnestHttpd.AccessLog.Flush)
 /// // => Unit
 /// ```
 export fn start(path : Path, ms : Int) : Address(LogMsg) =
@@ -111,11 +111,11 @@ fn appended(path : Path, lines : List(String), ms : Int) : Unit =
 /// ### Examples
 ///
 /// ```ernest
-/// AccessLog.line(AccessLog.Entry(remote = "::1",
-///                                time = 0,
-///                                request = None,
-///                                status = 408,
-///                                size = 15))
+/// ErnestHttpd.AccessLog.line(ErnestHttpd.AccessLog.Entry(remote = "::1",
+///                                                        time = 0,
+///                                                        request = None,
+///                                                        status = 408,
+///                                                        size = 15))
 /// // => Some("::1 - - [01/Jan/1970:00:00:00 +0000] \"-\" 408 15")
 /// ```
 export fn line(message : LogMsg) : Optional(String) =

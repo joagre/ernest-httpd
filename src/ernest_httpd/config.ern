@@ -21,17 +21,19 @@
 /// field is absent:
 ///
 /// ```ernest
-/// Config.parse("{}")
-/// // => Left(Config.Invalid(field = "listeners", rule = "is required", value = None))
+/// ErnestHttpd.Config.parse("{}")
+/// // => Left(ErnestHttpd.Config.Invalid(field = "listeners", rule = "is required", value = None))
 /// ```
 ///
 /// What the operator reads, the value as JSON writes it:
 ///
 /// ```ernest
-/// #(Config.reason(Config.Invalid(field = "listeners[0].port",
-///                                rule = "be 0 to 65535",
-///                                value = Some("70000"))),
-///   Config.reason(Config.Invalid(field = "root", rule = "is required", value = None)))
+/// #(ErnestHttpd.Config.reason(ErnestHttpd.Config.Invalid(field = "listeners[0].port",
+///                                                        rule = "be 0 to 65535",
+///                                                        value = Some("70000"))),
+///   ErnestHttpd.Config.reason(ErnestHttpd.Config.Invalid(field = "root",
+///                                                        rule = "is required",
+///                                                        value = None)))
 /// // => #("listeners[0].port must be 0 to 65535: 70000", "root is required")
 /// ```
 
@@ -200,9 +202,9 @@ fn hexDigit(digit : Int) : String =
 /// ### Examples
 ///
 /// ```ernest
-/// #(Config.host("ernest-lang.org:443"),
-///   Config.host("[::1]:8080"),
-///   Config.host("ernest-lang.org:abc"))
+/// #(ErnestHttpd.Config.host("ernest-lang.org:443"),
+///   ErnestHttpd.Config.host("[::1]:8080"),
+///   ErnestHttpd.Config.host("ernest-lang.org:abc"))
 /// // => #(Some("ernest-lang.org"), Some("::1"), None)
 /// ```
 export fn host(authority : String) : Optional(String) =

@@ -522,7 +522,7 @@ let endsInOrder = Test.Case(name = "ends its connections when told to stop", run
 // Whether the process was spawned in serve, as the acceptor is.
 fn spawnedInServe(process : Process) : Bool =
     match Process.status(process) {
-        Some(status) -> String.startsWith(status.site, "Listener.serve:")
+        Some(status) -> String.startsWith(status.site, "ErnestHttpd.Listener.serve:")
       | None -> false
     }
 

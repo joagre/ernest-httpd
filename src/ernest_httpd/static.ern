@@ -21,7 +21,8 @@
 ///
 /// ```ernest
 /// let request = Http.Request(method = "POST", target = "/", version = Http.http11, headers = []);
-/// let #(response, body) = Static.serve(Static.site(Path("site"), Map.empty), request, 1000);
+/// let #(response, body) =
+///     ErnestHttpd.Static.serve(ErnestHttpd.Static.site(Path("site"), Map.empty), request, 1000);
 /// #(response.status, response.headers, String.fromUtf8(body))
 /// // => #(405, [Http.Header(name = "Allow", value = "GET, HEAD"), Http.Header(name = "Content-Type", value = "text/plain; charset=utf-8")], Some("405 Method Not Allowed\n"))
 /// ```
@@ -43,7 +44,7 @@ export type Site = Site(root : Path, contentTypes : Map(String, String))
 /// ### Examples
 ///
 /// ```ernest
-/// Map.get(Static.contentTypes, ".html")
+/// Map.get(ErnestHttpd.Static.contentTypes, ".html")
 /// // => Some("text/html; charset=utf-8")
 /// ```
 export let contentTypes : Map(String, String) =
@@ -65,7 +66,7 @@ export let contentTypes : Map(String, String) =
 /// ### Examples
 ///
 /// ```ernest
-/// let site = Static.site(Path("site"), Map.fromList([#(".txt", "text/plain")]));
+/// let site = ErnestHttpd.Static.site(Path("site"), Map.fromList([#(".txt", "text/plain")]));
 /// #(Map.get(site.contentTypes, ".txt"), Map.get(site.contentTypes, ".css"))
 /// // => #(Some("text/plain"), Some("text/css; charset=utf-8"))
 /// ```
@@ -92,7 +93,8 @@ export fn site(root : Path, contentTypes : Map(String, String)) : Site =
 ///
 /// ```ernest
 /// let request = Http.Request(method = "GET", target = "*", version = Http.http11, headers = []);
-/// let #(response, _) = Static.serve(Static.site(Path("site"), Map.empty), request, 1000);
+/// let #(response, _) =
+///     ErnestHttpd.Static.serve(ErnestHttpd.Static.site(Path("site"), Map.empty), request, 1000);
 /// response.status
 /// // => 400
 /// ```
@@ -110,7 +112,7 @@ export fn serve(site : Site, request : Http.Request, ms : Int) : #(Http.Response
 /// ### Examples
 ///
 /// ```ernest
-/// let #(response, _) = Static.methodNotAllowed;
+/// let #(response, _) = ErnestHttpd.Static.methodNotAllowed;
 /// #(response.status, Http.header(response.headers, "Allow"))
 /// // => #(405, Some("GET, HEAD"))
 /// ```
@@ -127,7 +129,7 @@ export let methodNotAllowed : #(Http.Response, Bytes) = {
 ///
 /// ```ernest
 /// let ok = Http.Response(version = Http.http11, status = 200, headers = []);
-/// Static.withoutBody(#(ok, <<104, 105>>))
+/// ErnestHttpd.Static.withoutBody(#(ok, <<104, 105>>))
 /// // => #(Http.Response(version = Http.Version(major = 1, minor = 1), status = 200, headers = [Http.Header(name = "Content-Length", value = "2")]), <<>>)
 /// ```
 export fn withoutBody(#(response, body) : #(Http.Response, Bytes)) : #(Http.Response, Bytes) =
@@ -293,10 +295,10 @@ fn beginsWithDot(part : String) : Bool =
 /// ```ernest
 /// let get =
 ///     fn(target) = Http.Request(method = "GET", =target, version = Http.http11, headers = []);
-/// #(Static.pathAndQuery(get("/docs?page=2")),
-///   Static.pathAndQuery(get("/?a[]=1")),
-///   Static.pathAndQuery(get("http://ernest-lang.org?q=1")),
-///   Static.pathAndQuery(get("*")))
+/// #(ErnestHttpd.Static.pathAndQuery(get("/docs?page=2")),
+///   ErnestHttpd.Static.pathAndQuery(get("/?a[]=1")),
+///   ErnestHttpd.Static.pathAndQuery(get("http://ernest-lang.org?q=1")),
+///   ErnestHttpd.Static.pathAndQuery(get("*")))
 /// // => #(Some("/docs?page=2"), Some("/?a%5B%5D=1"), Some("/?q=1"), None)
 /// ```
 export fn pathAndQuery(request : Http.Request) : Optional(String) =
@@ -355,7 +357,8 @@ fn isControl(char : Char) : Bool = {
 /// ### Examples
 ///
 /// ```ernest
-/// let #(response, body) = Static.error(Static.site(Path("site"), Map.empty), 400, 1000);
+/// let #(response, body) =
+///     ErnestHttpd.Static.error(ErnestHttpd.Static.site(Path("site"), Map.empty), 400, 1000);
 /// #(response.status, response.headers, String.fromUtf8(body))
 /// // => #(400, [Http.Header(name = "Content-Type", value = "text/plain; charset=utf-8")], Some("400 Bad Request\n"))
 /// ```

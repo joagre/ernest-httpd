@@ -556,7 +556,7 @@ fn terminated(pid : String) : Bool =
 // spawned for a cookie.
 fn sessionsLive() : Int =
     List.size(List.filter(Process.live(), fn(process) = match Process.status(process) {
-        Some(status) -> String.startsWith(status.site, "Sessions.admitted:")
+        Some(status) -> String.startsWith(status.site, "ErnestHttpd.Sessions.admitted:")
       | None -> false
     }))
 
