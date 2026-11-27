@@ -4,7 +4,7 @@ What each document of this repository is. [`README.md`](../README.md) says what 
 
 - **[`design.md`](design.md)**: how the program is arranged, the normative document of this repository, and the glossary of its names.
 - **[`plan.md`](plan.md)**: where the program stands and what comes next.
-- **[`log.md`](log.md)**: the dated rationale, never normative.
+- **[`log/`](log/README.md)**: the dated rationale, never normative, a file a day with its index.
 - **[`CHANGES.md`](../CHANGES.md)**: each release's note, newest first.
 - **[`build.md`](build.md)**: how the Makefile, the launcher, the archive and the installation are arranged, the template's.
 - **[`release.md`](release.md)**: what a release runs to be ready.

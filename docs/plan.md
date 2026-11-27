@@ -1,6 +1,6 @@
 # Plan
 
-The roadmap: what remains to be built, in what order, and the milestones done. Why anything is the way it is belongs to [`log.md`](log.md), and how the program is arranged to [`design.md`](design.md).
+The roadmap: what remains to be built, in what order, and the milestones done. Why anything is the way it is belongs to [`log/`](log/README.md), and how the program is arranged to [`design.md`](design.md).
 
 Read *Where we are* first, then the milestone under way, its steps by what each waits on, then what stands outside the milestones; the table of the milestones done comes last. A gap stands in the milestone whose item closes it, and a decision the user must make stands in its milestone as a named decision, never as "open".
 
