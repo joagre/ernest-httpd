@@ -60,7 +60,8 @@ It needs [Ernest](https://ernest-lang.org) on your `PATH`, the release `package.
 
 ```
 make            # builds the program
-make test       # in a checkout: every module's tests, the client's in Chromium, then the documents' check;
+make test       # in a checkout: every module's tests, the client's in Chromium, a dependent's
+                # build of the program, then the documents' check;
                 # its tests serve the shell of the example for seconds at a time, as you
 make run        # runs the example site through the launcher, bin/ernest_httpd, on
                 # examples/site/config.json; CONFIG=path make run serves another configuration

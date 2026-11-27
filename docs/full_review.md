@@ -23,7 +23,7 @@ It does not run while `findings.md` stands, a release's findings or a review's.
 
 A reader's letter names its findings: C12 is the code reader's twelfth.
 
-- **K, the cold reader.** Reads `README.md`, and of what it links only what a user of the program reads: the module pages `make doc` writes under `build/`, `examples/` and `deploy/README.md`, where they exist. It reads no working document.
+- **K, the cold reader.** Reads `README.md`, and of what it links only what a user of the program reads: the module pages `make doc` writes under `build/`, `examples/` and the README under `deploy/`, where they exist. It reads no working document.
 
   "You know Ernest from its guide, and not this program. Build the program and use it as the README says: run it, or, where it is a library, call it from a program of your own. Report every step that failed or that you had to guess, every message you did not understand, everything you wanted and could not find, and every claim of the page that the program did not keep."
 - **C, the code reader.** Reads `src/`, `test/`, `examples/`, `tools/` and the files of `deploy/` whole, where they exist, with the Makefile, the launcher, `package.conf`, `.gitignore` and `.github/`, against `docs/design.md`, the report's §0, Appendix E.0's shape rules and the installed `guide/style.md`.

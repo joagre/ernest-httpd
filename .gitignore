@@ -8,6 +8,9 @@ lib/
 # What make xterm fills: the example site's terminal, fetched
 examples/site/root/xterm/
 
+# What make release stages its archive in
+stage/
+
 # A node's private key, in its configuration directory
 private-key.pem
 

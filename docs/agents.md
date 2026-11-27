@@ -10,7 +10,7 @@ A diagnosis that needs experiments goes to one agent with the failing case and w
 
 Agents whose work is bound by the processor, a race's probe, a run under a sanitizer or a load test, run one at a time, and each runs its programs one after another: side by side is for work that waits or reads. The brief says so. The brief sorts the agent's runs by that test and names each kind: a race's probe and a run whose time is measured are bound by the processor, and a run that only waits, a test that fails by running out its deadline among them, goes side by side. A session reads the machine's load before it starts such an agent: a load another session makes is said to the user, who says whether the agent waits.
 
-An agent follows `CLAUDE.md`, but a review's reader, whose brief stands in its place as [`full_review.md`](full_review.md)'s *How it runs* says. Its brief tells it in one line to leave untracked files alone, and to read Ernest's `guide/style.md` before it writes Ernest, as `CLAUDE.md`'s *Read when the job starts* has it.
+An agent follows `CLAUDE.md`, and its brief tells it in one line to leave untracked files alone and to read Ernest's `guide/style.md` before it writes Ernest, as `CLAUDE.md`'s *Read when the job starts* has it. A review's reader follows its brief instead, which stands in place of `CLAUDE.md` as [`full_review.md`](full_review.md)'s *How it runs* says.
 
 ## An agent's report
 
