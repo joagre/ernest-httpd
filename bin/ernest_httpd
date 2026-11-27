@@ -1,40 +1,41 @@
 #!/bin/sh
-# The launcher: ern run on the program named as this file is (docs/design.md
-# §13). Its own path is followed through symbolic links first, by realpath
-# (POSIX.1-2024), so that a link to it runs the installation it stands in.
-# Its root is ../lib/NAME/ where NAME's compiled form stands there, beside
-# an installed launcher, and .. otherwise, a checkout or an unpacked
-# release. The root is the run's root package, so the packages its
-# package.conf names are on the load path (report §11.9), and so is the
-# program's own Erlang: its ebin/ in an installation and an unpacked release,
-# and each application under erl/ in a checkout, through --libs-dir. A
-# leading --config-dir dir, the one option an operator gives, goes to ern run
-# (report §11.2, §8.3), and one with no directory after it is refused with
-# the program's usage line; everything after it goes to the program. An ern
-# that cannot be run, ERN's or the one on PATH, is said before the run. The
-# working directory stays the caller's.
+# The launcher: ern run on the program named as this file is. The path it is
+# run by is followed through its links first, by realpath (POSIX.1-2024), so
+# that a link to it runs it as the file itself does, under the file's name.
+# Its root is ../lib/NAME/ where NAME's compiled form stands there, beside an
+# installed launcher, and .. otherwise, a checkout or an unpacked release.
+# The root is the run's root package, so the packages its package.conf names
+# are on the load path (report §11.9), and so is the program's own Erlang:
+# its ebin/ in an installation and an unpacked release, and each application
+# under erl/ in a checkout, through --libs-dir. A leading --config-dir and
+# the directory after it, the one option an operator gives, go to ern run
+# (report §11.2, §8.3), which refuses an empty one; a --config-dir with
+# nothing after it is refused here, with status 2. Everything after them
+# goes to the program. An ern that cannot be run, ERN's or the one on PATH,
+# is said before the run, with status 127. The working directory stays the
+# caller's.
 self=$(realpath -- "$0") || exit 1
 here=$(cd -- "$(dirname -- "$self")/.." && pwd) || exit 1
 name=$(basename -- "$self")
 root=$here
 [ -f "$here/lib/$name/build/$name.erc" ] && root=$here/lib/$name
-configured=no
+program=$root/build/$name.erc
 if [ "$1" = "--config-dir" ]; then
     if [ $# -lt 2 ]; then
-        echo "usage: $name [--config-dir dir] config.json" >&2
+        echo "$name: --config-dir takes a directory: $name --config-dir dir [argument]..." >&2
         exit 2
     fi
-    configured=yes
-    config=$2
+    dir=$2
     shift 2
+    set -- --config-dir "$dir" --package-dir "$root" "$program" "$@"
+else
+    set -- --package-dir "$root" "$program" "$@"
 fi
 ern=${ERN:-ern}
 case $ern in
     */*) [ -f "$ern" ] && [ -x "$ern" ] ;;
     *) command -v "$ern" > /dev/null 2>&1 ;;
 esac || { echo "$name: cannot run $ern" >&2; exit 127; }
-set -- --package-dir "$root" "$root/build/$name.erc" "$@"
 [ -d "$root/erl" ] && set -- --libs-dir "$root/erl" "$@"
 [ -d "$root/ebin" ] && set -- --load-path "$root/ebin" "$@"
-[ "$configured" = yes ] && set -- --config-dir "$config" "$@"
 exec "$ern" run "$@"

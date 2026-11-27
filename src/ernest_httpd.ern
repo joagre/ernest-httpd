@@ -312,7 +312,7 @@ fn compared(outcome : Either(Io.Error, Os.Finished)) : Either(Io.Error, #(Int, S
         #(finished.status, text(finished.stdout), text(finished.stderr))
     })
 
-// The usage line the program and its launcher refuse a command line with.
+// The usage line the program refuses a command line with.
 let usage : String = "usage: ernest_httpd [--config-dir dir] config.json\n"
 
 // design §2: what the entry process refuses before it serves, each with its
@@ -367,9 +367,10 @@ let refusesStarts = Test.Case(name = "refuses what it cannot serve", run = fn() 
 })
 
 // design §13: the launcher refuses a leading --config-dir with no
-// directory after it with the program's usage line and the status 2; says
-// an ern it cannot run, ERN naming one that is not on PATH, a path where
-// nothing stands and a file that is not executable, as `ernest_httpd:
+// directory after it with its own line, which names the directory it
+// takes, and the status 2; says an ern it cannot run, ERN naming one that
+// is not on PATH, a path where nothing stands and a file that is not
+// executable, before the run, as `ernest_httpd:
 // cannot run ` and that ern, with the status 127; and follows its own path
 // through symbolic links, a link holding a relative path to the checkout's
 // launcher and a link to that link, each running the checkout's program,
@@ -398,8 +399,11 @@ let launchesThroughItsPath = Test.Case(name = "launches through its own path", r
                    Os.command(linkToLink, ["--help"])]))
     };
     let cannotRun = fn(ern) = Right(#(127, "", "ernest_httpd: cannot run " <> ern <> "\n"));
+    let bareConfigDir =
+        "ernest_httpd: --config-dir takes a directory:"
+            <> " ernest_httpd --config-dir dir [argument]...\n";
     Test.equal(Either.map(result, fn(outcomes) = List.map(outcomes, compared)),
-               Right([Right(#(2, "", usage)),
+               Right([Right(#(2, "", bareConfigDir)),
                       cannotRun("no-such-ern"),
                       cannotRun(scratch <> "/no-such-ern"),
                       cannotRun(notExecutable),

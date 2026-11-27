@@ -30,6 +30,6 @@ An agent is given its model and its effort when it is started.
 
 The coding model runs at the stronger effort for a build in what a test shows least, a process's protocol, foreign code or what takes input from outside, for a diagnosis, and for a review's reader of the code. It runs at the lesser effort for any other build from a settled brief, re-run once at the stronger from a brief naming the failure and then returned to the session.
 
-The stronger model, at the session's own effort, reads the documents in a review. The smallest model runs a search or a digest of long output that asks no judgment. A test run or a probe needs no model: the session runs it.
+The stronger model reads the documents in a review. The smallest model runs a search or a digest of long output that asks no judgment. A test run or a probe needs no model: the session runs it.
 
 The models' names and their efforts are the session's memory's, not this repository's.

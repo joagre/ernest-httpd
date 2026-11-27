@@ -1029,7 +1029,7 @@ fn withoutZeros(reversed : List(String)) : List(String) =
       | _ -> reversed
     }
 
-// The lines of deploy/README.md's step 3 that fetch and build the OTP
+// The lines of deploy/README.md's Erlang/OTP that fetch and build the OTP
 // release the Containerfile's image runs, each it lacks named.
 fn otpBuilt() : List(String) =
     match imageRelease(text("deploy/Containerfile")) {
@@ -1112,10 +1112,11 @@ fn differences(config : Config.Config, home : String) : List(String) = {
 // place; the image makes the share directory the user's, installs the
 // start, makes the two nodes listing each other, foo on 127.0.0.1:8655,
 // writes the limits into each ernest.conf, and runs the start as its
-// command, from the Erlang image of the OTP release deploy/README.md's
-// step 3 fetches and builds; the deploy hook copies fullchain.pem and privkey.pem into node/,
-// owned by httpd, the key's mode 0600, and restarts the unit; and logrotate
-// rotates log/'s access.log as httpd. A line that is missing is named.
+// command, from the Erlang image of the OTP release that deploy/README.md's
+// Erlang/OTP fetches and builds; the deploy hook copies fullchain.pem and
+// privkey.pem into node/, owned by httpd, the key's mode 0600, and restarts
+// the unit; and logrotate rotates log/'s access.log as httpd. A line that is
+// missing is named.
 let holdsTheDeployment = Test.Case(name = "holds the files of deploy/", run = fn() = {
     let unit = "deploy/ernest-httpd.service";
     let parsed = Config.parse(text("deploy/config.json"));
