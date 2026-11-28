@@ -88,6 +88,8 @@ $ sudo chown -R "$USER": ~/ops
 
 Each directory lists the other by its name, the server the peer `ops` and the operator `node`. A directory made before is refused, `ern config: /home/httpd/ernest-httpd/node exists`, and a peer listed before with the file's path and `a peer is named "node" already`; neither changes anything. A parent that is not there is refused, `no such directory`: the server's directory of the step's first command is made first.
 
+A directory made by an `ern` before 0.11, the server's and the operator's of 0.1.0 among them, holds the node's own `public-key` in its `ernest.conf`, which an `ern` of 0.11 or later refuses, naming the file from the working directory: the server at step 8 says `ern run: ernest-httpd/node/ernest.conf: the file has the unknown field public-key`, and the operator's shell at step 12 says `ern shell: ops/ernest.conf: the file has the unknown field public-key`. The line of `"public-key"` is removed from each of the two files, the server's as `httpd` and the operator's as the operator, and a peer's `public-key` under `peers` stays.
+
 ## 6. The configuration and a first certificate
 
 ```console
