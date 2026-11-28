@@ -32,7 +32,9 @@ The site, which Ernest's `make site TAG=` writes from 0.12.0's tag into Ernest's
 
 What comes when its condition does, in no milestone.
 
-**Line 35.** The close at a write past its deadline, which waits so that the caps count what the host holds, is opened again with Ernest's answer to line 35, its 270, planned after the launch (the log's *The closes decided*).
+**Line 35.** The close at a write past its deadline, which waits so that the caps count what the host holds, is opened again with Ernest's answer to line 35, its 270, planned after the launch (the log's *The closes decided*). So is the eviction of an idle connection for a newcomer, which the known issue *Enough addresses fill a listener* leaves, refused because a kill leaves the host sending for up to 3 minutes (the log's *Milestone 2, item 12: the caps by address*).
+
+**Ernest's answers.** When a release answers line 45, 50 or 57 of the language feedback, the program takes the answer in place of its own: `Smoke` matches `Io`'s error for a certificate that does not verify (Ernest's 285); the certificate, its key and `next`, copied between the tests' modules, and `Smoke`'s exported test helpers become declarations only tests see (its 308); and `web_socket.ern` moves where Ernest's MVP 4.18's item 6 puts a library over a published specification (the log's *The lines and the known issues read*).
 
 **Four cores.** The machine moves to four cores and 4 GB, `shell.most-at-once` about 25, the first time the access log shows visitors turned away (the log's *The machine* and *The archive's tree and the four cores*).
 
