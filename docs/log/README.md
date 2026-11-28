@@ -4,6 +4,8 @@ The dated rationale for the design and the plan, newest last, and what was rejec
 
 ## Index
 
+**2026-11-28.** [The launch on 0.12.0](2026-11-28.md#the-launch-on-0120)
+
 **2026-11-27.** [The template's v0.11.0](2026-11-27.md#the-templates-v0110); [The log split by day](2026-11-27.md#the-log-split-by-day); [The template's findings filed](2026-11-27.md#the-templates-findings-filed); [The modules under ErnestHttpd](2026-11-27.md#the-modules-under-ernesthttpd); [The template's v0.11.1](2026-11-27.md#the-templates-v0111); [The full review's findings closed](2026-11-27.md#the-full-reviews-findings-closed)
 
 **2026-11-26.** [Ernest's answers to lines 35 to 60](2026-11-26.md#ernests-answers-to-lines-35-to-60); [Milestone 2, item 16: the mask](2026-11-26.md#milestone-2-item-16-the-mask); [The race in the tests' terminal program](2026-11-26.md#the-race-in-the-tests-terminal-program); [Milestone 2, item 17: the address](2026-11-26.md#milestone-2-item-17-the-address); [Milestone 2, item 19: the session's environment](2026-11-26.md#milestone-2-item-19-the-sessions-environment); [The launch on 0.11.1](2026-11-26.md#the-launch-on-0111); [Ernest's 0.11.0](2026-11-26.md#ernests-0110)
