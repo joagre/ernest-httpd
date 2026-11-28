@@ -4,7 +4,7 @@ The dated rationale for the design and the plan, newest last, and what was rejec
 
 ## Index
 
-**2026-11-28.** [The launch on 0.12.0](2026-11-28.md#the-launch-on-0120); [The sweep on 0.11.0](2026-11-28.md#the-sweep-on-0110); [Milestone 2, item 18: the path](2026-11-28.md#milestone-2-item-18-the-path); [The lines and the known issues read](2026-11-28.md#the-lines-and-the-known-issues-read); [The candidate after item 6](2026-11-28.md#the-candidate-after-item-6)
+**2026-11-28.** [The launch on 0.12.0](2026-11-28.md#the-launch-on-0120); [The sweep on 0.11.0](2026-11-28.md#the-sweep-on-0110); [Milestone 2, item 18: the path](2026-11-28.md#milestone-2-item-18-the-path); [The lines and the known issues read](2026-11-28.md#the-lines-and-the-known-issues-read); [The candidate after item 6](2026-11-28.md#the-candidate-after-item-6); [The rehearsal on 0.11.0](2026-11-28.md#the-rehearsal-on-0110)
 
 **2026-11-27.** [The template's v0.11.0](2026-11-27.md#the-templates-v0110); [The log split by day](2026-11-27.md#the-log-split-by-day); [The template's findings filed](2026-11-27.md#the-templates-findings-filed); [The modules under ErnestHttpd](2026-11-27.md#the-modules-under-ernesthttpd); [The template's v0.11.1](2026-11-27.md#the-templates-v0111); [The full review's findings closed](2026-11-27.md#the-full-reviews-findings-closed)
 
