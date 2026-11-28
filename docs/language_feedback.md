@@ -4,7 +4,9 @@ What writing Ernest felt against the principles, a line each, carried to Ernest 
 
 The lines are numbered on from the thirty-four of the rounds before, all answered.
 
-Line 35 was found on 2026-11-21 against `ern 0.10.0`, while Ernest's close that waits for its bytes was read against the program's closes; lines 36 and 37 were found on 2026-11-23 against `ern 0.11.0+93a13b13`, while the floor's rise timed the program's closes. Lines 45, 50 and 57 were found on the same day against the same, by the full review's readers at `f6bf173`, each naming the finding of `findings.md` it comes from. Line 59 was found on 2026-11-25 from Ernest's session's word on its commit `67773cad`. Line 61 was found on 2026-11-26 against `ern 0.11.0+ab68ef61`, with item 17's build. Ernest answered lines 35 to 60 on 2026-11-26 with `ern 0.11.0+ab68ef61`; the lines it built, and those it declined for reasons agreed with, are gone (the log's *Ernest's answers to lines 35 to 60*), and each that stays has its answer beneath it.
+Line 35 was found on 2026-11-21 against `ern 0.10.0`, while Ernest's close that waits for its bytes was read against the program's closes; lines 36 and 37 were found on 2026-11-23 against `ern 0.11.0+93a13b13`, while the floor's rise timed the program's closes. Lines 45, 50 and 57 were found on the same day against the same, by the full review's readers at `f6bf173`, each naming the review's finding it comes from. Line 59 was found on 2026-11-25 from Ernest's session's word on its commit `67773cad`. Line 61 was found on 2026-11-26 against `ern 0.11.0+ab68ef61`, with item 17's build.
+
+Ernest answered lines 35 to 60 on 2026-11-26 with `ern 0.11.0+ab68ef61`, and line 61 the same day on its release `ern 0.11.0`; the lines it built, and those it declined for reasons agreed with, are gone (the log's *Ernest's answers to lines 35 to 60*), and each that stays has its answer beneath it.
 
 35. **Nothing ends a socket and drops what its host holds: after a close or a kill the bytes go on to a far end the program has given up.** E.18 has the bytes a socket has taken sent "while the far end takes them", however the socket ends, and dropped 5 seconds after the far end's last take or 3 minutes after the end. `Tcp` has no function that ends a socket without them.
 
@@ -24,7 +26,7 @@ Line 35 was found on 2026-11-21 against `ern 0.10.0`, while Ernest's close that 
 
     ernest-httpd's server shows it: a client that speaks plain HTTP to its port 443 holds its place in the caps 5 seconds past the failed read, and the test of a plain-text client of a TLS listener has its client close first, so that the close answers. Principle 3: when a close answers is the program's to know, and the page's one clause on a handshake reads as though a failed one answers at once. Ask: E.18 says what a close and a kill after a failed handshake wait for; and Ernest decides whether each ends the socket at once, as a close does where the handshake has not ended.
 
-    Planned: Ernest's MVP 4.18, item 1, for 0.11.1, reproduced: the 5 seconds are the host's, its connection process reading up to its `alert_timeout` after an alert of its own.
+    Planned: Ernest's MVP 4.18, item 1, for 0.12.0, reproduced: the 5 seconds are the host's, its connection process reading up to its `alert_timeout` after an alert of its own.
 
 37. **Over TCP a close that waits answers up to a second after the far end has read the last byte and the close, and E.18 does not say so.** E.18 has `close` answer "once the socket's bytes ... are with the kernel, or the bytes are dropped", and states a lag of up to a second for TLS alone: "Over TLS it reads the close, with the record that ends the connection, when the socket next looks at what the host holds, up to a second later".
 
@@ -32,7 +34,7 @@ Line 35 was found on 2026-11-21 against `ern 0.10.0`, while Ernest's close that 
 
     So a connection holds its place in ernest-httpd's caps up to a second after a large response, which its client has long had. Principle 3: when a close answers is the program's to know. Ask: E.18 says when a close over TCP answers once the far end has taken everything, and Ernest decides whether it answers then.
 
-    Planned: Ernest's MVP 4.18, item 1, for 0.11.1, reproduced: the second over TCP is the closer's look.
+    Planned: Ernest's MVP 4.18, item 1, for 0.12.0, reproduced: the second over TCP is the closer's look.
 
 45. **A TLS handshake that fails at the certificate is the host's state and source line.** ernest-httpd's smoke test, dialing a site of a self-signed certificate, is answered `Io.Other("TLS client: In state wait_cert_cr at ssl_handshake.erl:2306 generated CLIENT ALERT: Fatal - Bad Certificate\n selfsigned_peer")` (the review's K24): the cause is the last word, after a line feed, behind a state and a file of OTP's, and the program can match on none of it. Principle 1 and principle 3. Ask: an error of `Io`'s own for a certificate that does not verify, with the host's reason in it.
 
@@ -52,4 +54,6 @@ Line 35 was found on 2026-11-21 against `ern 0.10.0`, while Ernest's close that 
 
     Not taken, 2026-11-26: the type stays, since every refusal of `filePath` is one status of the design's, 400, a directory asked is the target's path ending in `/`, and the program's own rules run over the answered path's segments. Read in `ern 0.11.0+ab68ef61`'s G.11, that holds but for a segment `.`, which `filePath` answers `None` and design §5 drops; the line stays until the plan's step decides between §5 answering 400 and an ask of Ernest's.
 
-61. **E.18 does not say whether `Tcp.address` reads an IPv4 part with a leading zero.** E.18 has `address(text)` answer "4 for an IPv4 address written as four decimal numbers". On `ern 0.11.0+ab68ef61` it answers `None` for `192.0.2.07`, `01.2.3.4` and `000.0.0.0`. ernest-httpd counts an IPv4 address as written (its design §7), so were such a part read, one address would be counted under two texts, and its test of the texts that fault holds `192.0.2.07` on what the page does not state. Principle 3. Ask: E.18 says whether a part with a leading zero is read.
+61. **E.18 does not say whether `Tcp.ipAddress` reads an IPv4 part with a leading zero.** E.18 has `ipAddress(text)` answer "4 for an IPv4 address written as four decimal numbers". On `ern 0.11.0+ab68ef61`, where it was `Tcp.address`, it answers `None` for `192.0.2.07`, `01.2.3.4` and `000.0.0.0`. ernest-httpd counts an IPv4 address as written (its design §7), so were such a part read, one address would be counted under two texts, and its test of the texts that fault holds `192.0.2.07` on what the page does not state. Principle 3. Ask: E.18 says whether a part with a leading zero is read.
+
+    Planned: Ernest's MVP 4.18, item 1, for 0.12.0, reproduced on `ern 0.11.0`: the host refuses a part with a leading zero, and E.18 gains the clause.
