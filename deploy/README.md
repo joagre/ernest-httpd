@@ -266,12 +266,12 @@ ern VERSION
 
 ```console
 $ ern shell --config-dir ~/ops --attach node
-the peer node connected
+TIME the peer node connected
 Ernest VERSION, session 1. :help for help.
 > :processes
 > :quit
 ```
 
-`:processes` lists the server's processes, each by the site its spawn is written in, with its line, and what it does: the entry process, `ErnestHttpd.main`, receiving; the access log, spawned in `AccessLog.start`, and the sessions, in `Sessions.start`; each listener, spawned in `ErnestHttpd.listening`, and its acceptor, in `Listener.serve`; a connection for each socket a listener holds, spawned in `Listener`; and the sockets and listeners themselves, `Tcp.accept` and `Tcp.listen`.
+`TIME` is the moment the peer connected, in UTC, `2026-11-28T11:43:24.774Z`. `:processes` lists the server's processes, each by the site its spawn is written in, with its line, and what it does: the entry process, `ErnestHttpd.main`, receiving; the access log, spawned in `ErnestHttpd.AccessLog.start`, and the sessions, in `ErnestHttpd.Sessions.start`; each listener, spawned in `ErnestHttpd.listening`, and its acceptor, in `ErnestHttpd.Listener.serve`; a connection for each socket a listener holds, spawned in `ErnestHttpd.Listener`; and the sockets and listeners themselves, `Tcp.accept`, and `Tcp.listen` or, over TLS, `Tcp.listenTls`.
 
-A visitor whose shell runs has a session, spawned in `Sessions`, its program, `Os.startTerminal`, and its reader and its writer, spawned in `Session`; while the visitor's page is attached, the page's connection is a shell with its reader, spawned in `Shell.serve`. `:quit` leaves, and the server runs on. An attach that fails says why, `ern shell: the peer node is unreachable` where the server is not running, and `ern shell: the peer node is not listed` where step 5 did not list it.
+A visitor whose shell runs has a session, spawned in `ErnestHttpd.Sessions`, its program, `Os.startTerminal`, and its reader and its writer, spawned in `ErnestHttpd.Session`; while the visitor's page is attached, the page's connection is a shell with its reader, spawned in `ErnestHttpd.Shell.serve`. `:quit` leaves, and the server runs on. An attach that fails says why, `ern shell: the peer node is unreachable` where the server is not running, and `ern shell: the peer node is not listed` where step 5 did not list it.
