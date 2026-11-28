@@ -4,7 +4,7 @@ What writing Ernest felt against the principles, a line each, carried to Ernest 
 
 The lines are numbered on from the thirty-four of the rounds before, all answered.
 
-Line 35 was found on 2026-11-21 against `ern 0.10.0`, while Ernest's close that waits for its bytes was read against the program's closes; lines 36 and 37 were found on 2026-11-23 against `ern 0.11.0+93a13b13`, while the floor's rise timed the program's closes. Lines 45, 50 and 57 were found on the same day against the same, by the full review's readers at `f6bf173`, each naming the review's finding it comes from. Line 59 was found on 2026-11-25 from Ernest's session's word on its commit `67773cad`. Line 61 was found on 2026-11-26 against `ern 0.11.0+ab68ef61`, with item 17's build.
+Line 35 was found on 2026-11-21 against `ern 0.10.0`, while Ernest's close that waits for its bytes was read against the program's closes; lines 36 and 37 were found on 2026-11-23 against `ern 0.11.0+93a13b13`, while the floor's rise timed the program's closes. Lines 45, 50 and 57 were found on the same day against the same, by the full review's readers at `f6bf173`, each naming the review's finding it comes from. Line 61 was found on 2026-11-26 against `ern 0.11.0+ab68ef61`, with item 17's build.
 
 Ernest answered lines 35 to 60 on 2026-11-26 with `ern 0.11.0+ab68ef61`, and line 61 the same day on its release `ern 0.11.0`; the lines it built, and those it declined for reasons agreed with, are gone (the log's *Ernest's answers to lines 35 to 60*), and each that stays has its answer beneath it.
 
@@ -47,12 +47,6 @@ Ernest answered lines 35 to 60 on 2026-11-26 with `ern 0.11.0+ab68ef61`, and lin
 57. **The library has no WebSocket, so a program writes RFC 6455.** G.11's `Http` reads and writes HTTP/1.1 and offers no upgrade. ernest-httpd's `src/ernest_httpd/web_socket.ern` holds RFC 6455's framing, its close codes and its accept value in 550 lines before its tests, written as a library of Ernest's is (its design §10; the review's L17). A published specification is a library's work. Principles 2 and 5. Ask: a `WebSocket` beside `Http`.
 
     Planned: Ernest's MVP 4.18, item 6, decides where a library over a published specification lives.
-
-59. **`Http.filePath` answers `None` for every path it refuses, and nothing of whether the path asked for a directory.** Ernest's session gives its type as `(Request, Path) -> Optional(Path)`. ernest-httpd's design §5 answers 400 for a segment that holds `%2F`, is not UTF-8 or holds a control character, and for `..`; 404 for a segment that begins with `.`, a rule of its own; and it serves a path that ends in `/`, or has no segments, as a directory's `index.html`, where any other path that names a directory answers 301. A `None` tells none of this, so the program keeps its own split and decoding, `asked`, `segment` and `isControl` in `src/ernest_httpd/static.ern`, beside the library's function for the same job.
-
-    Principle 3, since the reason for a refusal is not in the type, and principle 2, two ways to place a path under a root. Ask: `filePath` answers why it refuses and whether the path asked for a directory, or the decoded segments with both, so that a server keeps only its own rules over the segments. To be read against G.11's page once an archive holds it.
-
-    Not taken, 2026-11-26: the type stays, since every refusal of `filePath` is one status of the design's, 400, a directory asked is the target's path ending in `/`, and the program's own rules run over the answered path's segments. Read in `ern 0.11.0+ab68ef61`'s G.11, that holds but for a segment `.`, which `filePath` answers `None` and design §5 drops; the line stays until the plan's step decides between §5 answering 400 and an ask of Ernest's.
 
 61. **E.18 does not say whether `Tcp.ipAddress` reads an IPv4 part with a leading zero.** E.18 has `ipAddress(text)` answer "4 for an IPv4 address written as four decimal numbers". On `ern 0.11.0+ab68ef61`, where it was `Tcp.address`, it answers `None` for `192.0.2.07`, `01.2.3.4` and `000.0.0.0`. ernest-httpd counts an IPv4 address as written (its design §7), so were such a part read, one address would be counted under two texts, and its test of the texts that fault holds `192.0.2.07` on what the page does not state. Principle 3. Ask: E.18 says whether a part with a leading zero is read.
 

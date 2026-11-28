@@ -6,19 +6,13 @@ Read *Where we are* first, then the milestone under way, its steps by what each 
 
 ## Where we are
 
-Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.11 and builds against Ernest's release `ern 0.11.0`, installed on 2026-11-26. Milestone 2 is under way: item 18, on this repository's turn with Ernest, then item 5, on Ernest's 0.12.0. Lines 35, 36, 37, 45, 50, 57 and 61 of the language feedback wait on Ernest, each with its answer beneath it, and line 59 on item 18; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/, from a build of `75faac8` with item 15's container, with Ernest's side built and walked against it, which waits only on the launch's switch.
+Release 0.1.0 serves the one page of https://ernest-lang.org on its machine. The repository stands on floor 0.11 and builds against Ernest's release `ern 0.11.0`, installed on 2026-11-26. Milestone 2 is under way: item 5, on Ernest's 0.12.0. Lines 35, 36, 37, 45, 50, 57 and 61 of the language feedback wait on Ernest, each with its answer beneath it; the four cores wait on what the access log shows. Meanwhile the rehearsal's unit serves the shell client at https://ernest-lang.org:8443/, from a build of `75faac8` with item 15's container, with Ernest's side built and walked against it, which waits only on the launch's switch.
 
 ## Milestone 2: after the first release
 
 What the first release's readers found and the milestone's own items, each a step with its log entry when built.
 
-Done: items 1 to 4, 6 to 17 and 19, item 5's rehearsal, the full review at `f6bf173` in its three legs, and the steps between them; the log has each.
-
-### On Ernest's answers
-
-Each is an answer of `ern 0.11.0+ab68ef61` that lets the program give up code that filled a gap (the log's *Ernest's answers to lines 35 to 60*).
-
-**Item 18, the path.** `Static` places a target's path under the root by `Http.filePath`, design §5's own rules run over its segments. It waits on a decision of this repository's turn with Ernest, open since 2026-11-28: a segment `.`, which `filePath` refuses and §5 drops, is answered 400 by §5 or is an ask of Ernest's (line 59).
+Done: items 1 to 4 and 6 to 19, item 5's rehearsal, the full review at `f6bf173` in its three legs, and the steps between them; the log has each.
 
 ### On Ernest's 0.12.0, its MVP 4.18
 

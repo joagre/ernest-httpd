@@ -141,11 +141,10 @@ export fn withoutBody(#(response, body) : #(Http.Response, Bytes)) : #(Http.Resp
     }
 
 fn get(site : Site, request : Http.Request, ms : Int) : #(Http.Response, Bytes) =
-    match asked(request) {
+    match asked(site, request) {
         Left(status) ->
             error(site, status, ms)
-      | Right(Asked(=written, =query, =segments, =asksDirectory)) -> {
-            let path = site.root <> Path.join(segments);
+      | Right(Asked(=written, =query, =path, =asksDirectory)) ->
             match Fs.stat(path, ms) {
                 Right(Fs.Entry(kind = Fs.Directory)) ->
                     if asksDirectory then
@@ -159,7 +158,6 @@ fn get(site : Site, request : Http.Request, ms : Int) : #(Http.Response, Bytes) 
               | Left(cause) ->
                     refused(path, cause)
             }
-        }
     }
 
 // The path of a directory asked for without its `/`: the path as
@@ -251,31 +249,45 @@ fn isBreaking(codePoint : Int) : Bool =
 //
 
 // What a target asks for: its path and its query as Http.target writes them,
-// the characters G.11 names percent-encoded; the segments it names under
-// the root; and whether it asks for a directory.
-type Asked =
-    Asked(written : String, query : Optional(String), segments : List(String), asksDirectory : Bool)
+// the characters G.11 names percent-encoded; the path it names under the
+// root; and whether it asks for a directory.
+type Asked = Asked(written : String, query : Optional(String), path : Path, asksDirectory : Bool)
 
-// The target read, its path split into segments and each decoded, or the
-// status it is refused with: 400, or 404 for a segment that begins with a
-// dot.
-fn asked(request : Http.Request) : Either(Int, Asked) = {
+// The target read and its path placed under the root by Http.filePath, or
+// the status it is refused with: 400, or 404 for a segment it places that
+// begins with a dot. The form is read first, since Http.filePath places the
+// path of an absolute-form target that names userinfo or has no authority.
+// The segments read are those under the root, none where the path is the
+// root itself, since the root's own may begin with a dot, as the challenge
+// site's does (design §9).
+fn asked(site : Site, request : Http.Request) : Either(Int, Asked) = {
     let reference <- Either.fromOptional(form(request), 400);
     let written = reference.path;
-    let parts <- List.tryMap(String.split(written, "/"), segment);
-    let segments = List.filter(parts, fn(part) = part != "" && part != ".");
-    let _ <- if List.contains(segments, "..") then Left(400) else Right(Unit);
+    let path <- Either.fromOptional(Http.filePath(request, site.root), 400);
+    let segments =
+        Path.from(path, site.root) |> Optional.map(Path.split) |> Optional.withDefault([]);
+    let _ <- if List.any(segments, holdsControl) then Left(400) else Right(Unit);
     let _ <- if List.any(segments, beginsWithDot) then Left(404) else Right(Unit);
     Right(Asked(=written,
                 query = reference.query,
-                =segments,
+                =path,
                 asksDirectory = String.endsWith(written, "/") || List.isEmpty(segments)))
+}
+
+// Whether a segment holds a control character, U+0001 to U+001F or U+007F;
+// Http.filePath refuses one that holds U+0000.
+fn holdsControl(segment : String) : Bool =
+    List.any(String.toList(segment), isControl)
+
+fn isControl(char : Char) : Bool = {
+    let codePoint = Char.toCodePoint(char);
+    codePoint < 32 || codePoint == 127
 }
 
 // Whether a segment's first code point is `.`, a combining mark after it
 // or not.
-fn beginsWithDot(part : String) : Bool =
-    match String.toList(part) {
+fn beginsWithDot(segment : String) : Bool =
+    match String.toList(segment) {
         '.' :: _ -> true
       | _ -> false
     }
@@ -321,26 +333,6 @@ fn form(request : Http.Request) : Optional(Uri.Reference) =
       | _ ->
             None
     }
-
-// A segment decoded, as text: refused with 400 where it holds `/`, is not
-// UTF-8 or holds a control character.
-fn segment(written : String) : Either(Int, String) = {
-    let bytes = match Uri.decode(written) {
-        Some(bytes) -> bytes
-      | None -> fault("Http.target encodes every % that begins no encoding, so a segment decodes")
-    };
-    let _ <- if Bytes.contains(bytes, slash) then Left(400) else Right(Unit);
-    let text <- Either.fromOptional(String.fromUtf8(bytes), 400);
-    if List.any(String.toList(text), isControl) then Left(400) else Right(text)
-}
-
-// The byte `/`, which a decoded segment holds where the target wrote `%2F`.
-let slash : Bytes = <<47>>
-
-fn isControl(char : Char) : Bool = {
-    let codePoint = Char.toCodePoint(char);
-    codePoint < 32 || codePoint == 127
-}
 
 //
 // The errors
@@ -398,8 +390,9 @@ fn header(name : String, value : String) : Http.Header =
 //
 
 // The scratch directory the tests write their sites under: `site` with its
-// 404.html, served as `withPage`, `bare` without one, and `locked` with one
-// no one may read; and `outside`, which `site` links to.
+// 404.html, served as `withPage`, `bare` without one, `locked` with one no
+// one may read, and `.dotted`, a root whose name begins with a dot; and
+// `outside`, which `site` links to.
 let scratch : String = "build/scratch/static"
 
 // The modification time of every file written, Sun, 06 Nov 1994 08:49:37 GMT.
@@ -432,6 +425,8 @@ fn prepared() : Either(Io.Error, Unit) = {
     let _ <- written("site/docs/index.html", "docs");
     let _ <- written("site/404.html", "<p>none</p>");
     let _ <- written("bare/a.txt", "alpha");
+    let _ <- Fs.makeDir(Path(scratch <> "/.dotted"), 5000);
+    let _ <- written(".dotted/a.txt", "alpha");
     let _ <- Fs.makeDir(Path(scratch <> "/outside"), 5000);
     let _ <- written("outside/away.txt", "away");
     let _ <- written("outside/index.html", "outer");
@@ -451,6 +446,8 @@ fn linked(name : String, target : String) : Either(Io.Error, Unit) =
 let withPage : Site = site(Path(scratch <> "/site"), Map.empty)
 
 let bare : Site = site(Path(scratch <> "/bare"), Map.empty)
+
+let dotted : Site = site(Path(scratch <> "/.dotted"), Map.empty)
 
 // A request to the site, and the answer expected.
 type Check = Check(site : Site, request : Http.Request, expected : Answer)
@@ -634,13 +631,15 @@ let answersUnmodified = Test.Case(name = "answers a file not modified since", ru
 })
 
 // design §5: the path's rules that answer 400: a target Http.target reads
-// as none, one holding a character outside the visible ASCII among them, a
+// as none, one holding a character outside the visible ASCII among them; a
 // reference of another form, absolute form without an authority or naming
-// userinfo among them, an encoded `/`, bytes that are not UTF-8, a control
-// character, and `..`, written or encoded. The cases of a character
-// outside the visible ASCII, of userinfo, of a scheme without an authority
-// and of a fragment are a regression test's, written after the code: they
-// do not cover every character Uri.parse refuses, which G.12 owns.
+// userinfo among them; a segment Http.filePath refuses, an encoded `/` in
+// either case, U+0000, bytes that are not UTF-8, and `.` and `..`, written
+// or encoded in either case; and a segment it places that holds a control
+// character. The cases of a character outside the visible ASCII, of
+// userinfo, of a scheme without an authority and of a fragment are a
+// regression test's, written after the code: they do not cover every
+// character Uri.parse refuses, which G.12 owns.
 let refusesPaths =
     Test.Case(name = "refuses a bad path with 400",
               run = fn() =
@@ -658,11 +657,16 @@ let refusesPaths =
                                    "/docs%2findex.html",
                                    "/%FF.txt",
                                    "/a%00.txt",
-                                   "/a%7F.txt",
-                                   "/a%09.txt",
+                                   "/./docs/index.html",
+                                   "/a.txt/.",
+                                   "/./",
+                                   "/%2E/a.txt",
+                                   "/%2e/a.txt",
                                    "/../site/a.txt",
                                    "/docs/../a.txt",
-                                   "/%2E%2E/a.txt"],
+                                   "/%2E%2E/a.txt",
+                                   "/a%7F.txt",
+                                   "/a%09.txt"],
                                   fn(target) = getting(withPage, target, plainError(400)))))
 
 // design §5: the path and the query are as Http.target reads them, each
@@ -685,7 +689,9 @@ let readsEncodedTargets =
     })
 
 // design §5: a segment that begins with a dot is not found, though the
-// file is there, and `..` is answered 400 before it.
+// file is there, and `..`, `.` and a control character in another segment
+// are answered 400 before it; a root whose name begins with a dot serves
+// its files, since only the segments under it are read.
 let hidesDotSegments =
     Test.Case(name = "answers a dot segment with 404",
               run = fn() =
@@ -693,14 +699,18 @@ let hidesDotSegments =
                           getting(bare, "/docs/.git/config", plainError(404)),
                           getting(bare, "/%2Ehidden", plainError(404)),
                           getting(withPage, "/.%CC%81hidden", notFoundPage),
-                          getting(bare, "/.hidden/..", plainError(400))]))
+                          getting(bare, "/.hidden/..", plainError(400)),
+                          getting(bare, "/.hidden/.", plainError(400)),
+                          getting(bare, "/.hidden/a%09.txt", plainError(400)),
+                          getting(dotted, "/a.txt", textFile("alpha"))]))
 
-// design §5: empty segments and `.` are dropped, the query is ignored, and
-// the path is percent-decoded into UTF-8.
+// design §5: empty segments are dropped, the query is ignored, and the path
+// is percent-decoded into UTF-8, a `.` written `%2E` within a segment among
+// it.
 let normalizesPaths =
     Test.Case(name = "reads the path",
               run = fn() =
-                  served([getting(withPage, "/./docs//index.html", htmlFile("docs")),
+                  served([getting(withPage, "/docs//index.html", htmlFile("docs")),
                           getting(withPage, "//a.txt", textFile("alpha")),
                           getting(withPage, "/a.txt?x=1&y=/../", textFile("alpha")),
                           getting(withPage, "/a%2Etxt", textFile("alpha")),
